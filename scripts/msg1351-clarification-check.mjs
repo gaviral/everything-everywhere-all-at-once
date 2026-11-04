@@ -151,20 +151,36 @@ async function checkVisible(url) {
       if (await evaluate(expression)) return;
       await new Promise((resolve) => setTimeout(resolve, 40)); // Poll the rendered condition.
     }
-    throw Error(`TIMING: ${label} never became visible`);
+    throw Error(`Condition failed: ${label} never became visible`);
   };
-  const tap = async (label) => {
+  const tap = async (label, touch = false) => {
     const point = await evaluate(`(() => { const el = [...document.querySelectorAll('button')].find(el => el.textContent === ${JSON.stringify(label)}); if (!el || el.disabled) throw Error('Action unavailable: ' + ${JSON.stringify(label)}); el.scrollIntoView({block:'center'}); const r=el.getBoundingClientRect(); return {x:r.x+r.width/2,y:r.y+r.height/2}; })()`);
-    await page("Input.dispatchMouseEvent", { type: "mousePressed", ...point, button: "left", clickCount: 1 });
-    await page("Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "left", clickCount: 1 });
+    if (touch) {
+      await page("Emulation.setTouchEmulationEnabled", { enabled: true });
+      await page("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [point] });
+      await page("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    } else {
+      await page("Input.dispatchMouseEvent", { type: "mousePressed", ...point, button: "left", clickCount: 1 });
+      await page("Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "left", clickCount: 1 });
+    }
   };
-  const key = async (key, code, windowsVirtualKeyCode) => {
-    await page("Input.dispatchKeyEvent", { type: "keyDown", key, code, windowsVirtualKeyCode });
-    await page("Input.dispatchKeyEvent", { type: "keyUp", key, code, windowsVirtualKeyCode });
+  const key = async (key, code, windowsVirtualKeyCode, modifiers = 0) => {
+    await page("Input.dispatchKeyEvent", { type: "keyDown", key, code, windowsVirtualKeyCode, modifiers, ...(key === "Enter" ? { text: "\r" } : {}) });
+    await page("Input.dispatchKeyEvent", { type: "keyUp", key, code, windowsVirtualKeyCode, modifiers });
   };
   const type = (text) => page("Input.insertText", { text });
-  const selectTerm = () => evaluate(`(() => { const el=document.querySelector('#thought'); el.focus(); el.setSelectionRange(2,11); el.dispatchEvent(new Event('select',{bubbles:true})); })()`);
+  const selectRange = async (start, end) => {
+    await evaluate(`document.querySelector('#thought').focus()`);
+    await page("Input.dispatchKeyEvent", { type: "keyDown", key: "a", code: "KeyA", commands: ["selectAll"] });
+    await page("Input.dispatchKeyEvent", { type: "keyUp", key: "a", code: "KeyA" });
+    await key("ArrowLeft", "ArrowLeft", 37);
+    for (let i = 0; i < start; i++) await key("ArrowRight", "ArrowRight", 39);
+    for (let i = start; i < end; i++) await key("ArrowRight", "ArrowRight", 39, 8);
+    await until(`document.querySelector('#thought').selectionStart === ${start} && document.querySelector('#thought').selectionEnd === ${end}`, "native term selection");
+  };
+  const selectionReady = () => until(`[...document.querySelectorAll('.clarification button')].some(el=>el.textContent.includes('selection') && !el.disabled)`, "selection reaches Ask");
   const shot = async (name) => {
+    await evaluate(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))`);
     const { data } = await page("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
     writeFileSync(join(artifacts, name + ".png"), Buffer.from(data, "base64"));
   };
@@ -178,8 +194,8 @@ async function checkVisible(url) {
     await evaluate(`navigator.mediaDevices.getUserMedia = () => { throw Error('Microphone forbidden in this check'); }`);
     assert.equal(await evaluate(`document.documentElement.dataset.defaultEnabled`), "false");
     assert.equal(await evaluate(`!!document.querySelector('.clarification-source')`), false, "off hides the feature");
-    await evaluate(`document.querySelector('#thought').focus()`); await type(text); await selectTerm();
-    await tap("Clarification off"); await tap("Ask about selection");
+    await evaluate(`document.querySelector('#thought').focus()`); await type(text); await selectRange(2, 11);
+    await tap("Clarification off"); await selectionReady(); await tap("Ask about selection");
     await until(`document.querySelector('.clarification mark')?.textContent === 'threshold'`, "visible source mark");
     assert.equal(await evaluate(`document.querySelector('.clarification-source').textContent`), text);
     assert.equal(await evaluate(`getComputedStyle(document.querySelector('.clarification mark')).textDecorationStyle`), "dotted");
@@ -201,7 +217,7 @@ async function checkVisible(url) {
     await tap("Clarification on");
     assert.equal(await evaluate(`!!document.querySelector('.clarification-question')`), false);
     await tap("Clarification off");
-    await selectTerm(); await tap("Ask about selection");
+    await selectRange(2, 11); await selectionReady(); await tap("Ask about selection");
     await evaluate(`document.querySelector('.clarification input').focus()`); await type("a release limit");
     await evaluate(`document.querySelector('#thought').focus(); document.querySelector('#thought').setSelectionRange(0,0)`); await type("Revised. ");
     await until(`document.querySelector('[role=alert]')?.textContent.includes('Source changed')`, "stale refusal");
@@ -209,8 +225,7 @@ async function checkVisible(url) {
     assert.equal(await evaluate(`[...document.querySelectorAll('button')].find(el=>el.textContent==='Confirm understanding').disabled`), true);
     await shot("stale-refusal");
     // Return to a fresh selection and inspect narrow/enlarged rendered states.
-    await evaluate(`(() => { const el=document.querySelector('#thought'); el.focus(); el.setSelectionRange(11,20); el.dispatchEvent(new Event('select',{bubbles:true})); })()`);
-    await tap("Ask about new selection");
+    await selectRange(11, 20); await selectionReady(); await tap("Ask about new selection");
     for (const [name, size] of [["phone-question", 16], ["phone-enlarged", 32]]) {
       await page("Emulation.setDeviceMetricsOverride", { width: 360, height: 1100, deviceScaleFactor: 1, mobile: false });
       await evaluate(`document.documentElement.style.fontSize='${size}px'; document.querySelector('.clarification').scrollIntoView({block:'start'})`);
@@ -221,7 +236,17 @@ async function checkVisible(url) {
       await shot(name);
     }
     assert.equal(await evaluate(`document.querySelector('#thought').value`), "Revised. " + text);
-    console.log("PASS clarification visible: typed source, mark, confirm, restored focus/range, remount/revisit, follow-up, dismiss, off, stale refusal, phone and enlarged text");
+    await evaluate(`document.querySelector('.clarification input').focus()`); await type("a release limit");
+    await evaluate(`[...document.querySelectorAll('button')].find(el=>el.textContent==='Confirm understanding').scrollIntoView({block:'center'})`);
+    await shot("phone-enlarged-actions");
+    await tap("Confirm understanding", true);
+    await until(`document.querySelector('.clarification-question')?.textContent.includes('Confirmed:')`, "touch acknowledgment");
+    assert.deepEqual(await evaluate(`({id:document.activeElement.id,start:document.querySelector('#thought').selectionStart,end:document.querySelector('#thought').selectionEnd})`), { id: "thought", start: 11, end: 20 }, "touch confirmation restores revised selection");
+    console.log("PASS clarification visible: typed source, mark, keyboard/touch confirm, restored focus/range, remount/revisit, follow-up, dismiss, off, stale refusal, phone and enlarged text");
+  } catch (error) {
+    await shot("failure");
+    console.error("Visible failure state:", await evaluate(`({text:document.body.innerText,selection:[document.querySelector('#thought')?.selectionStart,document.querySelector('#thought')?.selectionEnd],disabled:[...document.querySelectorAll('button')].filter(el=>el.disabled).map(el=>el.textContent)})`));
+    throw error;
   } finally { await browser.close(); }
 }
 

@@ -1,5 +1,6 @@
-export { ClarificationView } from "./view";
-export { createClarification } from "./controller";
+import { ClarificationView } from "./view";
+import { createClarification } from "./controller";
+export { ClarificationView, createClarification };
 export type { ClarificationController } from "./controller";
 export type { Source, SelectedSource, SourceAnchor, SelectedSourceAdapter } from "./contracts";
 
@@ -9,5 +10,6 @@ export const clarification = Object.freeze({
   id: "clarification",
   namespace: "msg1351.clarification",
   defaultEnabled: false,
-  control: { read: "controller.getSnapshot().enabled", write: "controller.setEnabled(boolean)" },
+  createController: createClarification,
+  View: ClarificationView,
 });
