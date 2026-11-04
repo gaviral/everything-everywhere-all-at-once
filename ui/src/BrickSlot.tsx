@@ -40,10 +40,11 @@ export function useBrickHost(world: World, revision: number, me: string, connect
   const jobs = useJobs();
   const builtIns = useBuiltInsOn();
   const conversationSpine = builtIns.has("conversation-spine");
+  const comparePhoneReading = builtIns.has("compare-phone-reading");
   const terse = builtIns.has("terse");
   const snapshot = useMemo(() => snapshotOf(world, me, connected, rooms, partial, jobs, usage), [world, me, connected, rooms, partial, jobs, usage]);
   const reading = useReadPosition(snapshot);
-  const map = useMemo(() => ({ ...snapshot, readThrough: reading.mark, conversationSpine, terse, placingUnavailable, pauses: world.pauses ?? [] }), [snapshot, reading.mark, conversationSpine, terse, placingUnavailable, world.pauses]);
+  const map = useMemo(() => ({ ...snapshot, readThrough: reading.mark, conversationSpine, comparePhoneReading, terse, placingUnavailable, pauses: world.pauses ?? [] }), [snapshot, reading.mark, conversationSpine, comparePhoneReading, terse, placingUnavailable, world.pauses]);
   const read = useRef(reading.read);
   read.current = reading.read;
   const latest = useRef(act);
@@ -68,6 +69,7 @@ export function useBrickHost(world: World, revision: number, me: string, connect
         if (sent) sends.sent(text, info);
         return sent;
       },
+      openPoint: (thread, thought) => latest.current.openPoint(thread, thought),
       openThread: (id) => latest.current.openThread(id),
       openThought: (id) => latest.current.openThought(id),
       select: (id) => latest.current.select(id),

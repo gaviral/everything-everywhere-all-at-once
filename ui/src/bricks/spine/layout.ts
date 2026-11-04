@@ -312,6 +312,8 @@ export interface LayoutInput {
   /** A phone's width: margin notes tuck under their words. */
   narrow?: boolean;
   staying?: string | null;
+  comparePhone?: boolean;
+  textScale?: number;
   originals?: ReadonlySet<string>;
 }
 
@@ -348,6 +350,21 @@ export function ideasOf(thoughts: Thought[], notes: Readonly<Record<string, Note
     ideas.push({ key: parts[0].id, parts, text: (t.point || t.text).trim(), at: t.at_ms, decided: parts.some((p) => !!p.decided) });
   }
   return ideas;
+}
+
+/** Only recorded anchors identify an exact source. A topic parent alone never supplies a point. */
+export function phoneParents(threads: readonly Thread[], thoughts: readonly Thought[]) {
+  const byId = new Map(threads.map(t => [t.id, t]));
+  const points = new Map(thoughts.map(t => [t.id, t]));
+  return new Map(threads.map(t => {
+    const source = t.anchor && points.get(t.anchor.thought_id);
+    const parentId = t.parent_id;
+    const parent = parentId ? byId.get(parentId) : undefined;
+    const exact = !!(source && parent && source.thread_id === parent.id);
+    return [t.id, { threadId: parent?.id ?? null, thoughtId: exact ? source!.id : null,
+      label: exact ? `${t.anchor!.quote} [${source!.id}]` : t.anchor ? `Source unavailable · ${t.anchor.quote} [${t.anchor.thought_id}]` : parent ? `Topic branch · ${parent.title}` : "",
+      missing: !!t.anchor && !exact }];
+  }));
 }
 
 const overlaps = (a: Box, b: Box, margin: number) =>
@@ -398,14 +415,20 @@ const tuckHeight = (tucks: Tuck[]) =>
   tucks.reduce((h, tuck) => h + G.tuckTop + (tuck.title ? G.recapLine : 0) + tuck.entries.reduce((sum, e) => sum + Math.max(1, e.lines.length) * G.marginLine, 0)
     + 4 * Math.max(0, tuck.entries.length - 1), 0);
 
+const globalSpineLook = SPINE_LOOK, globalMiniLook = MINI_LOOK;
+
 export function layout(input: LayoutInput): Layout {
   const { threads, notes, rooms, positions, open } = input;
+  const scale = input.textScale ?? 1;
+  const SPINE_LOOK = input.comparePhone ? { ...globalSpineLook, font: "phone" as const, line: 24 * scale, max: Infinity } : globalSpineLook;
+  const MINI_LOOK = input.comparePhone ? { ...globalMiniLook, font: "phone" as const, line: 24 * scale, max: Infinity } : globalMiniLook;
+  const parents = input.comparePhone ? phoneParents(threads, input.thoughts) : null;
   const me = input.me ?? "you";
   const who = (name: string) => whoIs(name, me, input.speakers);
   const active = input.active ?? null;
   const pendingSlots = input.slots ?? [];
   const opened = input.opened ?? new Set<string>();
-  const narrow = !!input.narrow;
+  const narrow = !!input.narrow && !input.comparePhone;
   const byId = new Map(threads.map((t) => [t.id, t]));
   const order = new Map(threads.map((t, i) => [t.id, i]));
 
@@ -441,7 +464,8 @@ export function layout(input: LayoutInput): Layout {
       if (seen.has(p)) return null;
       seen.add(p);
     }
-    return t.parent_id && byId.has(t.parent_id) ? t.parent_id : null;
+    const parent = parents?.get(t.id)?.threadId ?? t.parent_id;
+    return parent && parent !== t.id && byId.has(parent) ? parent : null;
   };
   const kids = new Map<string, Thread[]>();
   const roots: Thread[] = [];
@@ -490,6 +514,7 @@ export function layout(input: LayoutInput): Layout {
 
   /** A lone aside: one point, nothing off it, not the thread you're on, not left off or decided. */
   const lone = (t: Thread) => {
+    if (input.comparePhone) return false;
     const list = ideasIn(t.id);
     const idea = list[0];
     return list.length === 1 && !(kids.get(t.id)?.length) && t.id !== active && t.id !== input.staying && t.status !== "dropped" && !idea.decided && !idea.parts.some((p) => p.unclear) &&
@@ -572,7 +597,7 @@ export function layout(input: LayoutInput): Layout {
   // While sides are decided, every card counts as closed and nothing as placed or shelved: opening, moving or shelving one
   // never sends another to the other side.
   let deciding = false;
-  const isOpen = (t: Thread) => !deciding && open === t.id && !!parentOf(t);
+  const isOpen = (t: Thread) => !deciding && (input.comparePhone || open === t.id) && !!parentOf(t);
   const slotsFor = (t: Thread) => (!deciding && t.id === active ? pendingSlots : []);
   const card = (t: Thread) => {
     const titleLines = wrap(t.title, "cardTitle", G.cardW - 2 * G.pad, G.cardTitleMax);
@@ -790,6 +815,11 @@ export function layout(input: LayoutInput): Layout {
 
   /** Where a tangent of `parent` starts: the parent's latest point said before the tangent's first. */
   const originOf = (parent: Parent, t: Thread): Anchor => {
+    if (parents) {
+      const source = parents.get(t.id)?.thoughtId;
+      const idea = source && ideasIn(parent.thread.id).find(i => i.parts.some(p => p.id === source));
+      return (idea && parent.anchors.get(idea.key)) || parent.edge;
+    }
     const start = started(t);
     let found: Anchor | undefined;
     for (const idea of ideasIn(parent.thread.id)) if (idea.at <= start && parent.anchors.has(idea.key)) found = parent.anchors.get(idea.key);

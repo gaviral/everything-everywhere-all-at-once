@@ -406,3 +406,23 @@
 .spine-fixes > span { display: flex; flex-wrap: wrap; margin: 0; white-space: normal; }
 
 .spine-speaker { display: block; font-size: .8em; font-weight: 600; opacity: .8; }
+
+/* Optional phone comparison. The mounted spatial canvas keeps its camera while Inline is read. */
+.spatial-treatment { position: absolute; inset: 0; }
+.phone-controls { position: absolute; top: 68px; left: 16px; right: 16px; z-index: 10; max-height: 36%; overflow: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 4px; }
+.phone-controls > div { display: flex; flex-wrap: wrap; align-items: start; gap: 4px; }
+.spine-frame .phone-controls button, .phone-controls summary { min-height: 40px; box-sizing: border-box; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; color: var(--ink); background: var(--surface); font: inherit; line-height: 1.5; cursor: pointer; white-space: normal; overflow-wrap: anywhere; }
+.spine-frame .phone-controls button[aria-pressed="true"] { background: var(--surface-3); border-color: var(--accent); }
+.phone-controls details { flex: 1; min-width: 100px; }
+.phone-topic-list { display: flex; flex-direction: column; gap: 4px; }
+.spine-frame .phone-back { display: block; width: 100%; text-align: left; }
+.phone-safe { position: absolute; bottom: 0; height: env(safe-area-inset-bottom, 0px); width: 1px; pointer-events: none; }
+.spine-phone-compare .spine-speaker { font-size: inherit; line-height: inherit; }
+.spine-phone-compare .spine-flow, .spine-phone-compare .react-flow__node { transition: none; }
+/* React Flow assigns visibility on individual nodes; opacity also hides those descendants while preserving geometry. */
+.spatial-treatment[inert] { opacity: 0; pointer-events: none; }
+.phone-controls summary { list-style: none; }
+.phone-controls summary::-webkit-details-marker { display: none; }
+
+/* Rotation stays inside the measured phone controls band. */
+.spine-phone-compare .spine-rotation { position: static; transform: none; width: auto; max-width: none; margin-top: 4px; }

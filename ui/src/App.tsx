@@ -1131,6 +1131,13 @@ export default function App() {
     saveTextFile: (name, text, mime) => { saveFile(text, mime, name); return true; },
     addThought: core.sendText,
     resume: (id,keyboard) => finishPause(id,keyboard),
+    openPoint: (threadId, thoughtId) => {
+      if (!builtInOn("compare-phone-reading")) return;
+      if (!world.threads.some(t => t.id === threadId) || (thoughtId && !world.thoughts.some(t => t.id === thoughtId && t.thread_id === threadId))) {
+        core.showNotice("Source point unavailable. Its reference has been kept."); return;
+      }
+      setDestination(was => ({ threadId, thoughtId, revision: (was?.revision ?? 0) + 1 }));
+    },
     openThread: (id) => { const thread = threadById.get(resolveMerged(world, id)); if (thread) goBack(thread); },
     openThought: (id) => {
       const live = worldNow.current;

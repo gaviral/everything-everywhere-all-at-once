@@ -1,5 +1,5 @@
 import { FullContentProvider } from "../FullContent";
-import { useBuiltInsOn } from "../shell/features";
+import { switchBuiltIn, useBuiltInsOn } from "../shell/features";
 // The playground (bricks.html, docs/bricks.md): one brick on its own against a sample map from samples/, so a builder
 // needs neither the core, a key nor the whole app. `?brick=<id>` picks the brick (the template too) and `&sample=`
 // the map ("empty" for none). It's mounted as the app mounts it (BrickSlot.tsx), and what it asks for is answered
@@ -83,6 +83,7 @@ function Playground() {
   const estimateWorld = useRef(world);
   estimateWorld.current = world;
   // Bumped with each map picked, as the core's snapshot count is: a new map's thoughts aren't landings.
+  const compareOn = builtIns.has("compare-phone-reading");
   const [revision, setRevision] = useState(1);
   const [connected, setConnected] = useState(true);
   const [destination, setDestination] = useState<ViewDestination | null>(null);
@@ -202,6 +203,7 @@ function Playground() {
     },
     saveTextFile: (name, text, mime) => { saveFile(text, mime, name); said(`File handed to browser: ${name}`); return true; },
     addThought: (text) => { const ok = add(text); said(`addThought “${text}”${ok ? " → lands on the topic you're on in 1.2 s" : " → refused"}`); return ok; },
+    openPoint: (threadId, thoughtId) => { if (compareOn) setDestination(was => ({ threadId, thoughtId, revision: (was?.revision ?? 0) + 1 })); },
     openThread: (thread) => {
       said(`openThread ${title(thread)} → in the app: back to the map, that topic open and highlighted`);
       setWorld((w) => apply(w, { type: "active_changed", thread_id: thread, speaker: "you" }));
@@ -282,6 +284,7 @@ function Playground() {
   return <div className="playground" data-errors={errors} data-brick-shown={brick ? id : ""}>
     <div className="playground-bar" role="toolbar" aria-label="Playground">
       <strong>Features playground</strong>
+      <button type="button" role="switch" aria-checked={compareOn} onClick={() => switchBuiltIn("compare-phone-reading", !compareOn)}>Compare phone reading</button>
       <label>Feature <select value={id} onChange={(event) => setId(event.target.value)}>
         {!brick && <option value={id}>{id || "none"}</option>}
         {found.bricks.map(({ info }) => <option key={info.id} value={info.id}>{info.name} ({info.id})</option>)}

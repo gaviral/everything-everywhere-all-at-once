@@ -178,6 +178,8 @@ export interface Job {
 export interface MapSnapshot {
   /** Optional browser presentation: chronological turns with linked topics. Missing/off keeps the current Canvas. */
   readonly conversationSpine?: boolean;
+  /** Optional presentation only; never enabled by a sample or recording preset. */
+  readonly comparePhoneReading?: boolean;
   readonly terse?: boolean;
   /** Allowances from USAGE_FILE and the core's rolling-hour model budget; null with no readable file or connection. */
   readonly usage: UsageSnapshot | null;
@@ -245,6 +247,8 @@ export interface BrickActions {
    *  brick added it (`by`). False when it couldn't go (too long, or too many waiting for the core); the window says why. */
   addThought(text: string): boolean;
   resume?(pauseId: string, keyboard?: boolean): boolean;
+  /** Inspect an exact live destination without changing the routing or the draft. */
+  openPoint(threadId: string, thoughtId: string | null): void;
   /** Shows a thread as a Palace picture does: back to the Map with the thread open, in view and highlighted. Your
    *  place moves there too. */
   openThread(threadId: string): void;
