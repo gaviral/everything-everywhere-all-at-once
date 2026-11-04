@@ -1,0 +1,8 @@
+{
+  "id": "part-lenses",
+  "name": "Part lenses",
+  "does": "Explain one part in plain language, a developer diagram or a founder's pitch.",
+  "kind": "view",
+  "defaultOn": false,
+  "demoSafe": true
+}
