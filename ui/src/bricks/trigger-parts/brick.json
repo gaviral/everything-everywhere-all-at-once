@@ -1,0 +1,8 @@
+{
+  "id": "trigger-parts",
+  "name": "Trigger parts",
+  "does": "See which spoken phrases start new ideas, and challenge any split.",
+  "kind": "view",
+  "defaultOn": false,
+  "demoSafe": true
+}

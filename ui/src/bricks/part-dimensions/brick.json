@@ -1,0 +1,9 @@
+{
+  "id": "part-dimensions",
+  "name": "Parts",
+  "does": "The demo left to right, with the real code under each step.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": true,
+  "flag": "parts"
+}

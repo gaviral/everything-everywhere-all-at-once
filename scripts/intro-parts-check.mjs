@@ -86,6 +86,7 @@ async function browserPart() {
 function fixturePart({ freshPart, blockedPart }) {
   if (freshPart) sessionStorage.clear();
   localStorage.setItem("e2a2o.toured", "1");
+  localStorage.setItem("e2a2o.bricks", JSON.stringify({ "intro-parts": true }));
   if (blockedPart) Object.defineProperty(window, "sessionStorage", { get() { throw new Error("Storage unavailable"); } });
   // The dev build supervisor is an external service part, absent from this disk-only fixture.
   const fetchPart = window.fetch.bind(window);

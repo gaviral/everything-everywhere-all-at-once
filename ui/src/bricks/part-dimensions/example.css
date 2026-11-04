@@ -1,0 +1,9 @@
+/* Only the example adapter's surface; the original part supplies its own content. */
+.part-dimensions-example { position: fixed; inset: 64px 16px 56px; z-index: 39; overflow: auto; overscroll-behavior: contain; padding: 24px; border: 1px solid var(--line); border-radius: 18px; background: var(--bg); color: var(--ink); box-shadow: var(--shadow); font: 20px/1.5 system-ui, sans-serif; }
+.part-dimensions-example > div:first-child { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 20px; }
+.part-dimensions-example button { min-height: 44px; font: inherit; }
+.part-dimensions-example header { position: static; z-index: auto; top: auto; padding: 0; background: transparent; backdrop-filter: none; }
+.part-dimensions-example header::after { content: none; }
+.part-dimensions-example .part-dimensions { font-size: 20px; max-width: none; }
+.part-dimensions-example textarea { width: 100%; min-height: 110px; font: inherit; }
+@media (max-width: 600px) { .part-dimensions-example { inset: 70px 8px 150px; padding: 12px; font-size: 18px; } }

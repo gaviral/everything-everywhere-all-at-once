@@ -1,0 +1,8 @@
+{
+  "id": "typed-lists",
+  "name": "Thought board",
+  "does": "Give thoughts typed fields, arrange a list or board, and return to the source words.",
+  "kind": "view",
+  "defaultOn": false,
+  "demoSafe": true
+}

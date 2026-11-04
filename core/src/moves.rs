@@ -15,6 +15,100 @@ use crate::world::{Change, ItemStatus, Thread, ThreadStatus, Thought, World};
 use crate::{now_ms, Core};
 use std::sync::Arc;
 
+/// A phone corrects one visible landing, with an immutable identity for explicit retries.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct CorrectionRequest {
+    pub request_id: String,
+    pub thought_id: String,
+    pub observed_text: String,
+    pub from: String,
+    pub to: String,
+    #[serde(default)]
+    pub undo_of: Option<String>,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct CorrectionReceipt {
+    pub actor: String,
+    pub request: CorrectionRequest,
+    pub version: u64,
+    pub note: Option<Note>,
+    pub message: String,
+}
+
+fn correction_source<'a>(world: &'a World, request: &CorrectionRequest) -> Result<&'a Thought, String> {
+    let thought = world.thoughts.iter().find(|t| t.id == request.thought_id && t.placed)
+        .ok_or("That thought is no longer on the map.")?;
+    if thought.text != request.observed_text || thought.thread_id.as_deref() != Some(&request.from)
+        || world.thread(&request.from).is_none() || world.thread(&request.to).is_none()
+        || world.resolve(&request.from) != request.from || world.resolve(&request.to) != request.to {
+        return Err("The landing changed. Review it before correcting.".into());
+    }
+    if request.from == request.to { return Err("Choose a different topic.".into()); }
+    Ok(thought)
+}
+
+fn correction_undo<'a>(world: &'a World, actor: &str, request: &CorrectionRequest) -> Result<Option<&'a CorrectionReceipt>, String> {
+    let Some(id) = &request.undo_of else { return Ok(None) };
+    let original = world.correction_receipts.get(&(actor.into(), id.clone()))
+        .ok_or("Only your own confirmed correction can be undone.")?;
+    let first = &original.request;
+    if first.undo_of.is_some() || first.thought_id != request.thought_id || first.from != request.to
+        || first.to != request.from || first.observed_text != request.observed_text
+        || world.landing_versions.get(&request.thought_id).copied().unwrap_or(0) != original.version {
+        return Err("That landing has changed since the correction. Undo left it alone.".into());
+    }
+    let cleared = Note { continues: original.note.as_ref().map(|n| n.continues.clone()).unwrap_or_default(), ..Note::default() };
+    if world.notes.get(&request.thought_id).cloned().unwrap_or_default() != cleared {
+        return Err("The landing note changed. Undo left it alone.".into());
+    }
+    Ok(Some(original))
+}
+
+/// Journal the receipt and the exact landing together. A retry never runs the move again.
+pub fn correction(core: &Arc<Core>, actor: &str, enabled: bool, request: &CorrectionRequest) -> Result<String, String> {
+    if !enabled { return Err("Phone correction is off. Enable it in Features.".into()); }
+    if uuid::Uuid::parse_str(&request.request_id).is_err() || request.thought_id.len() > 128
+        || request.from.len() > 128 || request.to.len() > 128 || request.observed_text.chars().count() > crate::protocol::THOUGHT_MAX {
+        return Err("Invalid correction request.".into());
+    }
+    let key = (actor.to_string(), request.request_id.clone());
+    let world = core.snapshot();
+    if let Some(receipt) = world.correction_receipts.get(&key) {
+        return if receipt.request == *request { Ok(receipt.message.clone()) }
+            else { Err("Request ID already used. Review the landing and start again.".into()) };
+    }
+    correction_source(&world, request)?;
+    let original = correction_undo(&world, actor, request)?;
+    let version = world.landing_versions.get(&request.thought_id).copied().unwrap_or(0);
+    let old_note = world.notes.get(&request.thought_id).cloned();
+    let restored_note = original.map(|r| r.note.clone().unwrap_or_default());
+    let message = format!("{} to {}", if original.is_some() { "Restored" } else { "Moved" }, world.thread(&request.to).unwrap().title);
+    let receipt = CorrectionReceipt { actor: actor.into(), request: request.clone(), version: version + 1, note: old_note.clone(), message: message.clone() };
+    let mut changes = vec![Change::ThoughtMoved { thought_id: request.thought_id.clone(), from: request.from.clone(), thread_id: request.to.clone(), undo: original.is_some() }];
+    let note = restored_note.unwrap_or_else(|| Note { continues: old_note.map(|n| n.continues).unwrap_or_default(), ..Note::default() });
+    changes.push(Change::ThoughtNoted { thought_id: request.thought_id.clone(), note });
+    changes.extend(last_points(&world, &[request.thought_id.clone()], &request.from, &request.to, false, now_ms()));
+    changes.push(Change::LandingCorrected { receipt });
+    let valid = |current: &World| std::ptr::eq(current, world.as_ref())
+        && !current.correction_receipts.contains_key(&key)
+        && current.landing_versions.get(&request.thought_id).copied().unwrap_or(0) == version
+        && correction_source(current, request).is_ok() && correction_undo(current, actor, request).is_ok()
+        && current.notes.get(&request.thought_id) == world.notes.get(&request.thought_id);
+    match core.try_commit_if(valid, changes) {
+        Ok(true) => Ok(message),
+        Ok(false) => {
+            // Another connection may have won with the exact same request.
+            let current = core.snapshot();
+            match current.correction_receipts.get(&key).filter(|r| r.request == *request) {
+                Some(receipt) => Ok(receipt.message.clone()),
+                None => Err("The landing changed. Review it before correcting.".into()),
+            }
+        }
+        Err(_) => Err("Save unconfirmed. Retry the same request to check it.".into()),
+    }
+}
+
 /// What a turn asks, from its words alone.
 #[derive(Debug, PartialEq)]
 enum Ask {
@@ -731,3 +825,7 @@ pub(crate) fn unrename(core: &Core, r: &Retitle) {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+#[path = "moves/correction/tests.rs"]
+mod correction_tests;

@@ -233,6 +233,20 @@ function sourceProblems(dir, file, text) {
     if (PACKAGES.includes(spec)) continue;
     // The built-in conversation view shares the pin control and the existing filler cleaner.
     if (dir === join(bricksDir, "spine") && ["../../StayHere", "../live-outline/outline"].includes(spec)) continue;
+    // Optional example wrappers compose only their designated, bundled feature part.
+    const exampleParts = {
+      clarification: "msg1351/clarification", "demo-variants": "msg1351/demo-variants",
+      "dictation-breakdown": "msg1351/dictation-breakdown", "part-dimensions": "msg1351/part-dimensions",
+      "sketch-exchange": "msg1351/sketch-exchange", "workflow-inspector": "msg1351/workflow-inspector",
+      "demo-parts": "intake1411/demo-parts", "live-area": "intake1411/live-area",
+      "pen-devices": "intake1411/pen-devices", "reload-session": "intake1411/reload-session",
+      "sketch-labels": "intake1411/sketch-labels", "worktree-map": "intake1411/worktree-map",
+      "dependency-sequences": "intake1417/dependency-sequences", "machine-demo": "intake1417/machine-demo",
+      "native-receipts": "intake1417/native-receipts", "populated-variants": "intake1417/populated-variants",
+      "research-walkthrough": "msg1351/research-walkthrough",
+    };
+    const part = exampleParts[dir.split("/").at(-1)];
+    if (part && (spec === "../../" + part || spec.startsWith("../../" + part + "/")) && !spec.split("/").slice(2).includes("..")) continue;
     // Relative: inside the brick's own folder, or the contract beside it.
     const to = spec.startsWith(".") ? resolve(dir, dirname(file), spec) : "";
     if (to && (to.startsWith(`${dir}/`) || to === join(bricksDir, "contract") || to === join(bricksDir, "contract.ts"))) continue;
@@ -1469,7 +1483,7 @@ try {
       };
       const atWords = await level();
       const control = await evaluate(`({ stops: [...document.querySelectorAll(".spine-stop")].map((b) => b.textContent).join(), all: document.querySelector(".spine-camera-row .spine-pill")?.textContent })`);
-      if (control.stops !== "Read1,Topics2,Overview3" || control.all !== "Fit map0") fail("spine (zoom stops)", `the control reads ${JSON.stringify(control)}, not Read 1 · Topics 2 · Overview 3 and Fit map 0`);
+      if (control.stops !== "Words1,Titles2,Pictures3" || control.all !== "See all0") fail("spine (zoom stops)", `the control reads ${JSON.stringify(control)}, not Words 1 · Titles 2 · Pictures 3 and See all 0`);
       judge("it opens at Words", atWords, [[atWords.lit === "Read", "the control doesn't show Words"], [atWords.words > 0 && !atWords.bars, "not every word shows"],
         [!atWords.labels && !atWords.pictures, "a far-out look is on at reading size"], [!atWords.inside, "the check's map fits the screen at reading size, so See all couldn't be told from Words"]]);
       const atTitles = await goTo("2", "Topics");

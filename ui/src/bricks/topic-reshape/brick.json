@@ -1,0 +1,8 @@
+{
+  "id": "topic-reshape",
+  "name": "Reshape topics",
+  "does": "Rehearse a split, merge or parent change in a local copy, with preview and exact Undo.",
+  "kind": "view",
+  "defaultOn": false,
+  "demoSafe": true
+}

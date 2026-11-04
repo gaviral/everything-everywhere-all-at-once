@@ -4,17 +4,21 @@
 //! anywhere joins through an HTTPS tunnel (tunnel.rs).
 
 mod annotate;
+mod clarify;
+mod draw;
 mod discussion;
 mod research;
 mod apple;
 mod apps;
 mod app_blocks;
 mod asr;
+mod glossary;
 mod call;
 mod conversation;
 mod catalog;
 mod chunks;
 mod code_canvas;
+mod system_view;
 mod clock;
 mod data_lock;
 mod storage;
@@ -84,6 +88,7 @@ pub struct Core {
     asr_test_url: Option<String>,
     alias_windows: Mutex<HashMap<(String, u64), Arc<std::sync::atomic::AtomicBool>>>,
     typed_receipts: Mutex<()>,
+    glossary: glossary::Runtime,
     find: find::Runtime,
     /// Each speaker's last turn, what "this" means to them, and the Undo button (catalog.rs).
     catalog: catalog::Runtime,
@@ -97,6 +102,7 @@ pub struct Core {
     /// Last save-failure notice, shared by all write paths without taking their locks.
     journal_save_notice_at: Mutex<Option<tokio::time::Instant>>,
     updates: broadcast::Sender<Outgoing>,
+    system_view: system_view::Runtime,
     placer_queue: mpsc::UnboundedSender<placer::Job>,
     /// Who said "new thread", and the thought that starts each one.
     new_threads: placer::NewThreads,
@@ -386,6 +392,7 @@ impl Core {
                 self.journal_save_failed(&error);
                 return Err(error);
             }
+            self.system_view.saved(changes.len());
             for change in &changes {
                 let state = Arc::make_mut(&mut world);
                 state.apply(change);
@@ -424,6 +431,8 @@ impl Core {
     pub fn record(&self, change: Change) {
         if let Err(e) = self.journal.lock().unwrap().append(&change) {
             self.journal_save_failed(&e);
+        } else {
+            self.system_view.saved(1);
         }
     }
 
@@ -449,11 +458,13 @@ impl Core {
     }
 
     pub fn send_speaking(&self, message: ServerMsg, speak: bool) {
+        self.system_view.observe(&message);
         let _ = self.updates.send(Outgoing { to: None, message, speak });
     }
 
     /// Only to one speaker's windows.
     pub fn send_to(&self, speaker: &str, message: ServerMsg) {
+        self.system_view.observe(&message);
         let _ = self.updates.send(Outgoing { to: Some(speaker.into()), message, speak: false });
     }
 
@@ -1510,6 +1521,7 @@ async fn main() -> anyhow::Result<()> {
         asr_test_url: None,
         alias_windows: Default::default(),
         typed_receipts: Default::default(),
+        glossary: Default::default(),
         find: find::Runtime::default(),
         catalog: catalog::Runtime::default(),
         recap: recap::Runtime::default(),
@@ -1521,6 +1533,7 @@ async fn main() -> anyhow::Result<()> {
         journal: Mutex::new(journal),
         journal_save_notice_at: Mutex::new(None),
         updates,
+        system_view: Default::default(),
         placer_queue,
         new_threads: placer::NewThreads::default(),
         hosts: Default::default(),
@@ -1582,8 +1595,10 @@ async fn main() -> anyhow::Result<()> {
     let ui = std::env::var("E2A2O_UI").unwrap_or_else(|_| "../ui/dist".into());
     let app = Router::new()
         .route("/code-canvas/snapshot", get(code_canvas::read))
+        .route("/code-canvas/events", get(system_view::events))
         .route("/code-canvas/answer", post(code_canvas::answer))
         .route("/ws", get(connect))
+        .route("/ws/my-words", get(glossary::connect))
         .route("/room", get(room_info))
         .route("/build-id", get(dev_build::status))
         .route("/build-activity", post(dev_build::activity))
@@ -1592,6 +1607,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/workshop/catalog", get(workshop::catalog))
         .route("/workshop/run", post(workshop::run))
         .route("/workshop/hackathon", get(workshop::hackathon))
+        .route("/clarify", post(clarify::ask))
+        .route("/draw/read", post(draw::read))
+        .route("/draw/back", post(draw::back))
         .route("/flow/plan", post(flow::plan))
         .route("/flow/finish", post(flow::finish))
         .route("/flow/send", post(flow::send))
@@ -2172,6 +2190,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
     let mut shorter: Option<tokio::task::JoinHandle<()>> = None;
 
     let saved_answers = Arc::new(Mutex::new(explain::SavedSession::default()));
+    let mut corrections_on = false;
     let mut agreement_on = false;
     while let Some(message) = incoming.next().await {
         // A frame past `FRAME_MAX` (only a script sends one: the page checks first) ends the window here.
@@ -2182,6 +2201,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 break;
             }
         };
+        core.system_view.frame(&message);
         match message {
             Message::Text(text) => match serde_json::from_str::<ClientMsg>(text.as_str()) {
                 Ok(ClientMsg::CancelEvidence { request_id }) => {
@@ -2437,6 +2457,14 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 }
                 Ok(ClientMsg::Untidy { kind, thread_id }) => tidy::undo(&core, &speaker, kind, &thread_id),
                 Ok(ClientMsg::Restore { id }) => refiner::restore(&core, &id),
+                Ok(ClientMsg::Corrections { on }) => corrections_on = on && !ai,
+                Ok(ClientMsg::Correction { request }) => {
+                    let result = moves::correction(&core, &speaker, corrections_on && !ai, &request);
+                    core.send_to(&speaker, ServerMsg::CorrectionResult {
+                        request_id: request.request_id, thought_id: request.thought_id,
+                        ok: result.is_ok(), message: result.unwrap_or_else(|message| message),
+                    });
+                }
                 Ok(ClientMsg::Move { thought_id, thread_id }) => moves::click_move(&core, &speaker, &thought_id, thread_id),
                 Ok(ClientMsg::Rename { thread_id, title }) => moves::click_rename(&core, &speaker, &thread_id, &title),
                 Ok(ClientMsg::Delete { thought_id }) => moves::click_delete(&core, &speaker, &thought_id),
@@ -2603,9 +2631,10 @@ async fn write(out: &mut SplitSink<WebSocket, Message>, message: &impl serde::Se
 fn start_listening(core: &Arc<Core>, speaker: &str, listens: &Arc<std::sync::atomic::AtomicU64>, window: u64) -> mpsc::Sender<Vec<u8>> {
     let (tx, rx) = mpsc::channel(256);
     let n = listens.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+    let keywords = core.glossary.keywords(speaker);
     let (core, speaker, listens) = (core.clone(), speaker.to_string(), listens.clone());
     tokio::spawn(async move {
-        let ended = asr::run(core.clone(), speaker.clone(), rx, window).await;
+        let ended = asr::run(core.clone(), speaker.clone(), rx, window, keywords).await;
         if let Err(e) = &ended {
             tracing::warn!("listening stopped: {e:#}");
         }
@@ -2631,6 +2660,7 @@ impl Core {
         Core {
             asr_test_url: None,
             typed_receipts: Default::default(),
+            glossary: Default::default(),
             alias_windows: Default::default(),
             find: Default::default(),
             catalog: Default::default(),
@@ -2643,6 +2673,7 @@ impl Core {
             journal: Mutex::new(journal),
             journal_save_notice_at: Mutex::new(None),
             updates: broadcast::channel(1024).0,
+            system_view: Default::default(),
             placer_queue: mpsc::unbounded_channel().0,
             new_threads: Default::default(),
             hosts: Default::default(),

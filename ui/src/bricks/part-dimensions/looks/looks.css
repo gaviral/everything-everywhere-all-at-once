@@ -1,0 +1,47 @@
+.pd-look-picker { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+.pd-look-picker span { font-size: 13px; text-transform: uppercase; letter-spacing: .12em; opacity: .7; margin-right: 5px; }
+.part-dimensions-example .pd-look-picker button { min-height: 36px; padding: 5px 12px; border: 1px solid #66716f; border-radius: 99px; background: transparent; color: inherit; font-size: 14px; cursor: pointer; }
+.part-dimensions-example .pd-look-picker button[aria-pressed="true"] { background: #f4f5ef; color: #172b29; border-color: #f4f5ef; }
+.part-dimensions-example[data-look]:not([data-look="original"]) .part-dimensions { --accent: #dbfa81; --panel: #253d3b; --surface: #152c2b; --text: #f3f8e8; --muted: #b1c8bc; background: var(--surface); color: var(--text); border: 0; border-radius: 28px; padding: 30px 40px; overflow: hidden; }
+.part-dimensions-example[data-look]:not([data-look="original"]) .part-dimensions h2 { font-size: clamp(32px, 3vw, 52px); letter-spacing: -.045em; margin-bottom: 4px; }
+.part-dimensions-example[data-look]:not([data-look="original"]) .pd-eyebrow { color: var(--accent); font-weight: 700; letter-spacing: .18em; }
+.part-dimensions-example[data-look]:not([data-look="original"]) .pd-version,
+.part-dimensions-example[data-look]:not([data-look="original"]) .pd-hint { color: var(--muted); }
+.part-dimensions-example[data-look]:not([data-look="original"]) .part-dimensions button { background: var(--panel); border-color: transparent; color: var(--text); transition: transform .2s ease, background .2s ease, box-shadow .2s ease; }
+.part-dimensions-example[data-look]:not([data-look="original"]) .part-dimensions button:hover { transform: translateY(-3px); }
+.part-dimensions-example[data-look]:not([data-look="original"]) .pd-sequence { position: relative; gap: 28px; padding: 18px 0; margin: 14px 0; border-block: 1px solid var(--muted); overflow: visible; }
+.part-dimensions-example[data-look]:not([data-look="original"]) .pd-sequence li { min-width: 0; }
+.part-dimensions-example[data-look]:not([data-look="original"]) .pd-sequence button { border-radius: 18px; padding: 16px 22px; }
+.part-dimensions-example[data-look]:not([data-look="original"]) .pd-sequence small { color: var(--accent); text-transform: uppercase; letter-spacing: .12em; font-size: 12px; }
+.part-dimensions-example[data-look]:not([data-look="original"]) .pd-sequence strong { font-size: 23px; }
+.part-dimensions-example[data-look]:not([data-look="original"]) .pd-guides li + li::before { color: var(--accent); left: -22px; top: 30px; }
+.part-dimensions-example[data-look]:not([data-look="original"]) .part-dimensions button[aria-current="step"] { background: var(--accent); color: var(--surface); }
+.part-dimensions-example[data-look]:not([data-look="original"]) .part-dimensions button[aria-current="step"] small { color: inherit; }
+.part-dimensions-example[data-look]:not([data-look="original"]) .pd-step { border: 0; padding: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 16px; }
+.part-dimensions-example[data-look]:not([data-look="original"]) .pd-step h3 { font-size: 25px; }
+.part-dimensions-example[data-look]:not([data-look="original"]) .pd-step p { color: var(--muted); margin: 0; }
+.part-dimensions-example[data-look]:not([data-look="original"]) .pd-dimensions { margin: 12px 0 6px; }
+.part-dimensions-example[data-look]:not([data-look="original"]) .pd-dimensions button { border-radius: 99px; min-height: 38px; padding: 6px 16px; }
+.part-dimensions-example[data-look]:not([data-look="original"]) .pd-dimensions button[aria-pressed="true"] { background: var(--accent); color: var(--surface); }
+.part-dimensions-example[data-look]:not([data-look="original"]) .pd-hint { margin: 6px 0 12px; }
+.part-dimensions-example[data-look]:not([data-look="original"]) .pd-tree { background: transparent; border: 0; border-radius: 0; padding: 10px 12px 10px 0; }
+.part-dimensions-example[data-look]:not([data-look="original"]) .pd-tree h3 { color: var(--accent); font-size: 22px; }
+.part-dimensions-example[data-look]:not([data-look="original"]) .pd-part { border-radius: 16px; }
+.part-dimensions-example[data-look]:not([data-look="original"]) .pd-part[aria-pressed="true"] { box-shadow: inset 0 0 0 3px var(--accent); }
+.part-dimensions-example[data-look]:not([data-look="original"]) .pd-identity > span,
+.part-dimensions-example[data-look]:not([data-look="original"]) .pd-identity small { color: var(--muted); }
+.part-dimensions-example[data-look="orbit"][data-look] .part-dimensions { background: radial-gradient(ellipse at 85% 0%, #355e51, transparent 45%), #152c2b; }
+.part-dimensions-example[data-look="orbit"][data-look] .pd-tree:nth-child(2) { padding-top: 24px; }
+.part-dimensions-example[data-look="orbit"][data-look] .pd-tree:nth-child(3) { padding-top: 38px; }
+.part-dimensions-example[data-look="orbit"][data-look] .pd-sequence button { border-radius: 999px 30px 999px 30px; }
+.part-dimensions-example[data-look="paper"][data-look] .part-dimensions { --accent: #c94a2d; --panel: #fffaf0; --surface: #f0e6d4; --text: #362a27; --muted: #705d53; background: radial-gradient(circle at 90% 5%, #f6c7a4 0, transparent 25%), var(--surface); }
+.part-dimensions-example[data-look="paper"][data-look] .part-dimensions button[aria-current="step"],
+.part-dimensions-example[data-look="paper"][data-look] .pd-dimensions button[aria-pressed="true"] { color: #fffaf0; }
+.part-dimensions-example[data-look="paper"][data-look] .pd-sequence button { border-radius: 3px 30px 3px 30px; box-shadow: 0 8px 20px #705d5318; }
+.part-dimensions-example[data-look="paper"][data-look] .pd-tree { border-left: 3px solid #c94a2d; padding-left: 16px; }
+.part-dimensions-example[data-look="signal"][data-look] .part-dimensions { --accent: #aabaff; --panel: #25274d; --surface: #10132e; --text: #f5f3ff; --muted: #bec4e4; background: radial-gradient(ellipse at 75% -10%, #4a3980, transparent 50%), var(--surface); }
+.part-dimensions-example[data-look="signal"][data-look] .pd-sequence button { border-radius: 8px; border-bottom: 4px solid #797fea; }
+.part-dimensions-example[data-look="signal"][data-look] .pd-tree { background: #ffffff0b; border-radius: 22px 4px 22px 4px; padding: 16px; }
+.part-dimensions-example[data-look="signal"][data-look] .pd-tree:nth-child(2) { background: #aabaff20; }
+@media (max-width: 700px) { .part-dimensions-example[data-look]:not([data-look="original"]) .part-dimensions { padding: 20px; } .part-dimensions-example[data-look]:not([data-look="original"]) .pd-sequence { overflow-x: auto; } .part-dimensions-example[data-look]:not([data-look="original"]) .pd-tree { padding: 12px; } }
+@media (prefers-reduced-motion: reduce) { .part-dimensions-example .part-dimensions button { transition: none !important; } }

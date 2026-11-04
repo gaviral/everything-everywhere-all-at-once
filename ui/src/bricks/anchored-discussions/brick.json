@@ -1,0 +1,8 @@
+{
+  "id": "anchored-discussions",
+  "name": "Discussions",
+  "does": "Close an exchange, keep its replies beside the source words, and reopen it anytime.",
+  "kind": "view",
+  "defaultOn": false,
+  "demoSafe": true
+}

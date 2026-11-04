@@ -1,0 +1,8 @@
+{
+  "id": "reload-session",
+  "name": "Reload recovery",
+  "does": "Keep an example draft and place through simulated rebuilds.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": true
+}

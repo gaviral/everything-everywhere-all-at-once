@@ -61,7 +61,10 @@ pub async fn read(ConnectInfo(link): ConnectInfo<crate::Link>) -> Response {
         return status.into_response();
     }
     let result = tokio::task::spawn_blocking(|| {
-        snapshot(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".."))
+        // A build from an exported tree names its repository; a checkout is its own.
+        let root = std::env::var_os("E2A2O_CODE_ROOT").map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".."));
+        snapshot(&root)
     })
     .await;
     let mut response = match result {
@@ -79,7 +82,7 @@ pub async fn read(ConnectInfo(link): ConnectInfo<crate::Link>) -> Response {
     response
 }
 
-fn admission(
+pub(super) fn admission(
     enabled: bool,
     from: std::net::IpAddr,
     to: std::net::IpAddr,

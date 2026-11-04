@@ -1,7 +1,7 @@
 {
   "id": "question-research",
   "name": "Research this question",
-  "does": "Research a selected question with cited evidence, then choose whether to keep the answer.",
+  "does": "Attach a cited answer to a question and reopen the evidence beside its original words.",
   "kind": "card",
   "defaultOn": false,
   "demoSafe": false

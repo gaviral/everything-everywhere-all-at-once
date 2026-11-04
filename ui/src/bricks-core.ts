@@ -7,7 +7,7 @@ import type { BrickEvents, BrickInfo, BrickKind, BrickOn, BrickProps, Job, MapSn
 import type { Capture, Note, Thought, UsageSnapshot, World } from "./core";
 import { anchoredThreads } from "./annotate-core";
 import { asIdeas } from "./chunks";
-import { landedNow } from "./landed";
+import { landedNow, landingReplay } from "./landed";
 import { THOUGHT_MAX } from "./limits";
 import { topicsOf } from "./topics-core";
 import { talkOn, watchTalk } from "./talk-preset";
@@ -320,8 +320,7 @@ export function senders(FOR_MS = 60_000) {
 /** Listeners by event name, for `on`; `emit` calls each, and says how many heard it. */
 export function brickEvents() {
   const listeners = new Map<keyof BrickEvents, Set<(value: never) => void>>();
-  let last: { value: BrickEvents["landed"]; at: number } | null = null;
-  const consumed = new Map<string, string>();
+  const landings = landingReplay<BrickEvents["landed"]>();
   const consumers = new Map<unknown, string>();
   const on: BrickOn = (name, listener, consumer) => {
     const set = listeners.get(name) ?? new Set();
@@ -329,31 +328,21 @@ export function brickEvents() {
     set.add(listener as (value: never) => void);
     if (consumer && name === "landed") {
       consumers.set(listener, consumer);
-      const cached = last;
-      if (cached && Date.now() - cached.at <= 5000 && consumed.get(consumer) !== cached.value.thoughtId) {
-        queueMicrotask(() => {
-          if (set.has(listener as (value: never) => void) && consumed.get(consumer) !== cached.value.thoughtId) {
-            consumed.set(consumer, cached.value.thoughtId);
-            (listener as (value: BrickEvents["landed"]) => void)(cached.value);
-          }
-        });
-      }
+      landings.replay(consumer, () => set.has(listener as (value: never) => void), listener as (value: BrickEvents["landed"]) => void);
     }
     return () => { set.delete(listener as (value: never) => void); consumers.delete(listener); };
   };
   const emit = <K extends keyof BrickEvents>(name: K, value: BrickEvents[K]): number => {
     const heard = [...(listeners.get(name) ?? [])];
-    if (name === "landed") last = { value: value as BrickEvents["landed"], at: Date.now() };
+    if (name === "landed") landings.remember(value as BrickEvents["landed"]);
     for (const listener of heard) {
       const consumer = consumers.get(listener);
       if (name === "landed" && consumer) {
-        const id = (value as BrickEvents["landed"]).thoughtId;
-        if (consumed.get(consumer) === id) continue;
-        consumed.set(consumer, id);
+        if (!landings.claim(value as BrickEvents["landed"], consumer)) continue;
       }
       (listener as (value: BrickEvents[K]) => void)(value);
     }
     return heard.length;
   };
-  return { on, emit, clearReplay: () => { last = null; } };
+  return { on, emit, clearReplay: landings.clear };
 }

@@ -1,0 +1,72 @@
+/* The sheet: dark paper over the page, warm ink, yellow for the person's words, teal for the AI's. */
+.draw-sheet {
+  --draw-paper: rgba(20, 16, 12, 0.94);
+  --draw-person: #ffd84d;
+  --draw-ai: #7fe3d4;
+  --draw-hand: "Bradley Hand", "Noteworthy", "Segoe Print", "Comic Sans MS", cursive;
+  position: fixed; inset: 0; z-index: 900; background: var(--draw-paper); overflow: hidden;
+}
+.draw-page { position: absolute; inset: 0; transform-origin: 0 40%; transition: transform 620ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+/* When the AI draws back, the person's page slides aside: two drawings, side by side. */
+.draw-page-shared { transform: scale(0.54); }
+/* Drawing over the app itself: the page shows through, to mark up what's on screen. */
+.draw-see-through { --draw-paper: rgba(20, 16, 12, 0.28); }
+.draw-ink { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
+.draw-ink[data-tool="lasso"] { cursor: cell; }
+.draw-notes { position: absolute; inset: 0; pointer-events: none; }
+.draw-lines { position: absolute; inset: 0; width: 100%; height: 100%; }
+.draw-lines path { fill: none; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
+.draw-leader { stroke: var(--draw-person); stroke-width: 1.5px; opacity: 0.8; }
+.draw-picked { stroke: var(--draw-person); stroke-width: 2px; stroke-dasharray: 3 8; }
+.draw-part { stroke: var(--draw-ai); stroke-width: 2.5px; opacity: 0.85; animation: draw-appear 420ms ease-out both; }
+.draw-link { stroke: var(--draw-ai); stroke-width: 2.5px; animation: draw-appear 420ms 160ms ease-out both; }
+.draw-ask { stroke: var(--draw-person); stroke-width: 1.5px; animation: draw-appear 420ms 300ms ease-out both; }
+.draw-name, .draw-part-name, .draw-question { position: absolute; font-family: var(--draw-hand); line-height: 1.15; }
+.draw-name {
+  pointer-events: auto; background: none; border: 0; padding: 0; cursor: pointer;
+  color: var(--draw-person); font-size: clamp(24px, 2.7vw, 56px); font-weight: 700; text-shadow: 0 2px 10px rgba(0, 0, 0, 0.7);
+}
+.draw-part-name { color: var(--draw-ai); font-size: clamp(20px, 2.1vw, 44px); font-weight: 700; animation: draw-appear 420ms ease-out both; }
+.draw-question {
+  pointer-events: auto; max-width: 32%; text-align: left; cursor: pointer; background: none; border: 0; padding: 0;
+  color: #fff4d0; font-size: clamp(22px, 2.3vw, 46px); font-weight: 700; animation: draw-appear 420ms 300ms ease-out both;
+}
+.draw-question span { text-decoration: underline dotted var(--draw-person) 3px; text-underline-offset: 8px; }
+.draw-said {
+  position: absolute; left: 3%; bottom: 3%; max-width: 62%; margin: 0;
+  color: #fff; font-size: clamp(24px, 2.6vw, 54px); line-height: 1.2; font-weight: 600; text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
+  animation: draw-appear 420ms ease-out both;
+}
+.draw-said small, .draw-reply figcaption { display: block; margin-top: 6px; color: var(--draw-ai); font-size: clamp(14px, 1.2vw, 26px); font-weight: 500; }
+.draw-reply {
+  position: absolute; right: 2%; top: 17%; width: 43%; margin: 0;
+  animation: draw-appear 520ms ease-out both;
+}
+.draw-reply img { display: block; width: 100%; border-radius: 10px 16px 12px 18px; box-shadow: 0 10px 44px rgba(0, 0, 0, 0.6); }
+.draw-reply-waiting span {
+  display: grid; place-items: center; aspect-ratio: 16 / 9; color: var(--draw-ai);
+  font-family: var(--draw-hand); font-size: clamp(24px, 2.6vw, 54px); border: 3px dashed var(--draw-ai); border-radius: 18px 30px 22px 34px;
+  animation: draw-breathe 1.4s ease-in-out infinite;
+}
+.draw-tools {
+  position: absolute; top: 14px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; border-radius: 22px 30px 24px 28px; background: rgba(0, 0, 0, 0.55); max-width: calc(100vw - 32px); flex-wrap: wrap; justify-content: center;
+}
+.draw-tools button, .draw-tools input {
+  min-height: 44px; padding: 0 16px; border-radius: 16px 20px 15px 21px; border: 1.5px solid rgba(255, 255, 255, 0.28);
+  background: transparent; color: #fff; font: 600 clamp(15px, 1.15vw, 24px) system-ui, sans-serif;
+}
+.draw-tools input { width: clamp(150px, 15vw, 320px); }
+.draw-tools input::placeholder { color: rgba(255, 255, 255, 0.6); }
+.draw-tools button[aria-pressed="true"] { background: var(--draw-person); border-color: var(--draw-person); color: #241a00; }
+.draw-tools .draw-ask-spark { border-color: var(--draw-ai); color: var(--draw-ai); }
+.draw-tools button:disabled { opacity: 0.42; }
+.draw-open {
+  position: fixed; right: 18px; bottom: 112px; z-index: 40; min-height: 44px; padding: 0 18px; border-radius: 16px 22px 15px 21px;
+  border: 1.5px solid rgba(255, 216, 77, 0.9); background: rgba(20, 16, 12, 0.85); color: #ffd84d;
+  font: 700 18px "Bradley Hand", "Noteworthy", cursive; cursor: pointer;
+}
+.draw-looking { color: var(--draw-ai); font-family: var(--draw-hand); animation: draw-breathe 1.4s ease-in-out infinite; }
+@keyframes draw-appear { from { opacity: 0; } }
+@keyframes draw-breathe { 50% { opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) { .draw-part, .draw-link, .draw-ask, .draw-part-name, .draw-question, .draw-said, .draw-reply, .draw-reply-waiting span, .draw-looking { animation: none; } .draw-page { transition: none; } }

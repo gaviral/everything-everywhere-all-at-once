@@ -17,6 +17,7 @@ import { Icon, Keycap, mod, modAria, Stamp, type Mode } from "./parts";
 import { SampleTools, type SampleToolsProps } from "./SampleTools";
 import { LearnedAction } from "./LearnedAction";
 import { useBuiltInsOn } from "./features";
+import { FullScreen } from "./FullScreen";
 
 export { ToolSlot } from "../bricks/contract";
 
@@ -59,6 +60,7 @@ export function Find({ inputRef, query, setQuery, results, go, inspect, inspecti
     onFocusCapture={() => setFocused(true)} onBlurCapture={() => window.setTimeout(() => setFocused(!!inputRef.current?.closest(".shell-find")?.contains(document.activeElement)), 120)}>
     <label className="shell-pill shell-find-field" data-tip={!focused && !query ? NAMES.tips.find : undefined}>
       <Icon name="find" />
+      {!focused && !query && <span className="shell-find-word" aria-hidden="true">{NAMES.find}</span>}
       <span className="sr-only">{NAMES.findLabel}</span>
       <input ref={inputRef} type="search" value={query} placeholder={focused ? NAMES.findPlaceholder : NAMES.find} aria-keyshortcuts="/"
         onChange={(event) => setQuery(event.target.value)} onKeyDown={key} onFocus={() => setFocused(true)}
@@ -82,7 +84,7 @@ export function Find({ inputRef, query, setQuery, results, go, inspect, inspecti
 }
 
 export function TopRight({ children }: { children: ReactNode }) {
-  return <div className="shell-corner shell-tr" data-slot="top-right">{children}</div>;
+  return <div className="shell-corner shell-tr" data-slot="top-right">{children}<FullScreen /></div>;
 }
 
 /** A corner's button keeps its name and shortcut; Features can earn a compact presentation. */
@@ -131,7 +133,7 @@ const clock = (ms: number) => {
 
 /** The mic's state in the line's words, and its dot. Each state is named here once, and nowhere else on screen. */
 export function micWords(s: StatusState): { dot: "on" | "off" | "wait" | "warn"; text: string } {
-  if (s.typingOnly && s.mic !== "listening" && s.mic !== "hearing" && s.mic !== "reply-paused" && s.mic !== "capturing") return { dot: "off", text: "Typing only" };
+  if (s.typingOnly && s.mic !== "listening" && s.mic !== "hearing" && s.mic !== "reply-paused" && s.mic !== "capturing") return { dot: "off", text: "Mic off" };
   switch (s.mic) {
     case "capturing": return { dot: "on", text: "Mic open · connecting speech…" };
     case "reply-paused": return { dot: "on", text: s.comparison ? "Mic paused · Speaking · microphone open" : "Mic open · capture paused during reply" };
