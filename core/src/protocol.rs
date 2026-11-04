@@ -37,6 +37,7 @@ pub const POSITION_MAX: f64 = 1_000_000.0;
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMsg {
     MapIdentity { id: String },
+    Heartbeat { id: String },
     RecoverableSpeech { id: String, text: String },
     /// A bounded spoken command answer; live only, with no journal or snapshot replay.
     CommandReply { text: String },
@@ -208,6 +209,7 @@ pub struct Outgoing {
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMsg {
+    Heartbeat { id: String },
     RecoverSpeech { id: String, keep: bool },
     Partner { on: bool },
     PartnerCancel,

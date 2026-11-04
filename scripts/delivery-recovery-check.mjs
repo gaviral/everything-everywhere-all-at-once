@@ -35,6 +35,7 @@ globalThis.WebSocket = class {
     this.sent.push(data);
     const m = JSON.parse(data);
     if (m.type === "identify" && this.map) queueMicrotask(() => this.tell({ type: "map_identity", id: this.map }));
+    if (m.type === "heartbeat" && !this.silent) queueMicrotask(() => this.tell(m));
     if (m.type === "text") {
       const key = `${this.map}:${m.id}`;
       if (!accepted.has(key)) accepted.set(key, m.text);
@@ -48,8 +49,8 @@ const ui = new URL("../ui/", import.meta.url);
 const React = (await import(new URL("node_modules/react/index.js", ui))).default;
 const { createRoot } = (await import(new URL("node_modules/react-dom/client.js", ui))).default;
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-const until = async (done, what) => {
-  for (let i = 0; i < 500 && !done(); i++) await sleep(10);
+const until = async (done, what, limit = 5000) => {
+  for (let i = 0; i < limit / 10 && !done(); i++) await sleep(10);
   assert.ok(done(), what);
 };
 const server = await uiServer();
@@ -94,6 +95,19 @@ try {
   assert.deepEqual(JSON.parse(first.sent.at(-1)), { type: "recover_speech", id: "speech-recovery", keep: true });
   first.tell({ type: "recoverable_speech", id: "speech-recovery", text: "" });
   await until(() => !core.recovery.entries.some(entry => entry.id === "speech-recovery"), "late final retires the draft");
+  activeMap = "A";
+  acknowledge = false;
+  assert.equal(core.sendText("Retain this across a silent socket"), true);
+  const retained = JSON.parse(first.sent.findLast(data => JSON.parse(data).type === "text"));
+  const stalledAt = Date.now();
+  first.silent = true;
+  acknowledge = true;
+  await until(() => sockets.some(socket => socket !== first && socket.map === "A" && socket.sent.some(data => JSON.parse(data).id === retained.id)),
+    "silent open socket reconnects and replays the same ID", 18000);
+  assert.ok(Date.now() - stalledAt <= 17000, "15 s deadline plus reconnect backoff and scheduling allowance");
+  await until(() => core.queuedCount === 0, "receipt after silent-socket recovery");
+  assert.equal([...accepted.values()].filter(text => text === retained.text).length, 1, "silent reconnect accepts once");
+  console.log(`silent socket recovered in ${Date.now() - stalledAt} ms (15 s deadline, 1 s initial backoff)`);
   console.log("delivery-recovery-check: identity isolation, restart, two tabs and explicit legacy recovery pass");
 } finally {
   for (const root of roots) root.unmount();

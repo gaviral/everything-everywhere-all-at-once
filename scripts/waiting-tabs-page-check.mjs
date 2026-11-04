@@ -8,6 +8,7 @@ const landed = new Map();
 const core = await standInCore(() => online ? [{ type: 'map_identity', id: 'waiting-tabs-map' }, { type: 'snapshot', world }] : null, {
   door: { room: true, member: true },
   onMessage(message) {
+    if (message.type === 'heartbeat') { core.send(message); return; }
     if (message.type !== 'text') return;
     assert.match(message.id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     if (!landed.has(message.id)) landed.set(message.id, message.text);

@@ -28,6 +28,10 @@ import { applyPosition, keepPlaced, placeSender, type Position, type PositionCha
 import { annotateMessage, applyAnchored, type Anchor, type AnchoredChange } from "./annotate-core";
 import { applyTopic, isTopicChange, sendTopicsWith, type TopicChange } from "./topics-core";
 
+// Application liveness: matching replies every 5 s; 15 s silent plus the initial 1 s reconnect backoff.
+export const DELIVERY_HEARTBEAT_MS = 5_000;
+export const DELIVERY_DEADLINE_MS = 15_000;
+
 // Mirrors core/src/world.rs and core/src/protocol.rs.
 export type ThreadStatus = "open" | "dropped";
 
@@ -240,6 +244,7 @@ type Change =
 
 type ServerMsg =
   | { type: "map_identity"; id: string }
+  | { type: "heartbeat"; id: string }
   | { type: "recoverable_speech"; id: string; text: string }
   | { type: "command_reply"; text: string; speak?: boolean }
   | { type: "partner_state"; state: string; message: string }
@@ -806,6 +811,7 @@ export function useCore(speaker?: string) {
     let closed = false;
     let retry = 500;
     let timer: number | undefined;
+    let heartbeat: number | undefined;
     let currentWorld = EMPTY;
     let changeId = 0;
     let lastPartial = "";
@@ -823,6 +829,9 @@ export function useCore(speaker?: string) {
       const ws = openSocket(`${scheme}://${location.host}/ws`, waiting === null ? { identity: "1" } : { identity: "1", stop: String(waiting) });
       ws.binaryType = "arraybuffer";
       socket.current = ws;
+      let ended = false;
+      const heartbeatId = thoughtId();
+      let lastReply = Date.now();
       ws.onopen = () => {
         noticeQueue.reset("note");
         resetApps();
@@ -836,6 +845,18 @@ export function useCore(speaker?: string) {
         stopWaiting.current = null;
         if (late !== null && late !== waiting) ws.send(JSON.stringify({ type: "stop_send", id: late }));
         identityReady.current = false;
+        lastReply = Date.now();
+        heartbeat = window.setInterval(() => {
+          if (socket.current !== ws || ended) return;
+          if (Date.now() - lastReply >= DELIVERY_DEADLINE_MS) {
+            ws.close();
+            // A half-open connection may never finish its close handshake.
+            ws.onclose?.call(ws, {} as CloseEvent);
+            return;
+          }
+          try { ws.send(JSON.stringify({ type: "heartbeat", id: heartbeatId })); }
+          catch { ws.onclose?.call(ws, {} as CloseEvent); }
+        }, DELIVERY_HEARTBEAT_MS);
         attention.current.resend((message) => ws.send(message));
         coreBack();
       };
@@ -854,6 +875,9 @@ export function useCore(speaker?: string) {
         if (receiveGuide(msg)) return;
         if (receiveJob(msg)) return;
         switch (msg.type) {
+          case "heartbeat":
+            if (msg.id === heartbeatId) lastReply = Date.now();
+            break;
           case "map_identity": {
             if (!msg.id) break;
             if (mapId.current !== msg.id) setRecovery(state => ({ ...state, entries: state.entries.filter(entry => entry.kind !== "speech") }));
@@ -1036,6 +1060,9 @@ export function useCore(speaker?: string) {
         }
       };
       ws.onclose = () => {
+        if (ended) return;
+        ended = true;
+        window.clearInterval(heartbeat);
         identityReady.current = false;
         setUsage(null);
         window.clearTimeout(handoffTimer);
@@ -1078,6 +1105,7 @@ export function useCore(speaker?: string) {
       window.removeEventListener("storage", storageChanged);
       closed = true;
       window.clearTimeout(timer);
+      window.clearInterval(heartbeat);
       window.clearTimeout(handoffTimer);
       socket.current?.close();
     };

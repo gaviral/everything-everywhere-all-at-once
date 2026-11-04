@@ -1770,6 +1770,9 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
         };
         match message {
             Message::Text(text) => match serde_json::from_str::<ClientMsg>(text.as_str()) {
+                Ok(ClientMsg::Heartbeat { id }) => {
+                    if id.len() <= 128 { core.send_to(&speaker, ServerMsg::Heartbeat { id }); }
+                }
                 Ok(ClientMsg::RecoverSpeech { id, keep }) => core.recover_speech(&speaker, &id, keep),
                 Ok(ClientMsg::Partner { on }) if !ai && !remote => {
                     if on && partner.is_none() { partner = Some(conversation::enable(&core, &speaker, window)); }
@@ -2204,6 +2207,24 @@ mod tests {
         core.receive_typed("you", &uuid::Uuid::new_v4().to_string(), "Keep my unsaved words", false, None);
         assert!(core.snapshot().thoughts.is_empty());
         assert!(std::iter::from_fn(|| updates.try_recv().ok()).all(|out| !matches!(out.message, ServerMsg::TextReceived { .. })));
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[tokio::test]
+    async fn delivery_heartbeat_replies_without_changing_the_map() {
+        let (core, _queue, path) = keyless(World::default());
+        let routes = axum::Router::new().route("/ws", axum::routing::get(super::connect)).with_state(core.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, routes.into_make_service_with_connect_info::<Link>()).await });
+        let (mut window, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws")).await.unwrap();
+        window.send(tokio_tungstenite::tungstenite::Message::Text(r#"{"type":"heartbeat","id":"this-connection"}"#.into())).await.unwrap();
+        loop {
+            let message = received(&mut window).await;
+            if message["type"] == "heartbeat" { assert_eq!(message["id"], "this-connection"); break; }
+        }
+        assert!(core.snapshot().thoughts.is_empty());
+        server.abort();
         std::fs::remove_file(path).unwrap();
     }
 
