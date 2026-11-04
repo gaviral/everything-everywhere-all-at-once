@@ -302,7 +302,10 @@ fn handle(core: &Arc<Core>, speaker: &str, primer: &mut Primer, text: &str, wind
     }
     match event["type"].as_str() {
         Some("speechStart") => crate::messages::speech_end(core, speaker, false),
-        Some("speechEnd") => crate::messages::speech_end(core, speaker, true),
+        Some("speechEnd") => {
+            crate::messages::speech_end(core, speaker, true);
+            crate::helpers::speech_end(core, speaker);
+        }
         Some("transcript") => {
             core.touch();
             let words = event["transcript"].as_str().unwrap_or_default().to_string();
@@ -316,7 +319,6 @@ fn handle(core: &Arc<Core>, speaker: &str, primer: &mut Primer, text: &str, wind
             }
             core.send_to(speaker, ServerMsg::Partial { text: words });
         }
-        Some("speechEnd") => crate::helpers::speech_end(core, speaker),
         Some("speechComplete") => {
             let raw = event["transcript"].as_str().unwrap_or_default();
             let words = sentence_case(raw.trim());
@@ -369,7 +371,7 @@ mod tests {
     mod speech;
 
     #[tokio::test(start_paused = true)]
-    async fn email_speech_end_to_card_and_draft_stop_use_the_same_send_path() {
+    async fn email_and_helpers_share_speech_end_timing_and_draft_stop() {
         use crate::messages::{self, Channel, Preset, SendState, Settings};
         let dir = std::env::temp_dir().join(format!("e2a2o-email-asr-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&dir).unwrap();
@@ -382,20 +384,32 @@ mod tests {
         });
         let _window = messages::window(&core, "you");
         let mut primer = Primer::default();
-        let event = |kind: &str, transcript: &str| serde_json::json!({"type": kind, "turnId": 1,
+        let event = |turn: u64, kind: &str, transcript: &str| serde_json::json!({"type": kind, "turnId": turn,
             "audioProcessedMs": PRIMER_MS + 2000, "transcript": transcript}).to_string();
-        handle(&core, "you", &mut primer, &event("speechStart", ""), None);
-        handle(&core, "you", &mut primer, &event("speechEnd", ""), None);
+        handle(&core, "you", &mut primer, &event(1, "speechStart", ""), None);
+        handle(&core, "you", &mut primer, &event(1, "speechEnd", ""), None);
         tokio::time::advance(std::time::Duration::from_millis(75)).await;
-        handle(&core, "you", &mut primer, &event("speechComplete", "email Mia that the cut is ready"), None);
+        handle(&core, "you", &mut primer, &event(1, "speechComplete", "email Mia that the cut is ready"), None);
         assert!(matches!(messages::card_for(&core, "you"), Some(ServerMsg::SendCard {
             channel: Channel::Email, state: SendState::Counting, subject, .. }) if subject == "the cut is ready"));
         let trace = std::fs::read_to_string(dir.join("trace.jsonl")).unwrap();
         let card = trace.lines().map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
             .find(|line| line["kind"] == "delivery" && line["event"] == "card").unwrap();
         assert_eq!(card["speech_end_to_event_ms"], 75);
-        handle(&core, "you", &mut primer, &event("transcript", "Stop"), None);
+        handle(&core, "you", &mut primer, &event(2, "transcript", "Stop"), None);
         assert!(matches!(messages::card_for(&core, "you"), Some(ServerMsg::SendCard { state: SendState::Stopped, .. })));
+
+        handle(&core, "you", &mut primer, &event(3, "speechStart", ""), None);
+        handle(&core, "you", &mut primer, &event(3, "speechEnd", ""), None);
+        tokio::time::advance(std::time::Duration::from_millis(125)).await;
+        handle(&core, "you", &mut primer, &event(3, "speechComplete", "put three helpers on the README"), None);
+        let trace = std::fs::read_to_string(dir.join("trace.jsonl")).unwrap();
+        let row = trace.lines().map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+            .find(|line| line["kind"] == "helpers_first_row").unwrap();
+        assert_eq!(row["speech_end_to_first_row_ms"], 125);
+        handle(&core, "you", &mut primer, &event(4, "transcript", "Stop"), None);
+        assert!(matches!(messages::card_for(&core, "you"), Some(ServerMsg::SendCard {
+            purpose: Some(purpose), state: SendState::Stopped, .. }) if purpose == "helpers"));
         std::fs::remove_dir_all(dir).unwrap();
     }
 
