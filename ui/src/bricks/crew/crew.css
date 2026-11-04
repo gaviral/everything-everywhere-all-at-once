@@ -34,6 +34,10 @@
 .crew-off .crew-leaf { fill: var(--crew-off); stroke: var(--crew-off); }
 .crew-leaf-mark { fill: var(--crew-paper); font-size: 18px; font-weight: 700; text-anchor: middle; }
 .crew-leaf-name { fill: var(--crew-person); font: 700 25px var(--crew-hand); text-anchor: middle; }
+.crew-fixing .crew-line { stroke: #ff7a66; }
+.crew-fixing .crew-message { fill: #ff7a66; }
+.crew-fixing .crew-leaf { fill: #ff7a66; stroke: #ff7a66; }
+.crew-leaf-state { fill: #ff7a66; font: 700 24px var(--crew-hand); text-anchor: middle; }
 .crew-leaf-time { fill: var(--crew-soft); font-size: 17px; text-anchor: middle; }
 .crew-node circle { fill: var(--crew-paper); stroke: var(--crew-faint); stroke-width: 5; transition: fill 300ms, stroke 300ms; }
 .crew-node-lit circle { fill: var(--crew-ink); stroke: var(--crew-ink); }
