@@ -1,0 +1,8 @@
+{
+  "id": "speech-review",
+  "name": "Word review",
+  "does": "Paste recognized words, correct them, then explicitly release the reviewed text to the map.",
+  "kind": "card",
+  "defaultOn": false,
+  "demoSafe": true
+}
