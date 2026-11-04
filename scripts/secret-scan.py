@@ -6,6 +6,7 @@ Includes deleted/binary blobs, commit messages, annotated tags and historical .e
 Templates (.env.example, .env.sample, .env.template) are allowed by name, but still scanned.
 This is a pattern guard, not a guarantee that arbitrary credentials can be recognized.
 """
+import ast
 import hashlib
 import os
 from pathlib import Path
@@ -50,9 +51,47 @@ def private_env(name):
     return (name == b".env" or name.startswith(b".env.")) and name not in TEMPLATES
 
 
+def generated_python_token_positions(text):
+    """Only parsed, imported runtime randomness; quoted values and call arguments stay guarded."""
+    try:
+        module = ast.parse(text)
+    except (SyntaxError, ValueError, RecursionError):
+        return set()
+    if not any(isinstance(node, ast.Import) and any(
+            item.name == "secrets" and item.asname in (None, "secrets") for item in node.names)
+            for node in module.body):
+        return set()
+    positions = set()
+    for node in ast.walk(module):
+        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Call):
+            continue
+        call = node.value
+        if (isinstance(call.func, ast.Attribute) and isinstance(call.func.value, ast.Name)
+                and call.func.value.id == "secrets" and call.func.attr == "token_urlsafe"
+                and len(call.args) == 1 and not call.keywords
+                and isinstance(call.args[0], ast.Constant) and type(call.args[0].value) is int
+                and 0 < call.args[0].value <= 1024):
+            positions.update((target.lineno, target.col_offset)
+                             for target in node.targets if isinstance(target, ast.Name))
+    return positions
+
+
+def js_state_expression(match, text):
+    value = match.group(3)
+    if not value or not re.search(r"\b(?:const|let|var)\s+$", text[:match.start()]):
+        return False
+    if not re.match(r"\s*(?:;|$)", text[match.end():].split("\n", 1)[0]):
+        return False
+    member = r"[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*"
+    if re.fullmatch(r"(?:\+\+|--)" + member, value):
+        return True
+    return bool(re.fullmatch(r"[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+", value))
+
+
 def findings(data):
     text = data.decode("utf-8", errors="replace")
     found = set()
+    python_tokens = None
     for name, pattern in PATTERNS.items():
         for match in pattern.finditer(text):
             found.add((name, text.count("\n", 0, match.start()) + 1))
@@ -62,13 +101,17 @@ def findings(data):
         value = match.group(2) or match.group(3)
         if len(value) < 16 and not SHORT_SECRET.search(match.group(1)):
             continue
-        # An unquoted JS increment/decrement in a variable declaration is an
-        # expression, not a credential literal (including in historical blobs).
-        # Keep quoted strings and shell assignments subject to the normal rules.
-        if (match.group(3) and
-                re.fullmatch(r"(?:\+\+|--)[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*", value) and
-                re.search(r"\b(?:const|let|var)\s+$", text[:match.start()])):
+        # Declared state reads and runtime generation are expressions, not stored values.
+        # Quoted strings, shell assignments and provider signatures retain their normal checks.
+        if js_state_expression(match, text):
             continue
+        if match.group(3) == "secrets.token_urlsafe":
+            if python_tokens is None:
+                python_tokens = generated_python_token_positions(text)
+            line = text.count("\n", 0, match.start()) + 1
+            column = len(text[text.rfind("\n", 0, match.start()) + 1:match.start()].encode("utf-8"))
+            if (line, column) in python_tokens:
+                continue
         # References and explanatory prose are not literal credentials.
         if PLACEHOLDER.fullmatch(value) or re.search(r"\$\{|process\.env\.|std::env|os\.environ", value):
             continue
