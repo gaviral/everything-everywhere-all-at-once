@@ -3,17 +3,15 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createServer } from "../ui/node_modules/vite/dist/node/index.js";
+import { uiServer } from "./ui-server.mjs";
 import react from "../ui/node_modules/@vitejs/plugin-react/dist/index.js";
 import { openPage } from "./headless.mjs";
 
 const artifacts = mkdtempSync(join(tmpdir(), "canvas-workflow-check-"));
-const server = await createServer({
-  configFile: false, plugins: [react()], root: new URL("../ui", import.meta.url).pathname,
-  cacheDir: join(artifacts, "vite"),
-  server: { host: "127.0.0.1", port: 0, strictPort: true, hmr: false, ws: false, watch: null,
-    fs: { allow: [new URL("..", import.meta.url).pathname] } },
-});
+const server = await uiServer({
+  configFile: false, plugins: [react()],
+  server: { fs: { allow: [new URL("..", import.meta.url).pathname] } },
+}, { port: 0 });
 let browser;
 try {
   const manifest = JSON.parse(readFileSync(new URL("../ui/src/bricks/canvas-workflow/brick.json", import.meta.url)));

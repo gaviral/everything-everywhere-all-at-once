@@ -1,6 +1,6 @@
 // One feature, synthetic props, no core/model/microphone. Chrome's disposable profile is retained.
 import assert from 'node:assert/strict';
-import { createServer } from '../ui/node_modules/vite/dist/node/index.js';
+import { uiServer } from './ui-server.mjs';
 import { createServer as freePortServer } from 'node:net';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { openPage } from './headless.mjs';
@@ -13,26 +13,27 @@ assert.ok(![4360, 4399].includes(port));
 const harness = `<!doctype html><html><head><style>
   :root{--ink:#f1f3ed;--muted:#b2b9b0;--bg:#161c18;--card:#222a24;--line:#475549;--accent:#bedc9d;--shadow:0 12px 40px #0003}
   body{margin:0;background:var(--bg);color:var(--ink);font:16px system-ui;padding:16px;box-sizing:border-box}#root{max-width:600px;margin:0 auto}
-  </style><script>window.errors=[];addEventListener('error',e=>errors.push(e.message));</script></head><body><div id="root"></div><script type="module" src="/__review-harness.tsx"></script></body></html>`;
-const module = `import React from '/node_modules/.vite/deps/react.js';
-  import ReactDOM from '/node_modules/.vite/deps/react-dom_client.js';
+  </style><script>window.errors=[];addEventListener('error',e=>errors.push(e.message));</script></head><body><div id="root"></div><script type="module" src="/@id/__x00__virtual:speech-review-check"></script></body></html>`;
+const module = `import React from 'react';
+  import ReactDOM from 'react-dom/client';
   import SpeechReview from '/src/bricks/speech-review/index.tsx';
   const root=ReactDOM.createRoot(document.getElementById('root'));
   window.sent=[];window.accept=true;
   navigator.mediaDevices.getUserMedia=()=>{throw Error('Microphone access forbidden')};
   window.props={map:{mapIdentity:'map-one',me:'Demo',connected:true},actions:{addThought:text=>{sent.push(text);return accept;}}};
   window.paint=()=>root.render(React.createElement(SpeechReview,props));paint();`;
-const server = await createServer({
-  root: new URL('../ui/', import.meta.url).pathname,
-  server: { host: '127.0.0.1', port, strictPort: true, hmr: false, ws: false, watch: null },
-  plugins: [{ name: 'speech-review-check', configureServer(vite) {
+const moduleId = '\0virtual:speech-review-check';
+const server = await uiServer({
+  plugins: [{ name: 'speech-review-check',
+    resolveId(id) { if (id === 'virtual:speech-review-check' || id === moduleId) return moduleId; },
+    load(id) { if (id === moduleId) return module; },
+    configureServer(vite) {
     vite.middlewares.use((req,res,next) => {
       if (req.url === '/__review') { res.setHeader('Content-Type','text/html'); res.end(harness); }
-      else if (req.url === '/__review-harness.tsx') { res.setHeader('Content-Type','application/javascript'); res.end(module); }
       else next();
     });
   }}]
-});
+}, { port });
 let browser;
 try {
   await server.listen();
