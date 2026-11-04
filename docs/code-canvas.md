@@ -62,6 +62,15 @@ Each request reports `id`, `title`, `detail`, `lane`. Unmatched jobs stay separa
 missing updates say so. This view never claims to know work a producer has not
 reported. The timestamp denotes a feed change, not a heartbeat.
 
+The work summary separates running items, items built into the TV build,
+written-only ideas, and items waiting on the person. A completed agent job is
+not proof that a feature reached the TV. The local producer supplies live-job
+evidence and verified build ancestry. When written-only ideas have no live
+worker, a large red notice names the first three. It becomes quiet as work
+resumes. Missing, stale or disconnected observations show unknown status,
+never a confident zero. Work observations expire after fifteen seconds without
+the producer; ordinary source browsing remains available.
+
 Needs-you cards remain until answered. Saving posts only to the local answer
 endpoint. A successful save writes a restricted-permission JSON receipt to a
 sibling directory with the state file's extension replaced by `.answers`, one
