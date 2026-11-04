@@ -3147,11 +3147,23 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         tokio::spawn(async move { axum::serve(listener, routes.into_make_service_with_connect_info::<Link>()).await });
+        let connected_at = crate::now_ms();
         let (mut window, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws")).await.unwrap();
         assert_eq!(received(&mut window).await["type"], "snapshot");
         // Where unplaced thoughts stand, so a window that reconnects shows its pills as they are: nothing yet.
         assert_eq!(received(&mut window).await, serde_json::json!({"type": "placing", "now": null, "retries": []}));
-        assert_eq!(received(&mut window).await, serde_json::json!({"type": "usage", "data": null}));
+        let usage = received(&mut window).await;
+        assert_eq!(usage["type"], "usage");
+        assert_eq!(usage["data"]["rows"], serde_json::json!([]));
+        assert_eq!(usage["data"]["calls"]["used"], 0);
+        assert_eq!(usage["data"]["calls"]["limit"], crate::model::CALLS_PER_HOUR);
+        let at = usage["data"]["calls"]["at_ms"].as_u64().unwrap();
+        assert!((connected_at..=crate::now_ms()).contains(&at), "usage has a current timestamp");
+        assert_eq!(usage["data"]["calls"], serde_json::to_value(core.service.calls(at)).unwrap());
+        let seconds = at / 1000;
+        let (year, month, day) = crate::import::civil_from_days((seconds / 86_400) as i64);
+        assert_eq!(usage["data"]["updated"], format!("{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}.{:03}Z",
+            seconds / 3600 % 24, seconds / 60 % 60, seconds % 60, at % 1000));
         assert_eq!(received(&mut window).await["message"], "MODEL_API_KEY is not set: listening and placement are off.");
         // Alone, this window is "you".
         core.send_to("Sam", ServerMsg::Notice { message: "for Sam".into() });
