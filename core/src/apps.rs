@@ -19,8 +19,8 @@ const COMPOSE: &str = "Compose a small app from registered blocks only. First ch
 // composer's scale and the Volume watcher's level come from these. stand-in: synthesized speech played through
 // headless Chrome's fake mic (2026-11-01): its auto gain lifts normal speech to about 0.075 from either of two input
 // levels, a raised voice (6 dB more, ANSI S3.5) reads about 0.1, and a shout (20 dB more) 0.15 to 0.3, the lower
-// kept so shouting apps still fire on a quieter mic. Replaced by the owner's one-minute `?level` test on the
-// recording mic (each voice's typical reading; with the mic, distance and date).
+// kept as a provisional value only. Real recording-mic calibration is PENDING. The opt-in `?level` receipt
+// tool and docs/volume-calibration.md describe the required evidence; synthetic fixtures do not calibrate it.
 const NORMAL_VOICE: f64 = 0.075;
 const RAISED_VOICE: f64 = 0.1;
 const SHOUT: f64 = 0.15;
@@ -143,11 +143,12 @@ pub fn seed(core: &Core, demo: bool) {
     let world = core.snapshot();
     let mut changes = Vec::new();
     // A Volume watcher seeded by an earlier build keeps that build's level (0.15 before the scale above): it moves to
-    // this build's, still on or off and playing what it did. An app changes only by being registered again.
+    // this build's, still on or off and playing what it did. Only the known legacy pair migrates; other saved
+    // thresholds/durations are user choices. An app changes only by being registered again.
     let (level, seconds) = loud_voices();
     if let Some(old) = world.apps.iter().find(|a| a.id == "app-volume") {
         // Levels are kept to 3 decimals (`between`); one read back from the journal can be a last bit off.
-        if matches!(old.watcher, Watcher::Volume { level: was, seconds: held } if (was - level).abs() >= 0.0005 || held != seconds) {
+        if matches!(old.watcher, Watcher::Volume { level: was, seconds: held } if (was - 0.15).abs() < 0.0005 && held == 3) {
             changes.push(Change::AppRemoved { id: old.id.clone() });
             changes.push(Change::AppRegistered { app: MiniApp { watcher: Watcher::Volume { level, seconds }, ..old.clone() } });
         }

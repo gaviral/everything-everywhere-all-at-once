@@ -1,0 +1,110 @@
+[
+  {
+    "source_file": "cjs/react-compiler-runtime.development.js",
+    "source_sha256": "7ae8fa77a54c404572cba7065e14fe599a3d8cc0b68d34d649d8acc776e4e096",
+    "line": 1,
+    "text": "/**\n * @license React\n * react-compiler-runtime.development.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/react-compiler-runtime.production.js",
+    "source_sha256": "f7d518f5c043cd008514b4fd8c665a9d2fa5686bd36c6e7d44d78187c0438700",
+    "line": 1,
+    "text": "/**\n * @license React\n * react-compiler-runtime.production.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/react-compiler-runtime.profiling.js",
+    "source_sha256": "821fc2969277b5bc7814965e0ac07f815aafb3880d8bca31bcb53ce5d875edd3",
+    "line": 1,
+    "text": "/**\n * @license React\n * react-compiler-runtime.profiling.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/react-jsx-dev-runtime.development.js",
+    "source_sha256": "e2a2cafea5a317645d75aaad7ca10ac2ed07c178a162a7a675f17b38c6915dd8",
+    "line": 1,
+    "text": "/**\n * @license React\n * react-jsx-dev-runtime.development.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/react-jsx-dev-runtime.production.js",
+    "source_sha256": "ba9b367119971ed746925a600256d342eb4cc3f2389de013f61e36ff1f3594a5",
+    "line": 1,
+    "text": "/**\n * @license React\n * react-jsx-dev-runtime.production.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/react-jsx-dev-runtime.profiling.js",
+    "source_sha256": "c89fe850b7e66b6e1a10496321ea9d778a64512960d01dccf49ff0fd5d256b20",
+    "line": 1,
+    "text": "/**\n * @license React\n * react-jsx-dev-runtime.profiling.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/react-jsx-dev-runtime.react-server.development.js",
+    "source_sha256": "cb9e0b05ed482d79a1389e562cef51cc3470cc1646cdee1d200a1414769fd0df",
+    "line": 1,
+    "text": "/**\n * @license React\n * react-jsx-dev-runtime.react-server.development.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/react-jsx-dev-runtime.react-server.production.js",
+    "source_sha256": "c56f744270c8cd4d733575757eaf48de91edfa04d0f5e01ef5043bf9848263b3",
+    "line": 1,
+    "text": "/**\n * @license React\n * react-jsx-dev-runtime.react-server.production.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/react-jsx-runtime.development.js",
+    "source_sha256": "706e324b21fcd94fb728da71b374694d0727d0baee4126011cea583f54e09106",
+    "line": 1,
+    "text": "/**\n * @license React\n * react-jsx-runtime.development.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/react-jsx-runtime.production.js",
+    "source_sha256": "1e46f15002696985e80c61d47aaa30dabb03c954270a690f5f7dfbbacfa9002b",
+    "line": 1,
+    "text": "/**\n * @license React\n * react-jsx-runtime.production.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/react-jsx-runtime.profiling.js",
+    "source_sha256": "27b2fb3d04f9878687ab58717172592650e256de727e910366340be87e0f8352",
+    "line": 1,
+    "text": "/**\n * @license React\n * react-jsx-runtime.profiling.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/react-jsx-runtime.react-server.development.js",
+    "source_sha256": "cde93bd719461c3a4c4bd5f68ed5a854525a79930f70071c893c6455deff54a7",
+    "line": 1,
+    "text": "/**\n * @license React\n * react-jsx-runtime.react-server.development.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/react-jsx-runtime.react-server.production.js",
+    "source_sha256": "44bdd0dbbf51d5d49ac46ece12e919151c7f27b7f5b174790c4ca6aef0b6a1eb",
+    "line": 1,
+    "text": "/**\n * @license React\n * react-jsx-runtime.react-server.production.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/react.development.js",
+    "source_sha256": "2d9afa5ada426157ecb2c89984f89d7a3981095615af0a71dfe4ba809998f826",
+    "line": 1,
+    "text": "/**\n * @license React\n * react.development.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/react.production.js",
+    "source_sha256": "0b5529981841afa1b58c76ba85c29bb681ff5f07cd8cde6a10b967d3915b8e1c",
+    "line": 1,
+    "text": "/**\n * @license React\n * react.production.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/react.react-server.development.js",
+    "source_sha256": "310e68ecd7bfeea4f70849c2128998f339c86f0cc791f2a3db58c3148ad88d8c",
+    "line": 1,
+    "text": "/**\n * @license React\n * react.react-server.development.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/react.react-server.production.js",
+    "source_sha256": "01a14c8b8a0b54f403a21d9a504631160e92a41743301a87f8c7e4506adef441",
+    "line": 1,
+    "text": "/**\n * @license React\n * react.react-server.production.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "compiler-runtime.js",
+    "source_sha256": "5c00456a0180b7b6b2366348f7218b0ea2c3a85c7fefe24c18533ed54126f601",
+    "line": 1,
+    "text": "/**\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  }
+]

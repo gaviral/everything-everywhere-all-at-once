@@ -1,11 +1,15 @@
 // Filming is opt-in. Coordinates for the pointer are browser pixels; camera x/y are React Flow viewport offsets.
 import { FILM, driveFilmCamera, type Camera } from "./bricks/spine/film";
+import { filmStage } from "./film-stage";
 export { FILM } from "./bricks/spine/film";
 
 declare global {
   interface Window {
     e2a2oFilm?: {
       camera: Camera;
+      stage: ReturnType<typeof filmStage>["stage"];
+      card: ReturnType<typeof filmStage>["card"];
+      list: ReturnType<typeof filmStage>["list"];
       cursor(point: { x: number; y: number; press?: boolean }): void;
       caption(text: string): void;
       clear(): void;
@@ -30,9 +34,13 @@ export function startFilm() {
   caption.hidden = true;
   layer.append(ripple, pointer, caption);
   document.body.append(layer);
+  const presentation = filmStage(document.getElementById("root")!, layer);
   let frame = 0;
   window.e2a2oFilm = {
     camera: driveFilmCamera,
+    stage: presentation.stage,
+    card: presentation.card,
+    list: presentation.list,
     cursor({ x, y, press = false }) {
       pointer.hidden = false;
       pointer.style.transform = `translate(${x}px, ${y}px) scale(${press ? 0.85 : 1})`;
@@ -53,6 +61,7 @@ export function startFilm() {
       caption.hidden = !caption.textContent;
     },
     clear() {
+      presentation.clear();
       cancelAnimationFrame(frame);
       pointer.hidden = ripple.hidden = caption.hidden = true;
       caption.textContent = "";

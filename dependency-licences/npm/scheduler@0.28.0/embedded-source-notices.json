@@ -1,0 +1,50 @@
+[
+  {
+    "source_file": "cjs/scheduler-unstable_mock.development.js",
+    "source_sha256": "de31e2407f585fd6ba00efd420485bff8b84aa6ea3ebcb870289214d27ca34b8",
+    "line": 1,
+    "text": "/**\n * @license React\n * scheduler-unstable_mock.development.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/scheduler-unstable_mock.production.js",
+    "source_sha256": "d49069c9cfea586989b09fe16fa2b7ebdf064fd60fb7c932e9a3799f7e95cabf",
+    "line": 1,
+    "text": "/**\n * @license React\n * scheduler-unstable_mock.production.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/scheduler-unstable_post_task.development.js",
+    "source_sha256": "34171513f5d7662f42d42c479445c2536cc02161c245b0f5083ef595f88f0e20",
+    "line": 1,
+    "text": "/**\n * @license React\n * scheduler-unstable_post_task.development.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/scheduler-unstable_post_task.production.js",
+    "source_sha256": "88e667020933b71752478d18e3f94271e9e8eb44d6dfff95ba014b06b47329be",
+    "line": 1,
+    "text": "/**\n * @license React\n * scheduler-unstable_post_task.production.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/scheduler.development.js",
+    "source_sha256": "646eb671c8585382baff16daf92fe16a4cdd10dcf1a363c58b2ae1f6bf3a2b8d",
+    "line": 1,
+    "text": "/**\n * @license React\n * scheduler.development.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/scheduler.native.development.js",
+    "source_sha256": "26401a9da7b51e0db1f506c5d1e8579081302460212d007593acdd8c5968570b",
+    "line": 1,
+    "text": "/**\n * @license React\n * scheduler.native.development.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/scheduler.native.production.js",
+    "source_sha256": "f6e15b1a0f7912a8dbae536f037b9c059026742f3dfe740b37bd03fc7d816d65",
+    "line": 1,
+    "text": "/**\n * @license React\n * scheduler.native.production.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/scheduler.production.js",
+    "source_sha256": "679adff761d31e9426604f80c0e99be44a3e6f4c6834b0218ecf0312a67c171f",
+    "line": 1,
+    "text": "/**\n * @license React\n * scheduler.production.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  }
+]

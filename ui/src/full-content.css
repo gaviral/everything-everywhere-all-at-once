@@ -1,0 +1,25 @@
+.full-content {
+  position: fixed; inset: 0; margin: 0; padding: 0; border: 0;
+  width: 100vw; height: 100dvh; max-width: none; max-height: none;
+  overflow: hidden; background: var(--bg, #faf9f6); color: var(--ink, #262623);
+  font: inherit;
+}
+.full-content::backdrop { background: var(--bg, #faf9f6); }
+.full-content-toolbar {
+  position: absolute; z-index: 10; inset: 8px 8px auto; display: flex; align-items: center;
+  gap: 8px; flex-wrap: wrap; width: fit-content; max-width: calc(100% - 16px);
+  padding: 8px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg, #faf9f6);
+}
+.full-content-toolbar button { min-height: 36px; padding: 4px 12px; }
+.full-content-toolbar span { font-size: 12px; }
+.full-content-card {
+  width: max-content; padding: 24px; background: var(--card); border: 1px solid var(--line);
+  border-radius: 12px; font-size: 16px; line-height: 1.6; white-space: pre;
+}
+.full-content-card h2 { font-size: 12px; font-weight: 600; margin: 20px 0 6px; }
+.full-content-card h2:first-child { margin-top: 0; }
+.full-content-wrap { width: 60ch; white-space: pre-wrap; overflow-wrap: anywhere; }
+.full-content .react-flow__node { width: max-content; }
+.full-content-toolbar button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+/* No entrance or camera animation: reduced motion has the same direct response. */
+.spine-topic:hover .spine-tools, .spine-topic:focus-within .spine-tools { display: flex; }

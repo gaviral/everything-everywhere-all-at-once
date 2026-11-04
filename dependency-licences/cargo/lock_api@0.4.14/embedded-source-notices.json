@@ -1,0 +1,26 @@
+[
+  {
+    "source_file": "src/lib.rs",
+    "source_sha256": "f6dfe0a321e47b5ea9f01a59711e5d3a0442949a829eb4957fa1491fbce63e5c",
+    "line": 1,
+    "text": "// Copyright 2018 Amanieu d'Antras\n//\n// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or\n// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or\n// http://opensource.org/licenses/MIT>, at your option. This file may not be\n// copied, modified, or distributed except according to those terms.\n"
+  },
+  {
+    "source_file": "src/mutex.rs",
+    "source_sha256": "1487130ba159c9158623d58204b52531c0feaabcdea8e58c0740a29d4f33e5af",
+    "line": 1,
+    "text": "// Copyright 2018 Amanieu d'Antras\n//\n// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or\n// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or\n// http://opensource.org/licenses/MIT>, at your option. This file may not be\n// copied, modified, or distributed except according to those terms.\n"
+  },
+  {
+    "source_file": "src/remutex.rs",
+    "source_sha256": "a0cc36a3ac9ba2a399f83667ca53670afbec0d0bae6e9c103323918594873eeb",
+    "line": 1,
+    "text": "// Copyright 2018 Amanieu d'Antras\n//\n// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or\n// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or\n// http://opensource.org/licenses/MIT>, at your option. This file may not be\n// copied, modified, or distributed except according to those terms.\n"
+  },
+  {
+    "source_file": "src/rwlock.rs",
+    "source_sha256": "3094177475cf67c8dc34e68b3fdff2d4133ffb453860b72037477734cb87aefc",
+    "line": 1,
+    "text": "// Copyright 2016 Amanieu d'Antras\n//\n// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or\n// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or\n// http://opensource.org/licenses/MIT>, at your option. This file may not be\n// copied, modified, or distributed except according to those terms.\n"
+  }
+]

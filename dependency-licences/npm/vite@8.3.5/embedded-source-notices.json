@@ -1,0 +1,128 @@
+[
+  {
+    "source_file": "bin/openChrome.js",
+    "source_sha256": "d72bfcc4e6fc7b3dd81338704895402b2b54fe725662eb82f09669aa93f36b92",
+    "line": 1,
+    "text": "/*\nCopyright (c) 2015-present, Facebook, Inc.\n\nThis source code is licensed under the MIT license found in the\nLICENSE file at\nhttps://github.com/react/create-react-app/blob/main/LICENSE\n*/"
+  },
+  {
+    "source_file": "dist/node/chunks/node.js",
+    "source_sha256": "5d40302b2d86ff8f3501df6503a69908dce2c2eab4ce03c154cd8745c0bec5f2",
+    "line": 5434,
+    "text": "/*!\n* escape-html\n* Copyright(c) 2012-2013 TJ Holowaychuk\n* Copyright(c) 2015 Andreas Lubbe\n* Copyright(c) 2015 Tiancheng \"Timothy\" Gu\n* MIT Licensed\n*/"
+  },
+  {
+    "source_file": "dist/node/chunks/node.js",
+    "source_sha256": "5d40302b2d86ff8f3501df6503a69908dce2c2eab4ce03c154cd8745c0bec5f2",
+    "line": 8298,
+    "text": "/**\nhttps://github.com/preactjs/wmr/blob/master/LICENSE\n\nMIT License\n\nCopyright (c) 2020 The Preact Authors\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.\n*/"
+  },
+  {
+    "source_file": "dist/node/chunks/node.js",
+    "source_sha256": "5d40302b2d86ff8f3501df6503a69908dce2c2eab4ce03c154cd8745c0bec5f2",
+    "line": 9281,
+    "text": "/*!\n\t* normalize-path <https://github.com/jonschlinkert/normalize-path>\n\t*\n\t* Copyright (c) 2014-2018, Jon Schlinkert.\n\t* Released under the MIT License.\n\t*/"
+  },
+  {
+    "source_file": "dist/node/chunks/node.js",
+    "source_sha256": "5d40302b2d86ff8f3501df6503a69908dce2c2eab4ce03c154cd8745c0bec5f2",
+    "line": 9380,
+    "text": "/*!\n\t* is-extglob <https://github.com/jonschlinkert/is-extglob>\n\t*\n\t* Copyright (c) 2014-2016, Jon Schlinkert.\n\t* Licensed under the MIT License.\n\t*/"
+  },
+  {
+    "source_file": "dist/node/chunks/node.js",
+    "source_sha256": "5d40302b2d86ff8f3501df6503a69908dce2c2eab4ce03c154cd8745c0bec5f2",
+    "line": 9399,
+    "text": "/*!\n\t* is-glob <https://github.com/jonschlinkert/is-glob>\n\t*\n\t* Copyright (c) 2014-2017, Jon Schlinkert.\n\t* Released under the MIT License.\n\t*/"
+  },
+  {
+    "source_file": "dist/node/chunks/node.js",
+    "source_sha256": "5d40302b2d86ff8f3501df6503a69908dce2c2eab4ce03c154cd8745c0bec5f2",
+    "line": 9637,
+    "text": "/*!\n* is-number <https://github.com/jonschlinkert/is-number>\n*\n* Copyright (c) 2014-present, Jon Schlinkert.\n* Released under the MIT License.\n*/"
+  },
+  {
+    "source_file": "dist/node/chunks/node.js",
+    "source_sha256": "5d40302b2d86ff8f3501df6503a69908dce2c2eab4ce03c154cd8745c0bec5f2",
+    "line": 9652,
+    "text": "/*!\n* to-regex-range <https://github.com/micromatch/to-regex-range>\n*\n* Copyright (c) 2015-present, Jon Schlinkert.\n* Released under the MIT License.\n*/"
+  },
+  {
+    "source_file": "dist/node/chunks/node.js",
+    "source_sha256": "5d40302b2d86ff8f3501df6503a69908dce2c2eab4ce03c154cd8745c0bec5f2",
+    "line": 9851,
+    "text": "/*!\n* fill-range <https://github.com/jonschlinkert/fill-range>\n*\n* Copyright (c) 2014-present, Jon Schlinkert.\n* Licensed under the MIT License.\n*/"
+  },
+  {
+    "source_file": "dist/node/chunks/node.js",
+    "source_sha256": "5d40302b2d86ff8f3501df6503a69908dce2c2eab4ce03c154cd8745c0bec5f2",
+    "line": 12419,
+    "text": "/*!\n* encodeurl\n* Copyright(c) 2016 Douglas Christopher Wilson\n* MIT Licensed\n*/"
+  },
+  {
+    "source_file": "dist/node/chunks/node.js",
+    "source_sha256": "5d40302b2d86ff8f3501df6503a69908dce2c2eab4ce03c154cd8745c0bec5f2",
+    "line": 12469,
+    "text": "/*!\n* ee-first\n* Copyright(c) 2014 Jonathan Ong\n* MIT Licensed\n*/"
+  },
+  {
+    "source_file": "dist/node/chunks/node.js",
+    "source_sha256": "5d40302b2d86ff8f3501df6503a69908dce2c2eab4ce03c154cd8745c0bec5f2",
+    "line": 12538,
+    "text": "/*!\n* on-finished\n* Copyright(c) 2013 Jonathan Ong\n* Copyright(c) 2014 Douglas Christopher Wilson\n* MIT Licensed\n*/"
+  },
+  {
+    "source_file": "dist/node/chunks/node.js",
+    "source_sha256": "5d40302b2d86ff8f3501df6503a69908dce2c2eab4ce03c154cd8745c0bec5f2",
+    "line": 12683,
+    "text": "/*!\n* parseurl\n* Copyright(c) 2014 Jonathan Ong\n* Copyright(c) 2014-2017 Douglas Christopher Wilson\n* MIT Licensed\n*/"
+  },
+  {
+    "source_file": "dist/node/chunks/node.js",
+    "source_sha256": "5d40302b2d86ff8f3501df6503a69908dce2c2eab4ce03c154cd8745c0bec5f2",
+    "line": 12858,
+    "text": "/*!\n* statuses\n* Copyright(c) 2014 Jonathan Ong\n* Copyright(c) 2016 Douglas Christopher Wilson\n* MIT Licensed\n*/"
+  },
+  {
+    "source_file": "dist/node/chunks/node.js",
+    "source_sha256": "5d40302b2d86ff8f3501df6503a69908dce2c2eab4ce03c154cd8745c0bec5f2",
+    "line": 12943,
+    "text": "/*!\n* unpipe\n* Copyright(c) 2015 Douglas Christopher Wilson\n* MIT Licensed\n*/"
+  },
+  {
+    "source_file": "dist/node/chunks/node.js",
+    "source_sha256": "5d40302b2d86ff8f3501df6503a69908dce2c2eab4ce03c154cd8745c0bec5f2",
+    "line": 12987,
+    "text": "/*!\n* finalhandler\n* Copyright(c) 2014-2017 Douglas Christopher Wilson\n* MIT Licensed\n*/"
+  },
+  {
+    "source_file": "dist/node/chunks/node.js",
+    "source_sha256": "5d40302b2d86ff8f3501df6503a69908dce2c2eab4ce03c154cd8745c0bec5f2",
+    "line": 13227,
+    "text": "/*!\n* connect\n* Copyright(c) 2010 Sencha Inc.\n* Copyright(c) 2011 TJ Holowaychuk\n* Copyright(c) 2015 Douglas Christopher Wilson\n* MIT Licensed\n*/"
+  },
+  {
+    "source_file": "dist/node/chunks/node.js",
+    "source_sha256": "5d40302b2d86ff8f3501df6503a69908dce2c2eab4ce03c154cd8745c0bec5f2",
+    "line": 13488,
+    "text": "/*!\n* vary\n* Copyright(c) 2014-2017 Douglas Christopher Wilson\n* MIT Licensed\n*/"
+  },
+  {
+    "source_file": "dist/node/chunks/node.js",
+    "source_sha256": "5d40302b2d86ff8f3501df6503a69908dce2c2eab4ce03c154cd8745c0bec5f2",
+    "line": 14376,
+    "text": "/**\n\t* Copyright (c) 2015-present, Facebook, Inc.\n\t*\n\t* This source code is licensed under the MIT license found in the\n\t* LICENSE file at\n\t* https://github.com/facebookincubator/create-react-app/blob/master/LICENSE\n\t*\n\t* Modified by Yuxi Evan You\n\t*/"
+  },
+  {
+    "source_file": "dist/node/chunks/node.js",
+    "source_sha256": "5d40302b2d86ff8f3501df6503a69908dce2c2eab4ce03c154cd8745c0bec5f2",
+    "line": 15602,
+    "text": "/**\n* The following is modified based on source found in\n* https://github.com/react/create-react-app\n*\n* MIT Licensed\n* Copyright (c) 2015-present, Facebook, Inc.\n* https://github.com/react/create-react-app/blob/main/LICENSE\n*\n*/"
+  },
+  {
+    "source_file": "dist/node/chunks/node.js",
+    "source_sha256": "5d40302b2d86ff8f3501df6503a69908dce2c2eab4ce03c154cd8745c0bec5f2",
+    "line": 17476,
+    "text": "/*!\n* etag\n* Copyright(c) 2014-2016 Douglas Christopher Wilson\n* MIT Licensed\n*/"
+  }
+]

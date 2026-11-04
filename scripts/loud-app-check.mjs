@@ -15,12 +15,18 @@ try {
   const { noticeQueue } = await server.ssrLoadModule("/src/notice-queue.ts");
   const { DockBuild } = await server.ssrLoadModule("/src/Apps.tsx");
   const { volumeReporter } = await server.ssrLoadModule("/src/apps-audio.ts");
+  const { default: LevelMeter } = await server.ssrLoadModule("/src/bricks/level/index.tsx");
+  const { REFERENCE_THRESHOLDS } = await server.ssrLoadModule("/src/bricks/level/stretches.ts");
+  const calibration = renderToStaticMarkup(React.createElement(LevelMeter, { map: { apps: [] }, on: () => () => {} }));
+  assert.ok(calibration.includes("Recording-mic calibration · pending"));
+  assert.ok(/<button disabled="">Start calibration<\/button>/.test(calibration), "no readings: cannot start collection");
+  assert.ok(!calibration.includes("Export private JSON"), "no finished receipt: cannot export");
   const text = (html) => html.replace(/<div class="sr-only" role="status">.*?<\/div>/, "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 
   // Ready to keep: what it is, its blocks in the person's words (a loud stretch, the silly tune and its card), Keep first.
   const request = "plays a silly tune if we get loud";
   const draft = { id: "app-loud", name: "Loud Silly Tune", purpose: "Plays a silly tune when voices stay loud.",
-    watcher: { kind: "volume", level: 0.12, seconds: 3 }, prompt: null,
+    watcher: { kind: "volume", level: REFERENCE_THRESHOLDS[0], seconds: 3 }, prompt: null,
     publishers: [{ kind: "sound" }, { kind: "card", text: "Voices have been loud for a little while. A small pause might help." }],
     enabled: false, request, cooldown_secs: 60, created_ms: 0, last_run_ms: 0 };
   const build = (stage, extra = {}) => ({ id: "build-7", request, stage, steps: ["Checking existing apps", "Choosing blocks for your app",
@@ -61,7 +67,7 @@ try {
   assert.equal(readings.length, 2, "after a reset the count starts over");
   meter.feed(new ArrayBuffer(0));
   assert.equal(readings.length, 2, "an empty frame counts for nothing");
-  console.log("loud-app-check: ok (the loud app in the dock, its blocks and Keep; the loudness readings that wake it)");
+  console.log("loud-app-check: ok (the loud app in the dock, its blocks and Keep; synthetic loudness readings; opt-in calibration starts disabled)");
 } finally {
   await server.close();
 }

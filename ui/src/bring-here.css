@@ -1,0 +1,23 @@
+/* One bounded local inspection surface; the canvas keeps its dimensions and camera. No motion. */
+html.shell2 .bring-here {
+  position: fixed; z-index: 48; top: 80px; left: 16px; width: min(360px, calc(100vw - 32px));
+  max-height: calc(100dvh - var(--dock-height, 120px) - 104px); display: flex; flex-direction: column;
+  border: 1px solid var(--line); border-radius: 18px; background: var(--surface); box-shadow: var(--shadow);
+  color: var(--ink); font-size: 14px; line-height: 1.5; overflow: hidden;
+}
+html.shell2 .bring-here header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+html.shell2 .bring-here-content { overflow: auto; overscroll-behavior: contain; padding: 0 16px; }
+html.shell2 .bring-here h2 { font-size: 18px; line-height: 1.35; margin: 16px 0 8px; overflow-wrap: anywhere; }
+html.shell2 .bring-here-id { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+html.shell2 .bring-here ol { padding-left: 22px; }
+html.shell2 .bring-here li { padding: 0 0 12px 4px; }
+html.shell2 .bring-here p { white-space: pre-wrap; overflow-wrap: anywhere; }
+html.shell2 .bring-here-point { font-weight: 600; margin: 6px 0; }
+html.shell2 .bring-here-words { margin: 6px 0; }
+html.shell2 .bring-here footer { padding: 12px 16px; border-top: 1px solid var(--line); }
+html.shell2 .bring-here-result { display: flex; align-items: center; gap: 4px; }
+html.shell2 .bring-here-result .shell-find-row { flex: 1; min-width: 0; }
+html.shell2 .bring-here-action { flex-shrink: 0; padding: 8px; font-size: 12px; }
+@media (max-width: 600px) {
+  html.shell2 .bring-here { top: 170px; max-height: calc(100dvh - var(--dock-height, 120px) - 194px); }
+}

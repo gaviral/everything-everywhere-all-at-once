@@ -1,0 +1,8 @@
+[
+  {
+    "source_file": "src/lib.rs",
+    "source_sha256": "f8d141a1ba6b1996b33eb34669786ef389d4d5226edad46cec22a561588c324b",
+    "line": 1,
+    "text": "// Copyright 2014 The Rust Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution and at\n// http://rust-lang.org/COPYRIGHT.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  }
+]

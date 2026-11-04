@@ -35,6 +35,7 @@ const world = {
 let shown = world;
 let thought = null;
 let placedAt = 0;
+let releasePlacement = null;
 const place = () => {
   const at = Date.now();
   placedAt = at;
@@ -58,7 +59,11 @@ const core = await standInCore(() => [{ type: "map_identity", id: "first-landing
       complete: true, at_ms: at, place_ms: null, decided: false };
     shown = { ...shown, thoughts: [thought] };
     core.send({ type: "change", change: { type: "thought_added", thought } });
-    setTimeout(place, PLACE_MS);
+    // Keep the real minimum placement delay, but let the waiting-state assertions
+    // finish before this fixture places. A late driver wake is not an app failure.
+    const due = new Promise(resolve => setTimeout(resolve, PLACE_MS));
+    const inspected = new Promise(resolve => { releasePlacement = resolve; });
+    Promise.all([due, inspected]).then(place);
   },
 });
 
@@ -105,6 +110,7 @@ try {
     shown = world;
     thought = null;
     placedAt = 0;
+    releasePlacement = null;
     browser = await openPage("about:blank", { width, height });
     const { page, evaluate, until, on } = browser;
     // As in cards-esc-check: Page.enable is required for the storage script to run.
@@ -163,6 +169,8 @@ try {
       const { data } = await page("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
       writeFileSync(join(shots, `first-landing-waiting-${width}-${scheme}.png`), Buffer.from(data, "base64"));
     }
+    assert.equal(typeof releasePlacement, "function", `${label}: the waiting capture can be placed`);
+    releasePlacement();
     for (let waited = 0; waited < 3000 && !placedAt; waited += 25) await sleep(25);
     assert.ok(placedAt, `${label}: the stand-in core placed the thought`);
     assert.ok(await until('!!document.querySelector(".spine-head[data-thread]") && !document.querySelector(".bubble-flight-bubble")', 6000 + hold), `${label}: the card shows and the bubble is gone`);

@@ -38,10 +38,12 @@ const MODEL_WAIT_MS = 1000;
  *  brick is handed only map, actions and on (BrickMount). */
 export function useBrickHost(world: World, revision: number, me: string, connected: boolean, rooms: ReadonlyMap<string, string>, partial: string, act: HostActions, destination?: BrickProps["destination"], usage: UsageSnapshot | null = null, placingUnavailable = false): BrickHost & Pick<ReturnType<typeof brickEvents>, "emit"> {
   const jobs = useJobs();
-  const conversationSpine = useBuiltInsOn().has("conversation-spine");
+  const builtIns = useBuiltInsOn();
+  const conversationSpine = builtIns.has("conversation-spine");
+  const terse = builtIns.has("terse");
   const snapshot = useMemo(() => snapshotOf(world, me, connected, rooms, partial, jobs, usage), [world, me, connected, rooms, partial, jobs, usage]);
   const reading = useReadPosition(snapshot);
-  const map = useMemo(() => ({ ...snapshot, readThrough: reading.mark, conversationSpine, placingUnavailable, pauses: world.pauses ?? [] }), [snapshot, reading.mark, conversationSpine, placingUnavailable, world.pauses]);
+  const map = useMemo(() => ({ ...snapshot, readThrough: reading.mark, conversationSpine, terse, placingUnavailable, pauses: world.pauses ?? [] }), [snapshot, reading.mark, conversationSpine, terse, placingUnavailable, world.pauses]);
   const read = useRef(reading.read);
   read.current = reading.read;
   const latest = useRef(act);
@@ -52,6 +54,12 @@ export function useBrickHost(world: World, revision: number, me: string, connect
   const actionsFor = useMemo(() => (info: BrickInfo): BrickActions => {
     let actions = made.current.get(info.id);
     if (!actions) made.current.set(info.id, actions = {
+      saveTextFile: (name, text, mime) => {
+        if (typeof name !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._ -]{0,79}$/.test(name) || name.includes("..")
+          || typeof text !== "string" || new TextEncoder().encode(text).length > 64 * 1024
+          || (mime !== "text/plain" && mime !== "text/markdown")) return false;
+        try { return latest.current.saveTextFile(name, text, mime); } catch { return false; }
+      },
       readThought: (id) => read.current(id),
       resume: (id, keyboard) => latest.current.resume?.(id, keyboard) ?? false,
       addThought: (text) => {
@@ -60,6 +68,7 @@ export function useBrickHost(world: World, revision: number, me: string, connect
         return sent;
       },
       openThread: (id) => latest.current.openThread(id),
+      openThought: (id) => latest.current.openThought(id),
       select: (id) => latest.current.select(id),
       notify: (text) => latest.current.notify(text),
       position: (id, x, y) => latest.current.position(id, x, y),

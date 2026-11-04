@@ -1,0 +1,8 @@
+{
+  "id": "work-list",
+  "name": "Work list",
+  "does": "Read a local Markdown work list, with nested tasks and a full-size reading surface.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": true
+}

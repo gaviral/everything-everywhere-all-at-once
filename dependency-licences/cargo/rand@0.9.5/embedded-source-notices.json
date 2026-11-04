@@ -1,0 +1,188 @@
+[
+  {
+    "source_file": "src/distr/bernoulli.rs",
+    "source_sha256": "8e11cf18fd021abeac46675def322bd004839c830241ae3ea6143fe809ce64d1",
+    "line": 1,
+    "text": "// Copyright 2018 Developers of the Rand project.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/distr/distribution.rs",
+    "source_sha256": "3f5904afd9d0f7492b1746b9cc45759a477a5dd2cc5802dbc4f09f1391eaeb96",
+    "line": 1,
+    "text": "// Copyright 2018 Developers of the Rand project.\n// Copyright 2013-2017 The Rust Project Developers.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/distr/float.rs",
+    "source_sha256": "486f2c8ead197d283593689e7b9026626ca83ab3fe7ebf9a89c8e701a4767c2e",
+    "line": 1,
+    "text": "// Copyright 2018 Developers of the Rand project.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/distr/integer.rs",
+    "source_sha256": "69ac205b6fed57ae09e2f8f1b15ae3d2049b85874bc4da3f246a18188b42d8ea",
+    "line": 1,
+    "text": "// Copyright 2018 Developers of the Rand project.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/distr/mod.rs",
+    "source_sha256": "de901e07e7ee11f4375a02fff29d77ac26d1df2721214b162dafcec1e47b2d67",
+    "line": 1,
+    "text": "// Copyright 2018 Developers of the Rand project.\n// Copyright 2013-2017 The Rust Project Developers.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/distr/other.rs",
+    "source_sha256": "b98748667af9415d65c8eaa6e51aee2d42a1d31c7970c22be7491adcb18a45a7",
+    "line": 1,
+    "text": "// Copyright 2018 Developers of the Rand project.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/distr/slice.rs",
+    "source_sha256": "e29eb71308f30aee13a4b1454da1ab70c2cc307738445172a27246df2dfa75ce",
+    "line": 1,
+    "text": "// Copyright 2021 Developers of the Rand project.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/distr/uniform.rs",
+    "source_sha256": "04efcc061e1904b824e3feb68541c4e8259a46ecd2c118af6fb383b3ad37f73c",
+    "line": 1,
+    "text": "// Copyright 2018-2020 Developers of the Rand project.\n// Copyright 2017 The Rust Project Developers.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/distr/uniform_float.rs",
+    "source_sha256": "62271f5fb4be087538d1fae743ad95027c66589740762521f97d20d358463d6b",
+    "line": 1,
+    "text": "// Copyright 2018-2020 Developers of the Rand project.\n// Copyright 2017 The Rust Project Developers.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/distr/uniform_int.rs",
+    "source_sha256": "30c620bc9d74263162de2e0755ae4b323abce1d6aa22c00d1b9de378480f22c0",
+    "line": 1,
+    "text": "// Copyright 2018-2020 Developers of the Rand project.\n// Copyright 2017 The Rust Project Developers.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/distr/uniform_other.rs",
+    "source_sha256": "41a7eee84bd0f2018207cea55fdf477cfcff25abb4536575a9add5df688be56c",
+    "line": 1,
+    "text": "// Copyright 2018-2020 Developers of the Rand project.\n// Copyright 2017 The Rust Project Developers.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/distr/utils.rs",
+    "source_sha256": "a631940e728257c9b0cb753bc64fa631958c92ce52d5b2265c7ed06a46567b8f",
+    "line": 1,
+    "text": "// Copyright 2018 Developers of the Rand project.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/distr/weighted/mod.rs",
+    "source_sha256": "52379f09ea06c8ac54bdb4ecaed93fd7fc08f85866b5e3fcb4e40d0f1576bdfe",
+    "line": 1,
+    "text": "// Copyright 2018 Developers of the Rand project.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/distr/weighted/weighted_index.rs",
+    "source_sha256": "b4559037354bcb9e0b1eab569c867dd70053de382232c7ed4d9aef3d5b049003",
+    "line": 1,
+    "text": "// Copyright 2018 Developers of the Rand project.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/lib.rs",
+    "source_sha256": "d6bd9923f614d3beccc0d9bbe0a6e6c09d14b79cb4a5c4b6d2bd31fb21e2ab3b",
+    "line": 1,
+    "text": "// Copyright 2018 Developers of the Rand project.\n// Copyright 2013-2017 The Rust Project Developers.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/prelude.rs",
+    "source_sha256": "ba69a78b5ebf3f7acb648ee57b8a8aa5403868852e6da082e8d87869d9dd18ce",
+    "line": 1,
+    "text": "// Copyright 2018 Developers of the Rand project.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/rng.rs",
+    "source_sha256": "19a29d58ea169c50ae7fea0a941c405e4a8f3a9b2ac0dc0edd9f7a55e9431703",
+    "line": 1,
+    "text": "// Copyright 2018 Developers of the Rand project.\n// Copyright 2013-2017 The Rust Project Developers.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/rngs/mock.rs",
+    "source_sha256": "330e6d7d7f30c6c9f6d64fe3f3a493b6c9574b075599b34b4871ebd4a9061015",
+    "line": 1,
+    "text": "// Copyright 2018 Developers of the Rand project.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/rngs/mod.rs",
+    "source_sha256": "3868d87e88892a30ae0a8f2cbafdca299cea02d2aa6b3589300751cd8840a530",
+    "line": 1,
+    "text": "// Copyright 2018 Developers of the Rand project.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/rngs/reseeding.rs",
+    "source_sha256": "a059793e940dbaf7635b89f15c8c42f40984f021b4bfc302f31b379c664f5f34",
+    "line": 1,
+    "text": "// Copyright 2018 Developers of the Rand project.\n// Copyright 2013 The Rust Project Developers.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/rngs/small.rs",
+    "source_sha256": "d043d5c8f11aa8c5e9f8cbdaf7812486a1ccd64133a0721b8bf7d0f2097b651a",
+    "line": 1,
+    "text": "// Copyright 2018 Developers of the Rand project.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/rngs/std.rs",
+    "source_sha256": "7d804c97f1633fc0928de4ceb77292e8b3f630158a4922ee82d0dd6633bcfcc0",
+    "line": 1,
+    "text": "// Copyright 2018 Developers of the Rand project.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/rngs/thread.rs",
+    "source_sha256": "4f8b9472d0140d4d729b8188f73849acca5d45967992ca6e3aec58b95c524fad",
+    "line": 1,
+    "text": "// Copyright 2018 Developers of the Rand project.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/rngs/xoshiro128plusplus.rs",
+    "source_sha256": "4d5dcad38c9126ea133055d49953549e50063a1f8385e05b9434911358c2fcca",
+    "line": 1,
+    "text": "// Copyright 2018 Developers of the Rand project.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/rngs/xoshiro256plusplus.rs",
+    "source_sha256": "3f386364f569f5b2dc7fb8f5b58152e075abeefb2ad5af86f715657f2bece0fd",
+    "line": 1,
+    "text": "// Copyright 2018 Developers of the Rand project.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/seq/coin_flipper.rs",
+    "source_sha256": "db57ebb4679144df94a6714d3fb1a9b5cb3dae7355d337d98ebc8dafbcf959c3",
+    "line": 1,
+    "text": "// Copyright 2018-2023 Developers of the Rand project.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/seq/increasing_uniform.rs",
+    "source_sha256": "73b1bf2b30c4e5972f2e902dbb30b90518006bae7eb2628d1ab2547eaeca8ea3",
+    "line": 1,
+    "text": "// Copyright 2018-2023 Developers of the Rand project.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/seq/index.rs",
+    "source_sha256": "d4f80b1dcb643cbec7caf8bf36d6dabd9c65d2db39bbf0b62d839aea79c553e1",
+    "line": 1,
+    "text": "// Copyright 2018 Developers of the Rand project.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/seq/iterator.rs",
+    "source_sha256": "e19443f5ca4cd02d9cad97706626cc3e5efe9bc21c0c578d08d1edb75f34406c",
+    "line": 1,
+    "text": "// Copyright 2018-2024 Developers of the Rand project.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/seq/mod.rs",
+    "source_sha256": "04511fff0b199d84c6ff2ca7a394ad87197bcf6a9f2ba4fa2d139dae63f64913",
+    "line": 1,
+    "text": "// Copyright 2018-2023 Developers of the Rand project.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/seq/slice.rs",
+    "source_sha256": "3422ae1370761149ff72b89f07f90770c21e99e38007a0a5027080ddd3acaba0",
+    "line": 1,
+    "text": "// Copyright 2018-2023 Developers of the Rand project.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  }
+]

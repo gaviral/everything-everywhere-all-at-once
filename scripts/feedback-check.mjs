@@ -28,7 +28,7 @@ try {
 }
 
 // 1. Every handler in ui/src is an action with an entry, or says why it isn't one.
-const HANDLER = /\bon(?:Click|Submit|DoubleClick|ContextMenu|DragStart|KeyDown|Change|Input|Blur|Pointer(?:Down|Up|Cancel))=\{|\bonDrop:|addEventListener\("(?:keydown|drop|pointer(?:down|up))"/g;
+const HANDLER = /\bon(?:Click|Submit|DoubleClick|ContextMenu|DragStart|KeyDown|Change|Input|Blur(?:Capture)?|Pointer(?:Down|Up|Cancel))=\{|\bonDrop:|addEventListener\("(?:keydown|drop|pointer(?:down|up))"/g;
 const handlers = [];
 const found = (file, text) => {
   const out = [];
@@ -50,7 +50,7 @@ const marks = [
 const catalogued = (h) => marks.filter((m) => m.file === h.file && h.line.includes(m.marker));
 // The net catches what it says it does: an uncatalogued handler of each kind, added to a real file, fails.
 for (const file of ["App.tsx", "shell/Shell.tsx"]) {
-  for (const added of ["onPointerUp={() => go()}", "onBlur={() => go()}", "onInput={() => go()}", "onClick={() => go()}"]) {
+  for (const added of ["onPointerUp={() => go()}", "onBlur={() => go()}", "onBlurCapture={() => go()}", "onInput={() => go()}", "onClick={() => go()}"]) {
     const extra = found(file, `${src[file]}\n<button type="button" ${added}>Go</button>\n`).filter((h) => !catalogued(h).length);
     assert.ok(extra.some((h) => h.line.includes(added)), `the check misses an uncatalogued ${added} in ${file}`);
   }

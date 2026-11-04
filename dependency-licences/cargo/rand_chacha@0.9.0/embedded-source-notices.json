@@ -1,0 +1,20 @@
+[
+  {
+    "source_file": "src/chacha.rs",
+    "source_sha256": "8b7fb696f491afe9ca5830e5ed66f418f0cb6bee40dafb4e4d2404c50523a33a",
+    "line": 1,
+    "text": "// Copyright 2018 Developers of the Rand project.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/guts.rs",
+    "source_sha256": "33d284279f5bacc5951a46de693a77758b662c341ef05bd8a4bcda84f34863a6",
+    "line": 1,
+    "text": "// Copyright 2019 The CryptoCorrosion Contributors\n// Copyright 2020 Developers of the Rand project.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/lib.rs",
+    "source_sha256": "a3eddc972be141f04118957200d23ec8b783ca53b382c0d886a9436229c8bec4",
+    "line": 1,
+    "text": "// Copyright 2018 Developers of the Rand project.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  }
+]
