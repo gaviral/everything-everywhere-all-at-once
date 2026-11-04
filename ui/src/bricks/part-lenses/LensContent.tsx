@@ -10,7 +10,7 @@ function Composition({ data, row, rows, choose, diagram = false }: Omit<ContentP
     <p className="part-lenses-eyebrow">{diagram ? '◆ Composition · has these parts' : 'Made of smaller parts'}</p>
     {children.length ? <div className="part-lenses-pieces">{children.map(child => <button type="button" key={child.key} onClick={() => choose(child.key)}>
       <span>{nameOf(data.graph, child)}</span><span aria-hidden="true">↗</span>
-    </button>)}</div> : <p className="part-lenses-leaf">{row.repeated ? 'Repeated reference. This branch stops here.' : 'No smaller parts supplied in this tree.'}</p>}
+    </button>)}</div> : <p className="part-lenses-leaf">{row.repeated ? 'Repeated reference. This path stops here.' : 'No smaller parts supplied in this tree.'}</p>}
   </section>;
 }
 

@@ -26,7 +26,7 @@ await build({ configFile: false, root: directory, plugins: [react()], logLevel: 
   build: { outDir: join(artifacts, 'built'), emptyOutDir: false, rolldownOptions: { input: join(directory, 'preview.html') } } });
 
 const server = createServer((request, response) => {
-  const pathname = new URL(request.url, 'http://preview').pathname;
+  const pathname = new URL(request.url, 'http://127.0.0.1:4381').pathname;
   const file = resolve(artifacts, 'built', pathname === '/' ? 'preview.html' : `.${pathname}`);
   if (!file.startsWith(join(artifacts, 'built') + '/')) { response.writeHead(404).end(); return; }
   try {
@@ -92,7 +92,7 @@ try {
   await fixture('cycle');
   await wait(`document.querySelectorAll('.part-lenses-tree button').length===2`, 'cycles terminate with a visible occurrence');
   await clickText('.part-lenses-tree button', 'Repeated reference');
-  await wait(`${content}?.includes('Repeated reference. This branch stops here.')`, 'repeated occurrence cannot expand forever');
+  await wait(`${content}?.includes('Repeated reference. This path stops here.')`, 'repeated occurrence cannot expand forever');
 
   await fixture('example');
   await clickText('.part-lenses-tree button', 'Conversation map');
