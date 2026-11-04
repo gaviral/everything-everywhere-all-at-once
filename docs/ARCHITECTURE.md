@@ -121,7 +121,7 @@ Core, one process (core/src: axum, tokio)
   world.rs       World, Change, the journal
   protocol.rs    ServerMsg, ClientMsg
   dev_build.rs   optional build-file notifications and connected-page activity for idle reloads
-  code_canvas.rs optional local-only source and branch map; delegates part summaries and agent state to code_canvas/
+  code_canvas.rs optional local-only source and Git branch map; delegates part summaries and agent state to code_canvas/
   flow.rs        Meta-powered text boxes, streamed transformations and publishing results back to their source topic
   workshop.rs    configured Meta model trials, optional event data and explicit Workshop commands
   conversation.rs opt-in question-led Meta responder; four recent same-speaker thoughts and four completed exchanges; bounded spoken captions, thinking state, cancel/timeout; window guard aborts work on last disable/disconnect
