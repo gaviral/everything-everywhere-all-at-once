@@ -59,3 +59,9 @@ Kept as they were: map (the whole), thought, point, Shelf, Why here, Model line,
 ## The check
 
 `node scripts/names-check.mjs` (part of `scripts/precheck.sh`) fails when a retired word shows up in text a person reads: a string in the UI, a feature's `brick.json`, or a public doc. It skips code, saved maps, CHANGELOG, `docs/trace.md` and this file, and a line that ends with a `names-ok: reason` marker.
+
+## Find and Features controls
+
+Find uses a magnifying-glass icon on desktop and phone. Its accessible name is **Find topics or words**; clicking it or pressing `/` opens the search field. Escape clears the query and returns to the compact control.
+
+Features starts with its word, four-square icon and visible `C` shortcut. After a successful `C` shortcut opens the panel, the word moves into its useful tip; the icon, visible shortcut and accessible name **Features** remain. Typing `C` in a field and clicking the icon do not mark it learned. This browser remembers learning across reloads. Turn **Learned control icons** off in Features to keep the word and shortcut without recording new learning.

@@ -1,4 +1,5 @@
-import { memo, useContext, useEffect, useRef, type Dispatch, type SetStateAction, type MutableRefObject, type MouseEvent } from "react";
+import { memo, useContext, useEffect, useLayoutEffect, useRef, type Dispatch, type SetStateAction, type MutableRefObject, type MouseEvent } from "react";
+import "./map-cards.css";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { capitalized, firstLetter, type Action, type ItemStatus, type Suggestion, type Thread, type Thought } from "./core";
 import { AgreementControls } from "./bricks/spine/nodes";
@@ -46,8 +47,25 @@ type MapProps = {
   keptOpen: MutableRefObject<Set<string>>;
 };
 
+const cardScroll = new WeakMap<MapProps["keptOpen"], number>();
+
 // The composer, live transcript and pull-back timer update independently of the map.
 export const MapCards = memo(function MapCards(props: MapProps) {
+  useLayoutEffect(() => {
+    if (!document.documentElement.classList.contains("shell2")) return;
+    const visit = props.keptOpen;
+    const top = cardScroll.get(visit) ?? 0;
+    // The shell changes its view after child layout effects; restore once Cards owns page scrolling.
+    const restore = requestAnimationFrame(() => window.scrollTo({ top, behavior: "instant" }));
+    const remember = () => {
+      if (document.documentElement.dataset.view === "cards") cardScroll.set(visit, window.scrollY);
+    };
+    window.addEventListener("scroll", remember, { passive: true });
+    return () => {
+      cancelAnimationFrame(restore);
+      window.removeEventListener("scroll", remember);
+    };
+  }, [props.keptOpen]);
   const roots = props.childrenByParent.get(null) ?? [];
   // A wide window holds two columns (legible.ts); a lone thread sits in the middle (legible.css).
   const two = useTwoColumns();
