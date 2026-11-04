@@ -14,8 +14,8 @@ export const syntheticCandidates: readonly Candidate[] = [
       { id: "prepare", action: "Prepare next steps", expected: "Check soil on Friday; draft a weekly watering rota." }],
     proof: { kind: "missing" }, priority: "film-likely", filmSelected: true, support: "supported" },
   { partId: "sample-questions", title: "Questions for a repair café", meaning: "Keep open questions beside a repair café plan so the next review has a clear starting point.",
-    steps: [{ id: "read", action: "Read the repair café plan", expected: "A Saturday session needs a room and volunteer tools." },
-      { id: "ask", action: "Keep open questions", expected: "Is the room accessible? Who can bring a tool kit?" }],
+    steps: [{ id: "read", action: "Read the repair café plan", expected: "A Saturday session needs a venue and volunteer tools." },
+      { id: "ask", action: "Keep open questions", expected: "Is the venue accessible? Who can bring a tool kit?" }],
     proof: { kind: "supplied", label: "Sample descriptor only; no runtime demonstration", reference: "synthetic:repair-cafe" },
     priority: "judge", filmSelected: false, support: "supported" },
 ];

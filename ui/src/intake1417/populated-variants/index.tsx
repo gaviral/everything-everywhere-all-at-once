@@ -43,7 +43,7 @@ function EnabledVariants({ adapter }: { adapter: PopulatedVariantsAdapter }) {
   const { state, update, storageError } = useReviewChoices(adapter.preferences);
   const active = input.candidates.find(candidate => candidate.partId === state.activePartId) ?? input.candidates[0];
   return <section className="pv-root" aria-label="Populated variants">
-    <header><p className="pv-eyebrow">Candidate reading room</p><h1>Find the clearest version</h1>
+    <header><p className="pv-eyebrow">Candidate reading area</p><h1>Find the clearest version</h1>
       <p>Small synthetic examples for presentation review. The director keeps control of the final story.</p></header>
     {input.error && <p role="alert">{input.error}</p>}{storageError && <p role="alert">{storageError}</p>}
     <CandidateNavigation candidates={input.candidates} activeId={active?.partId} state={state}
