@@ -1,0 +1,55 @@
+.take-checklist {
+  --take-checklist-green: color-mix(in srgb, var(--ink, #183d32) 72%, #349571);
+  --take-checklist-soft: color-mix(in srgb, var(--card, #fff) 91%, #5cae8b);
+  box-sizing: border-box;
+  width: min(1360px, 100%);
+  margin: 0 auto;
+  padding: clamp(20px, 3vw, 48px) clamp(16px, 3vw, 42px) 32px;
+  color: var(--ink, #18312a);
+}
+.take-checklist-heading { display: flex; align-items: center; justify-content: space-between; gap: 28px; margin-bottom: 32px; }
+.take-checklist-heading-copy { min-width: 0; }
+.take-checklist-eyebrow { font-size: 15px; font-weight: 650; letter-spacing: .16em; color: var(--muted, #646e66); }
+.take-checklist-title { margin: 10px 0; font-size: clamp(40px, 4.8vw, 68px); line-height: 1.08; font-weight: 550; letter-spacing: -.045em; }
+.take-checklist-subtitle { margin: 12px 0 22px; font-size: clamp(18px, 1.8vw, 24px); color: var(--muted, #646e66); }
+.take-checklist-controls { display: flex; flex-wrap: wrap; gap: 12px; }
+.take-checklist-controls button { padding: 10px 17px; min-height: 44px; border: 1px solid var(--line, #cdd6ce); border-radius: 24px; background: var(--card, #fff); color: inherit; font: inherit; font-size: 16px; cursor: pointer; }
+.take-checklist-progress { flex: 0 0 216px; width: 216px; height: 216px; box-sizing: border-box; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; background: radial-gradient(circle at 35% 25%, var(--card, #fff), var(--take-checklist-soft)); border: 1px solid var(--line, #d4dfd6); color: var(--take-checklist-green); }
+.take-checklist-progress[data-complete="true"] { box-shadow: 0 0 0 8px var(--take-checklist-soft); }
+.take-checklist-count { font-size: 64px; font-weight: 550; letter-spacing: -.05em; line-height: 1; font-variant-numeric: tabular-nums; }
+.take-checklist-count span { font-size: 28px; margin-left: 3px; opacity: .6; }
+.take-checklist-progress strong { font-size: 19px; }
+.take-checklist-progress > span:last-child { font-size: 15px; }
+.take-checklist-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.take-checklist-tile { box-sizing: border-box; min-width: 0; min-height: 204px; padding: 22px; display: flex; flex-direction: column; align-items: stretch; gap: 12px; text-align: left; color: inherit; background: var(--card, #fff); border: 1px solid var(--line, #d4dfd6); border-radius: 26px; font: inherit; }
+button.take-checklist-tile { cursor: pointer; }
+button.take-checklist-tile:hover { border-color: var(--take-checklist-green); }
+.take-checklist-tile[data-done="true"] { background: var(--take-checklist-soft); border-color: color-mix(in srgb, var(--take-checklist-green) 30%, transparent); }
+.take-checklist-tile-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.take-checklist-source { font-size: 13px; font-weight: 650; color: var(--muted, #646e66); line-height: 1.4; }
+.take-checklist-tick { flex: 0 0 32px; height: 32px; display: grid; place-items: center; border-radius: 50%; font-size: 28px; color: var(--muted, #646e66); }
+.take-checklist-tile[data-done="true"] .take-checklist-tick { color: var(--take-checklist-green); background: color-mix(in srgb, var(--take-checklist-green) 10%, transparent); }
+.take-checklist-tile-title { display: block; font-size: clamp(22px, 2vw, 29px); line-height: 1.12; font-weight: 580; letter-spacing: -.025em; overflow-wrap: anywhere; }
+.take-checklist-detail { display: block; color: var(--muted, #646e66); font-size: 16px; line-height: 1.45; overflow-wrap: anywhere; }
+.take-checklist-build-input { display: flex; gap: 6px; margin-top: auto; }
+.take-checklist-build-input input { box-sizing: border-box; min-width: 0; width: 100%; border: 1px solid var(--line, #d4dfd6); border-radius: 10px; padding: 9px; background: var(--bg, #f8faf7); color: inherit; font: 15px ui-monospace, monospace; }
+.take-checklist-build-input button { border: 1px solid var(--line, #d4dfd6); border-radius: 10px; background: var(--bg, #f8faf7); color: inherit; font: inherit; font-size: 14px; min-width: 44px; min-height: 44px; cursor: pointer; }
+.take-checklist-build-input button:disabled { opacity: .45; cursor: default; }
+.take-checklist button:focus-visible, .take-checklist input:focus-visible { outline: 3px solid var(--accent, #387a66); outline-offset: 4px; }
+.take-checklist-footnote { margin: 24px 0 0; font-size: 14px; line-height: 1.6; color: var(--muted, #646e66); }
+.take-checklist-footnote span { display: block; }
+@media (max-width: 1050px) {
+  .take-checklist-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .take-checklist-tile { min-height: 184px; }
+}
+@media (max-width: 560px) {
+  .take-checklist-heading { align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+  .take-checklist-progress { width: 100%; height: auto; min-height: 70px; flex: 1 0 100%; flex-direction: row; gap: 12px; border-radius: 24px; padding: 14px; flex-wrap: wrap; }
+  .take-checklist-count { font-size: 32px; }
+  .take-checklist-count span { font-size: 20px; }
+  .take-checklist-progress strong { font-size: 17px; }
+  .take-checklist-progress > span:last-child { font-size: 14px; }
+  .take-checklist-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .take-checklist-tile { min-height: 154px; padding: 20px; gap: 10px; }
+  .take-checklist-tile-title { font-size: 26px; }
+}

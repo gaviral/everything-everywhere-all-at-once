@@ -1,0 +1,8 @@
+{
+  "id": "take-checklist",
+  "name": "Take checklist",
+  "does": "A calm pre-take check: reads the map and leaves the rest for you to confirm.",
+  "kind": "view",
+  "defaultOn": false,
+  "demoSafe": true
+}
