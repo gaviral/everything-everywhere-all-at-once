@@ -33,16 +33,21 @@ fn refused(answer: &Value) -> String {
     format!("Voice Transcribe refused the session: {}", message.unwrap_or("it didn't start"))
 }
 
-pub async fn run(core: Arc<Core>, speaker: String, audio: mpsc::Receiver<Vec<u8>>, window: u64) -> anyhow::Result<()> {
+pub async fn run(core: Arc<Core>, speaker: String, audio: mpsc::Receiver<Vec<u8>>, window: u64, keywords: Vec<String>) -> anyhow::Result<()> {
     #[cfg(test)]
     if let Some(url) = core.asr_test_url.clone() {
-        return run_at(&url, core, speaker, audio, Some(window)).await;
+        return run_with_keywords(&url, core, speaker, audio, Some(window), keywords).await;
     }
-    run_at(URL, core, speaker, audio, Some(window)).await
+    run_with_keywords(URL, core, speaker, audio, Some(window), keywords).await
 }
 
 /// `run` against the service at `url` (a test's stand-in on this machine).
-async fn run_at(url: &str, core: Arc<Core>, speaker: String, mut audio: mpsc::Receiver<Vec<u8>>, window: Option<u64>) -> anyhow::Result<()> {
+#[cfg(test)]
+async fn run_at(url: &str, core: Arc<Core>, speaker: String, audio: mpsc::Receiver<Vec<u8>>, window: Option<u64>) -> anyhow::Result<()> {
+    run_with_keywords(url, core, speaker, audio, window, vec![]).await
+}
+
+async fn run_with_keywords(url: &str, core: Arc<Core>, speaker: String, mut audio: mpsc::Receiver<Vec<u8>>, window: Option<u64>, keywords: Vec<String>) -> anyhow::Result<()> {
     let key = core.listening_key()?.to_string();
     let session = format!("e2a2o-{}", uuid::Uuid::new_v4().simple());
     let (socket, _) = tokio::time::timeout(QUIET_MAX, tokio_tungstenite::connect_async(format!("{url}?sessionId={session}")))
@@ -51,7 +56,7 @@ async fn run_at(url: &str, core: Arc<Core>, speaker: String, mut audio: mpsc::Re
         .context("couldn't reach Voice Transcribe")?;
     let (mut sink, mut stream) = socket.split();
 
-    sink.send(Message::Text(handshake(&key).to_string().into())).await?;
+    sink.send(Message::Text(handshake_with_keywords(&key, &keywords).to_string().into())).await?;
     let first = match tokio::time::timeout(QUIET_MAX, stream.next()).await {
         Ok(Some(Ok(Message::Text(t)))) => serde_json::from_str::<Value>(t.as_str())?,
         Ok(other) => {
@@ -218,8 +223,11 @@ async fn relay<S: futures_util::Sink<Message> + Unpin>(sink: &mut S, audio: &mut
 const MODEL: &str = "muse-voice-transcribe-1.0";
 
 /// The session's first message: how to listen, and the words to expect.
-fn handshake(key: &str) -> Value {
-    json!({
+#[cfg(test)]
+fn handshake(key: &str) -> Value { handshake_with_keywords(key, &[]) }
+
+pub(crate) fn handshake_with_keywords(key: &str, terms: &[String]) -> Value {
+    let mut message = json!({
         "authorization": {"accessToken": format!("Bearer {key}")},
         "audioEncoding": "PCM_24KHZ",
         "model": MODEL,
@@ -231,7 +239,14 @@ fn handshake(key: &str) -> Value {
         // Product names, and the spoken commands most often misheard alone: "Palace." came back as "Palis",
         // "Palice" or "Alice" for 5 of 6 synthesized voices without it, 0 of 6 with it (2026-11-01).
         "keywords": ["E2A2O", "Muse", "Spark", "Meta", "Wonder", "Glimmer", "Llama", "Muse Image", "Palace", "Recap"]
-    })
+    });
+    let keywords = message["keywords"].as_array_mut().unwrap();
+    for term in terms {
+        if !keywords.iter().any(|word| word.as_str().is_some_and(|word| crate::glossary::key(word) == crate::glossary::key(term))) {
+            keywords.push(json!(term));
+        }
+    }
+    message
 }
 
 /// What the service made of the primer, so none of it is ever shown or kept.

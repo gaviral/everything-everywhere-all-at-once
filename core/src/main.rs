@@ -12,6 +12,7 @@ mod apple;
 mod apps;
 mod app_blocks;
 mod asr;
+mod glossary;
 mod call;
 mod conversation;
 mod catalog;
@@ -87,6 +88,7 @@ pub struct Core {
     asr_test_url: Option<String>,
     alias_windows: Mutex<HashMap<(String, u64), Arc<std::sync::atomic::AtomicBool>>>,
     typed_receipts: Mutex<()>,
+    glossary: glossary::Runtime,
     find: find::Runtime,
     /// Each speaker's last turn, what "this" means to them, and the Undo button (catalog.rs).
     catalog: catalog::Runtime,
@@ -1519,6 +1521,7 @@ async fn main() -> anyhow::Result<()> {
         asr_test_url: None,
         alias_windows: Default::default(),
         typed_receipts: Default::default(),
+        glossary: Default::default(),
         find: find::Runtime::default(),
         catalog: catalog::Runtime::default(),
         recap: recap::Runtime::default(),
@@ -1595,6 +1598,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/code-canvas/events", get(system_view::events))
         .route("/code-canvas/answer", post(code_canvas::answer))
         .route("/ws", get(connect))
+        .route("/ws/my-words", get(glossary::connect))
         .route("/room", get(room_info))
         .route("/build-id", get(dev_build::status))
         .route("/build-activity", post(dev_build::activity))
@@ -2627,9 +2631,10 @@ async fn write(out: &mut SplitSink<WebSocket, Message>, message: &impl serde::Se
 fn start_listening(core: &Arc<Core>, speaker: &str, listens: &Arc<std::sync::atomic::AtomicU64>, window: u64) -> mpsc::Sender<Vec<u8>> {
     let (tx, rx) = mpsc::channel(256);
     let n = listens.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+    let keywords = core.glossary.keywords(speaker);
     let (core, speaker, listens) = (core.clone(), speaker.to_string(), listens.clone());
     tokio::spawn(async move {
-        let ended = asr::run(core.clone(), speaker.clone(), rx, window).await;
+        let ended = asr::run(core.clone(), speaker.clone(), rx, window, keywords).await;
         if let Err(e) = &ended {
             tracing::warn!("listening stopped: {e:#}");
         }
@@ -2655,6 +2660,7 @@ impl Core {
         Core {
             asr_test_url: None,
             typed_receipts: Default::default(),
+            glossary: Default::default(),
             alias_windows: Default::default(),
             find: Default::default(),
             catalog: Default::default(),
