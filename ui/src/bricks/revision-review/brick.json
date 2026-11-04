@@ -1,0 +1,8 @@
+{
+  "id": "revision-review",
+  "name": "Revision review",
+  "does": "Comment on exact words, approve one revision, and record its checked effect and evidence.",
+  "kind": "view",
+  "defaultOn": false,
+  "demoSafe": true
+}
