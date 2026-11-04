@@ -1,4 +1,4 @@
-//! Coding helpers use isolated worktrees and local child processes, never a model API.
+//! Coding helpers retain isolated proposals; the built-in adapter uses only Meta.
 use super::*;
 use anyhow::{ensure, Context};
 use std::{
@@ -15,6 +15,15 @@ pub(super) struct Settings {
     pub enabled: bool,
     pub repo: Option<PathBuf>,
     pub command: Option<String>,
+    pub commit: bool,
+    // Server-owned records, never populated from runner output or client paths.
+    pub results: Mutex<HashMap<String, ResultRecord>>,
+    #[cfg(test)]
+    pub test_only: bool,
+    #[cfg(test)]
+    pub meta_test_answer: Option<Value>,
+    #[cfg(test)]
+    pub meta_test_delay: Duration,
 }
 impl Settings {
     pub fn from_env() -> Self {
@@ -22,10 +31,12 @@ impl Settings {
             enabled: std::env::var("HELPERS_RUN").as_deref() == Ok("on"),
             repo: std::env::var_os("HELPERS_REPO").map(PathBuf::from),
             command: std::env::var("HELPERS_CMD").ok(),
+            commit: std::env::var("HELPERS_COMMIT").as_deref() == Ok("on"),
+            ..Self::default()
         }
     }
     fn argv(&self) -> anyhow::Result<Vec<String>> {
-        let value = self.command.as_deref().unwrap_or("muse exec");
+        let value = self.command.as_deref().unwrap_or("builtin-meta");
         let args: Vec<String> = if value.trim_start().starts_with('[') {
             serde_json::from_str(value).context("HELPERS_CMD must be an argv JSON array")?
         } else {
@@ -62,9 +73,15 @@ fn slug(topic: &str) -> String {
 }
 
 async fn git(repo: &Path, args: &[&str]) -> anyhow::Result<String> {
+    #[cfg(test)]
+    tests::GIT_CALLS.lock().unwrap().push((
+        repo.to_owned(),
+        args.iter().map(|s| s.to_string()).collect(),
+    ));
     let output = Command::new("git")
         .args(args)
         .current_dir(repo)
+        .env("GIT_OPTIONAL_LOCKS", "0")
         // The helper's own identity, passed with -c, must beat whatever the host exports.
         .env_remove("GIT_AUTHOR_NAME")
         .env_remove("GIT_AUTHOR_EMAIL")
@@ -192,7 +209,35 @@ pub(super) async fn execute(core: &Arc<Core>, run: &Arc<Run>) {
     );
 }
 
+mod provider;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum ExitStatus {
+    NotStarted,
+    Running,
+    Exited(Option<i32>),
+    Completed,
+    Stopped,
+    Failed,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum ValidationStatus {
+    NotRun,
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct ResultRecord {
+    pub worktree: PathBuf,
+    pub base: String,
+    pub branch: String,
+    pub exit: ExitStatus,
+    pub validation: ValidationStatus,
+    runner: provider::Runner,
+}
+
 struct Work {
+    result_id: String,
     branch: String,
     path: PathBuf,
     brief: PathBuf,
@@ -204,9 +249,57 @@ async fn prepare(core: &Core, run: &Run) -> anyhow::Result<(PathBuf, Vec<Work>)>
         .repo
         .as_deref()
         .context("Set HELPERS_REPO to a git repository")?;
-    settings.argv()?;
-    // Pin once: every brief starts at the same HEAD even if the source moves later.
+    // This lane never commits. An environment toggle alone is not user authority;
+    // a future explicit commit action needs its own reviewed request.
+    ensure!(
+        !settings.commit,
+        "HELPERS_COMMIT needs a separate explicit user commit request; keep it off for recording"
+    );
+    let runner = match provider::resolve(settings) {
+        Ok(runner) => runner,
+        Err(error) => {
+            core.trace.write(|| {
+                json!({"kind":"coding_provider_refused", "swarm":run.id,
+                "provider":"unknown", "model":"unknown", "evidence":"unverified"})
+            });
+            return Err(error);
+        }
+    };
+    core.trace.write(|| {
+        json!({"kind":"coding_provider", "swarm":run.id,
+        "provider":runner.provider, "model":runner.model, "evidence":runner.evidence})
+    });
+    let root = git(repo, &["rev-parse", "--show-toplevel"]).await?;
+    ensure!(
+        repo.canonicalize()? == Path::new(&root).canonicalize()?,
+        "HELPERS_REPO must be the repository root"
+    );
+    // Pin once; all worktrees use this base even if the source moves later.
     let base = git(repo, &["rev-parse", "HEAD"]).await?;
+    ensure!(
+        git(
+            repo,
+            &[
+                "status",
+                "--porcelain=v1",
+                "--untracked-files=all",
+                "--ignored"
+            ]
+        )
+        .await?
+        .is_empty(),
+        "HELPERS_REPO must be clean, including ignored files"
+    );
+    let files = git(repo, &["ls-files"]).await?;
+    ensure!(
+        !files.lines().any(private_target),
+        "HELPERS_REPO contains a private recording target"
+    );
+
+    ensure!(
+        git(repo, &["rev-parse", "HEAD"]).await? == base,
+        "HELPERS_REPO changed during preflight"
+    );
     let folder = std::env::temp_dir().join(format!("e2a2o-coding-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir(&folder)?;
     let mut jobs = Vec::new();
@@ -241,9 +334,22 @@ async fn prepare(core: &Core, run: &Run) -> anyhow::Result<(PathBuf, Vec<Work>)>
             "structure and consistency",
         ][i % 3];
         std::fs::write(&brief, format!(
-            "Coding helper {} of {}. Task: {}.\nFocus this independent implementation on {focus}. Inspect this repository and make a useful, small change for the task. Work only in this worktree. Do not commit, push, merge, or open a PR. Do not include personal paths, private data, secrets, .env files, journals, or personal quotes. Do not invoke other agents or providers.\n",
+            "Coding helper {} of {}. Task: {}.\nMake a separate bounded proposal focused on {focus}. Inspect this repository and make only a small proposed change for the task. Leave it uncommitted for review. Work only in this worktree. Do not commit, push, merge, or open a PR. Do not include personal paths, private data, secrets, .env files, journals, or personal quotes. Use only the verified Meta provider and model. Do not invoke other agents or providers. Do not run git add or git commit.\n",
             i + 1, run.ask.count, run.ask.topic))?;
+        let result_id = format!("{}:{i}", parent(run));
+        settings.results.lock().unwrap().insert(
+            result_id.clone(),
+            ResultRecord {
+                worktree: path.clone(),
+                base: base.clone(),
+                branch: branch.clone(),
+                exit: ExitStatus::NotStarted,
+                validation: ValidationStatus::NotRun,
+                runner: runner.clone(),
+            },
+        );
         jobs.push(Work {
+            result_id,
             branch,
             path,
             brief,
@@ -252,8 +358,37 @@ async fn prepare(core: &Core, run: &Run) -> anyhow::Result<(PathBuf, Vec<Work>)>
     Ok((folder, jobs))
 }
 
+fn private_target(path: &str) -> bool {
+    path.split('/').any(|part| {
+        let part = part.to_ascii_lowercase();
+        part == ".env"
+            || part.starts_with(".env.")
+            || part == "private"
+            || part.starts_with("journal.")
+            || part == "journal"
+            || part == "journals"
+            || part.starts_with("credentials")
+            || part.ends_with(".pem")
+            || part.ends_with(".key")
+    })
+}
+
+fn set_exit(core: &Core, job: &Work, exit: ExitStatus) {
+    if let Some(record) = core
+        .helpers
+        .coding
+        .results
+        .lock()
+        .unwrap()
+        .get_mut(&job.result_id)
+    {
+        record.exit = exit;
+    }
+}
+
 async fn worker(core: &Core, run: &Run, _folder: &Path, i: usize, job: &Work) -> bool {
     if run.stopped.load(Ordering::Relaxed) {
+        set_exit(core, job, ExitStatus::Stopped);
         return false;
     }
     run.started.lock().unwrap().insert(i, crate::now_ms());
@@ -267,7 +402,16 @@ async fn worker(core: &Core, run: &Run, _folder: &Path, i: usize, job: &Work) ->
     );
     let result = work(core, run, i, job).await;
     if run.stopped.load(Ordering::Relaxed) {
+        set_exit(core, job, ExitStatus::Stopped);
         return false;
+    }
+    if result.is_err() {
+        let mut records = core.helpers.coding.results.lock().unwrap();
+        if let Some(record) = records.get_mut(&job.result_id) {
+            if matches!(record.exit, ExitStatus::NotStarted | ExitStatus::Running) {
+                record.exit = ExitStatus::Failed;
+            }
+        }
     }
     row(
         core,
@@ -286,10 +430,28 @@ async fn worker(core: &Core, run: &Run, _folder: &Path, i: usize, job: &Work) ->
 }
 
 async fn work(core: &Core, run: &Run, i: usize, job: &Work) -> anyhow::Result<String> {
-    let argv = core.helpers.coding.argv()?;
-    let mut command = Command::new(&argv[0]);
-    command.args(&argv[1..]);
-    if !argv.iter().any(|a| a == "--json") {
+    let runner = core
+        .helpers
+        .coding
+        .results
+        .lock()
+        .unwrap()
+        .get(&job.result_id)
+        .context("Unknown coding result identity")?
+        .runner
+        .clone();
+    if runner.executable.is_none() {
+        set_exit(core, job, ExitStatus::Running);
+        provider::work(core, run, job).await?;
+        set_exit(core, job, ExitStatus::Completed);
+        return Ok(format!(
+            "{} · proposal retained · validation not run",
+            job.branch
+        ));
+    }
+    let mut command = Command::new(runner.executable.as_ref().unwrap());
+    command.args(&runner.args);
+    if !runner.args.iter().any(|a| a == "--json") {
         command.arg("--json");
     }
     let mut child = command
@@ -302,12 +464,15 @@ async fn work(core: &Core, run: &Run, i: usize, job: &Work) -> anyhow::Result<St
         .kill_on_drop(true)
         .spawn()
         .context("Couldn't start HELPERS_CMD")?;
+    set_exit(core, job, ExitStatus::Running);
     let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
     let status = loop {
         tokio::select! {
             biased;
             _ = cancelled(run) => { stop_child(&mut child).await; return Err(anyhow::anyhow!("Stopped")); },
-            line = lines.next_line() => match line? {
+            line = lines.next_line() => match line {
+                Err(_) => { stop_child(&mut child).await; return Err(anyhow::anyhow!("Runner output unreadable")); },
+                Ok(line) => match line {
                 Some(line) => if serde_json::from_str::<Value>(&line).is_ok() {
                     row(core, run, Some(i), &title(i), "running", Some(line));
                 },
@@ -316,42 +481,18 @@ async fn work(core: &Core, run: &Run, i: usize, job: &Work) -> anyhow::Result<St
                     _ = cancelled(run) => { stop_child(&mut child).await; return Err(anyhow::anyhow!("Stopped")); },
                     status = child.wait() => status?,
                 },
+                }
             }
         }
     };
+    set_exit(core, job, ExitStatus::Exited(status.code()));
     ensure!(!run.stopped.load(Ordering::Relaxed), "Stopped");
-    git(&job.path, &["add", "--all"]).await?;
-    let stats = git(&job.path, &["diff", "--cached", "--numstat"]).await?;
-    let (mut files, mut added, mut removed) = (0, 0_u64, 0_u64);
-    for line in stats.lines() {
-        let fields = line.split('\t').collect::<Vec<_>>();
-        if fields.len() >= 3 {
-            files += 1;
-            added += fields[0].parse::<u64>().unwrap_or(0);
-            removed += fields[1].parse::<u64>().unwrap_or(0);
-        }
-    }
-    git(
-        &job.path,
-        &[
-            "-c",
-            "user.name=E2A2O Helper",
-            "-c",
-            "user.email=helper@example.com",
-            "commit",
-            "--allow-empty",
-            "--no-gpg-sign",
-            "-m",
-            "Implement coding helper brief",
-        ],
-    )
-    .await?;
     ensure!(
         status.success(),
-        "HELPERS_CMD exited unsuccessfully; changes committed"
+        "HELPERS_CMD exited unsuccessfully; dirty worktree retained"
     );
     Ok(format!(
-        "{} · {files} files changed · +{added} -{removed}",
+        "{} · proposal retained · validation not run",
         job.branch
     ))
 }
