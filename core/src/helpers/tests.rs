@@ -37,7 +37,7 @@ async fn coexist_fixture() -> Coexist {
     let repo = root.join("source");
     std::fs::create_dir_all(&repo).unwrap();
     std::fs::write(repo.join("README.md"), "# Example\n").unwrap();
-    for args in [vec!["init", "-q"], vec!["add", "README.md"], vec!["-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "-c", "core.hooksPath=/dev/null", "commit", "-q", "--no-gpg-sign", "-m", "Isolated mechanics fixture"]] {
+    for args in [vec!["init", "-q"], vec!["add", "README.md"], vec!["-c", "user.name=Fixture", "-c", "user.email=fixture@example.com", "-c", "core.hooksPath=/dev/null", "commit", "-q", "--no-gpg-sign", "-m", "Isolated mechanics fixture"]] {
         assert!(tokio::process::Command::new("git").args(args).current_dir(&repo)
             .env("GIT_CONFIG_GLOBAL", "/dev/null").env("GIT_CONFIG_NOSYSTEM", "1")
             .env_remove("GIT_AUTHOR_NAME").env_remove("GIT_AUTHOR_EMAIL").env_remove("GIT_COMMITTER_NAME").env_remove("GIT_COMMITTER_EMAIL")
@@ -84,7 +84,7 @@ print(json.dumps({'type':'done', 'text':'Mechanics proposal retained'}), flush=T
     c.key = Some("local-mechanics-fixture".into());
     c.helpers.url = url;
     c.placer_queue = queue;
-    c.messages.settings.email_contacts = vec![("Reviewer".into(), "reviewer@example.invalid".into())];
+    c.messages.settings.email_contacts = vec![("Reviewer".into(), "reviewer@example.com".into())];
     c.helpers.coding = coding::Settings { enabled: true, repo: Some(repo),
         command: Some(serde_json::to_string(&vec!["python3".to_string(), script.display().to_string(), root.display().to_string()]).unwrap()),
         test_only: true, ..coding::Settings::default() };
