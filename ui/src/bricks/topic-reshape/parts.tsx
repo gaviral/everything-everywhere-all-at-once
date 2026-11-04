@@ -3,7 +3,7 @@ import { destinations, type Copy, type Draft, type Kind, type Plan } from './mod
 const kinds: { id: Kind; label: string; mark: string; help: string }[] = [
   { id: 'split', label: 'Split', mark: '⑂', help: 'Give selected points a topic of their own.' },
   { id: 'merge', label: 'Merge', mark: '⋈', help: 'Bring two topics together, keeping their words.' },
-  { id: 'parent', label: 'Change parent', mark: '↳', help: 'Move a whole branch to a better home.' },
+  { id: 'parent', label: 'Change parent', mark: '↳', help: 'Move a whole tangent to a better home.' },
 ];
 
 export function OperationPicker({ kind, choose }: { kind: Kind; choose: (kind: Kind) => void }) {
@@ -18,7 +18,7 @@ export function DraftFields({ copy, draft, edit }: { copy: Copy; draft: Draft; e
     <select value={draft.target} onChange={event => edit({ target: event.target.value })}>
       <option value="">{draft.kind === 'merge' ? 'Choose a destination' : 'Top level · no parent'}</option>
       {destinations(copy, draft).map(topic => <option key={topic.id} value={topic.id}>{topic.title}</option>)}
-    </select><small>A topic cannot move into its own child branch.</small>
+    </select><small>A topic cannot move into one of its own child tangents.</small>
   </label>;
   const points = copy.points.filter(point => point.topic === draft.source);
   return <><label>New topic name<input value={draft.title} placeholder="A clearer focus…" maxLength={80}

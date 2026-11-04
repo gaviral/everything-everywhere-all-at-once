@@ -103,7 +103,7 @@ function parentPlan(before: Copy, draft: Draft, source: Topic): Planning {
     label: `Move “${source.title}” ${target ? `under “${target.title}”` : 'to the top level'}`,
     affected: [source.id, ...(target ? [target.id] : []), ...before.topics.filter(topic => topic.parent === source.id).map(topic => topic.id)],
     details: [`“${source.title}” ${target ? `will sit under “${target.title}”.` : 'will stand at the top level.'}`,
-      'Its points and entire child branch stay together. No words move between topics.'],
+      'Its points and all child tangents stay together. No words move between topics.'],
   } };
 }
 
