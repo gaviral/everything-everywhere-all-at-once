@@ -3,6 +3,6 @@
   "name": "Opening moment",
   "does": "The full name folds into E2A2O once per session. Any key or tap skips it.",
   "kind": "panel",
-  "defaultOn": true,
+  "defaultOn": false,
   "demoSafe": true
 }
