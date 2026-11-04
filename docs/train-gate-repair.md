@@ -32,3 +32,11 @@ Verification of this train:
 - Core tests: 725 passed, 15 ignored, zero failures. UI and core builds passed; UI retained the existing bundle-size warning.
 - Unchanged privacy and claims guards passed. The unchanged credential scan reported four redacted findings in reachable historical objects, with no working/index findings reported. History was not rewritten.
 - Final whitespace diff check passed. No full precheck or merge-gate rerun, commit, or push. Disposable Comment core/listener processes were stopped by their own PIDs; reserved ports were not used.
+
+## ux-fold staging refusal
+
+- `git merge hub-base` fast-forwarded `ux-fold` from `8ec1890c` to `23b67ba4` without conflicts. The supplied base already contains the original UI commit as a merge parent, preserving both the UI changes and the other integrated work.
+- The refusal reported unfinished work in the integration host's `e2a2o-staging` checkout after all ten reported checks passed. That checkout is absent from this workspace and its Git worktree list. No staging changes were discarded or claimed to be resolved. The integration host must preserve and resolve that work before retrying its merge.
+- No application or guard change is justified by the supplied refusal. This commit records the merged base and local verification; it does not clear the integration host's staging prerequisite.
+- Local verification: the TypeScript build and both Vite outputs passed. `ux-fold-check.mjs` passed at 1440×900, 390×844, 320×844 and 3840×2160, covering labels, image defaults, routing, zoom, native full screen and saved typing. The wording and home-path checks passed.
+- The tree guard, names, links, dates, Meta-only model and call-count guards, and shell syntax checks for `run.sh` and `scripts/trial.sh` also passed. The full integration gate was not rerun here.

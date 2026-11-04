@@ -1,3 +1,6 @@
+import { useState } from "react";
+import { LookPicker, type Look } from "./looks/LookPicker";
+import "./looks/looks.css";
 import type { BrickProps } from "../contract";
 import { PartDimensions, type Presentation, type Contribution } from "../../msg1351/part-dimensions";
 import "./example.css";
@@ -14,8 +17,9 @@ const presentation: Presentation = { version: "example-1", steps: [
   { id: "inspect", title: "Inspect a part", description: "The same part keeps its identity across every step.", contributors: { ui: [reference(0)], functionality: [reference(1)], data: [reference(2)] } },
 ] };
 export default function PartDimensionsExample({ actions }: BrickProps) {
-  return <section className="part-dimensions-example" aria-label="Part dimensions example" data-guide="part-dimensions">
-    <div><strong>Part dimensions · example parts</strong><button onClick={() => actions.openCatalog("part-dimensions")}>Features</button></div>
+  const [look, setLook] = useState<Look>("original");
+  return <section data-look={look} className="part-dimensions-example" aria-label="Part dimensions example" data-guide="part-dimensions">
+    <div><strong>Part dimensions · example parts</strong><LookPicker look={look} onChange={setLook} /><button onClick={() => actions.openCatalog("part-dimensions")}>Features</button></div>
     <PartDimensions enabled graph={{ parts }} presentation={presentation} />
   </section>;
 }

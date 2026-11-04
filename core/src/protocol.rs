@@ -46,6 +46,7 @@ pub enum RemoteSelection {
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMsg {
+    CorrectionResult { request_id: String, thought_id: String, ok: bool, message: String },
     BuildAvailable { id: String },
     EvidenceResult { request_id: String, ok: bool, message: String, data: serde_json::Value, #[serde(skip)] window: u64, #[serde(skip)] epoch: u64 },
     ChoiceResult { request_id: String, ok: bool, message: String, #[serde(skip)] window: u64 },
@@ -374,6 +375,8 @@ pub enum ClientMsg {
     Restore { id: String },
     /// The point's Move: the thought (and the words it carries on) to another thread, or none: a new thread of its own
     /// (moves.rs).
+    Corrections { on: bool },
+    Correction { #[serde(flatten)] request: crate::moves::CorrectionRequest },
     Move {
         thought_id: String,
         #[serde(default)]

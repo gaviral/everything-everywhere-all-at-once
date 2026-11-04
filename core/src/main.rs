@@ -4,6 +4,7 @@
 //! anywhere joins through an HTTPS tunnel (tunnel.rs).
 
 mod annotate;
+mod draw;
 mod discussion;
 mod research;
 mod apple;
@@ -1601,6 +1602,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/workshop/catalog", get(workshop::catalog))
         .route("/workshop/run", post(workshop::run))
         .route("/workshop/hackathon", get(workshop::hackathon))
+        .route("/draw/read", post(draw::read))
+        .route("/draw/back", post(draw::back))
         .route("/flow/plan", post(flow::plan))
         .route("/flow/finish", post(flow::finish))
         .route("/flow/send", post(flow::send))
@@ -2181,6 +2184,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
     let mut shorter: Option<tokio::task::JoinHandle<()>> = None;
 
     let saved_answers = Arc::new(Mutex::new(explain::SavedSession::default()));
+    let mut corrections_on = false;
     let mut agreement_on = false;
     while let Some(message) = incoming.next().await {
         // A frame past `FRAME_MAX` (only a script sends one: the page checks first) ends the window here.
@@ -2447,6 +2451,14 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 }
                 Ok(ClientMsg::Untidy { kind, thread_id }) => tidy::undo(&core, &speaker, kind, &thread_id),
                 Ok(ClientMsg::Restore { id }) => refiner::restore(&core, &id),
+                Ok(ClientMsg::Corrections { on }) => corrections_on = on && !ai,
+                Ok(ClientMsg::Correction { request }) => {
+                    let result = moves::correction(&core, &speaker, corrections_on && !ai, &request);
+                    core.send_to(&speaker, ServerMsg::CorrectionResult {
+                        request_id: request.request_id, thought_id: request.thought_id,
+                        ok: result.is_ok(), message: result.unwrap_or_else(|message| message),
+                    });
+                }
                 Ok(ClientMsg::Move { thought_id, thread_id }) => moves::click_move(&core, &speaker, &thought_id, thread_id),
                 Ok(ClientMsg::Rename { thread_id, title }) => moves::click_rename(&core, &speaker, &thread_id, &title),
                 Ok(ClientMsg::Delete { thought_id }) => moves::click_delete(&core, &speaker, &thought_id),

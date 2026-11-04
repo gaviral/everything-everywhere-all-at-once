@@ -1,0 +1,38 @@
+.reload-session-preview { color: #172d2b; background: #f5f7f2; font: 16px/1.5 system-ui, sans-serif; box-sizing: border-box; max-width: 1200px; margin: 0 auto; padding: clamp(16px, 4vw, 48px); min-height: 100dvh; }
+.reload-session-preview * { box-sizing: border-box; }
+.reload-session-preview h1 { font-size: clamp(28px, 4vw, 44px); line-height: 1.12; letter-spacing: -0.04em; margin: 8px 0 16px; max-width: 650px; }
+.reload-session-preview h2 { font-size: 22px; margin: 0; }
+.reload-session-preview h3 { font-size: 15px; margin: 0 0 8px; }
+.reload-session-preview p { margin: 8px 0; }
+.reload-session-header { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; justify-content: space-between; }
+.reload-session-eyebrow { color: #45625b; font-size: 12px; letter-spacing: 0.12em; font-weight: 700; }
+.reload-session-toggle { display: flex; gap: 10px; align-items: center; min-height: 48px; background: #e1ebe0; padding: 12px 16px; border-radius: 24px; cursor: pointer; }
+.reload-session-toggle input { width: 22px; height: 22px; accent-color: #285a48; }
+.reload-session-status { margin: 24px 0; padding: 16px 20px; border: 1px solid #aabcb1; border-left: 5px solid #285a48; border-radius: 8px; overflow-wrap: anywhere; }
+.reload-session-status p:first-child { font-weight: 650; }
+.reload-session-status p:last-child { font-size: 14px; }
+.reload-session-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 300px); gap: 24px; }
+.reload-session-workspace { min-width: 0; }
+.reload-session-preview button, .reload-session-preview select { font: inherit; min-height: 44px; border: 1px solid #94a99a; border-radius: 7px; color: #17372a; background: #fff; padding: 8px 12px; cursor: pointer; max-width: 100%; }
+.reload-session-preview button:hover { background: #e7efe3; }
+.reload-session-preview :focus-visible { outline: 3px solid #166cbb; outline-offset: 3px; }
+.reload-session-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+.reload-session-scene { overflow: hidden; min-height: 240px; border: 1px solid #c0cec0; border-radius: 12px; background: radial-gradient(#b6c8b6 1px, transparent 1px) 0 0 / 20px 20px #edf3e9; display: grid; place-items: center; }
+.reload-session-scene-content { display: flex; gap: 24px; align-items: center; max-width: 100%; padding: 12px; }
+.reload-session-card { border: 1px solid #9bb496; background: #fff; border-radius: 9px; padding: 16px; box-shadow: 0 3px 0 #d3dfcd; max-width: 180px; }
+.reload-session-scene[data-view="outline"] .reload-session-scene-content { flex-direction: column; align-items: stretch; gap: 12px; }
+.reload-session-scene[data-view="focus"] .reload-session-card:last-child { display: none; }
+.reload-session-place, .reload-session-selection { font-size: 13px; color: #45625b; overflow-wrap: anywhere; }
+.reload-session-draft-label { display: block; font-weight: 650; margin: 24px 0 8px; }
+.reload-session-preview textarea { display: block; resize: vertical; width: 100%; border: 1px solid #94a99a; border-radius: 9px; background: #fff; padding: 16px; font: inherit; color: inherit; }
+.reload-session-controls { padding: 20px; background: #e9eee4; border-radius: 12px; align-self: start; }
+.reload-session-controls > button { width: 100%; margin-top: 12px; background: #285a48; color: #fff; }
+.reload-session-control-group { display: flex; gap: 8px; flex-wrap: wrap; border-top: 1px solid #c0cec0; margin-top: 20px; padding-top: 16px; }
+.reload-session-control-group h3 { flex-basis: 100%; }
+.reload-session-controls details { margin-top: 20px; }
+.reload-session-controls summary { cursor: pointer; min-height: 44px; padding: 10px 0; }
+.reload-session-controls details label { display: block; margin: 12px 0 8px; }
+.reload-session-controls details select { display: block; width: 100%; }
+.reload-session-note { font-size: 14px; color: #45625b; padding-top: 12px; }
+.reload-session-metrics { display: block; margin-top: 16px; font-size: 12px; overflow-wrap: anywhere; }
+@media (max-width: 680px) { .reload-session-columns { grid-template-columns: minmax(0, 1fr); } .reload-session-toggle { width: 100%; } .reload-session-header { gap: 12px; } .reload-session-scene { min-height: 210px; } }

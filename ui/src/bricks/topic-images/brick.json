@@ -1,0 +1,8 @@
+{
+  "id": "topic-images",
+  "name": "Topic images",
+  "does": "Show existing topic images on Canvas and Cards. Off keeps title visuals.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": true
+}

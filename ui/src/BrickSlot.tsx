@@ -124,7 +124,13 @@ export function useBrickHost(world: World, revision: number, me: string, connect
   thoughtsNow.current = world.thoughts;
   const waiting = useRef(new Map<string, { landing: Omit<BrickEvents["landed"], "model">; timer: number }>());
   useEffect(() => {
-    if (lastRevision.current !== revision) { events.clearReplay(); lastRevision.current = revision; }
+    if (lastRevision.current !== revision) {
+      events.clearReplay();
+      // A route from the previous snapshot must not become a fresh landing after reconnect.
+      for (const wait of waiting.current.values()) window.clearTimeout(wait.timer);
+      waiting.current.clear();
+      lastRevision.current = revision;
+    }
     sends.see(world.thoughts, me, Date.now(), revision);
     for (const thought of landings(world.thoughts, revision)) {
       const brick = sends.by(thought.id);
