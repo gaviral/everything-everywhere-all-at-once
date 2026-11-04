@@ -1,8 +1,9 @@
 {
   "id": "part-dimensions",
-  "name": "Part dimensions",
-  "does": "Follow example steps through their interface, behavior and data parts.",
+  "name": "Parts",
+  "does": "The demo left to right, with the real code under each step.",
   "kind": "panel",
   "defaultOn": false,
-  "demoSafe": true
+  "demoSafe": true,
+  "flag": "parts"
 }
