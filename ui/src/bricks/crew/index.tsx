@@ -148,6 +148,6 @@ export default function Crew({ on, actions, map }: BrickProps) {
         <textarea value={typed} onChange={event => setTyped(event.target.value)} aria-label="What should be built" placeholder="Say it all, or type it here. Time left until seven, what's left to hand in, a water reminder…" />
         <button disabled={!typed.trim() || !!busy}>{busy || "Build all that"}</button>
       </form>}
-    {run?.commits && <p className="crew-foot">{run.commits} real commits · parts kept for next time: {run.catalog}{faultOn() ? " · one fault added on purpose" : ""}</p>}
+    {run && (run.commits || faultOn()) && <p className="crew-foot">{[run.commits && `${run.commits} real commits · parts kept for next time: ${run.catalog}`, faultOn() && "one fault added on purpose"].filter(Boolean).join(" · ")}</p>}
   </div>;
 }
