@@ -1,0 +1,41 @@
+.sd-preview { color: #183a36; background: #eef3ef; font: 1rem/1.5 system-ui, sans-serif; min-height: 100vh; padding: clamp(12px, 3vw, 40px); box-sizing: border-box; }
+body:has(.sd-preview) { margin: 0; }
+.sd-preview *, .shared-drawing * { box-sizing: border-box; }
+.sd-banner { max-width: 1400px; margin: 0 auto 24px; }
+.sd-banner strong { font-size: 1.25rem; }
+.sd-banner p { margin: 4px 0 14px; }
+.sd-layout { display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr); gap: 28px; max-width: 1400px; margin: auto; align-items: start; }
+.sd-layout aside { display: grid; gap: 24px; min-width: 0; }
+.sd-device { min-width: 0; }
+.sd-device nav { margin-bottom: 12px; }
+.shared-drawing, .sd-target, .sd-away { min-width: 0; color: #183a36; background: #fffefa; border: 1px solid #bccfc4; border-radius: 16px; padding: clamp(14px, 2vw, 28px); }
+.shared-drawing { font: 1rem/1.5 system-ui, sans-serif; }
+.shared-drawing header { display: flex; justify-content: space-between; align-items: start; flex-wrap: wrap; gap: 12px; }
+.shared-drawing h1 { font-size: clamp(1.5rem, 3vw, 2.15rem); line-height: 1.15; margin: 4px 0 20px; letter-spacing: -.04em; }
+.sd-eyebrow { margin: 0; font-size: .75rem; text-transform: uppercase; letter-spacing: .13em; font-weight: 700; color: #526e65; }
+.sd-switch { display: flex; align-items: center; min-height: 44px; gap: 6px; }
+.sd-switch input { width: 20px; height: 20px; accent-color: #176953; }
+.sd-destination { display: grid; font-weight: 600; gap: 6px; }
+.sd-preview button, .shared-drawing button, .shared-drawing select { font: inherit; min-height: 44px; border-radius: 8px; border: 1px solid #738f81; padding: 8px 12px; color: #183a36; background: #f5f8f3; cursor: pointer; max-width: 100%; }
+.shared-drawing select { width: 100%; background: white; }
+.sd-preview button:hover, .shared-drawing button:hover { background: #e4f0e4; }
+.sd-preview button:disabled, .shared-drawing button:disabled, .shared-drawing select:disabled { opacity: .55; cursor: default; }
+.shared-drawing button[aria-pressed="true"] { background: #d2ebdb; border: 2px solid #176953; }
+.sd-preview :focus-visible, .shared-drawing :focus-visible { outline: 3px solid #a14e0c; outline-offset: 3px; }
+.sd-surface { min-width: 0; border: 0; padding: 0; margin: 20px 0 10px; }
+.sd-surface legend { font-weight: 650; padding: 0 0 8px; }
+.sd-paper { display: block; width: 100%; aspect-ratio: 5 / 3; border: 1px solid #a8bbb1; border-radius: 8px; background: #fff; }
+.sd-paper polyline { fill: none; stroke: #176953; stroke-width: 5; stroke-linejoin: round; stroke-linecap: round; }
+.sd-paper circle { fill: #176953; }
+.sd-input { touch-action: none; user-select: none; cursor: crosshair; }
+.sd-paper .sd-draft { stroke: #b86d17; }
+.sd-tools { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.sd-hint, .sd-empty { font-size: .875rem; color: #52675e; }
+.sd-receipt { margin-top: 14px; padding: 12px; border: 1px solid #c6d9cd; border-radius: 8px; background: #edf5ed; }
+.sd-receipt p { margin: 0 0 4px; }
+.sd-receipt ol, .sd-target-ids { padding-left: 24px; font-size: .8rem; overflow-wrap: anywhere; }
+.sd-history { margin-top: 20px; }
+.sd-history svg { margin-top: 12px; }
+.sd-preview summary, .shared-drawing summary { cursor: pointer; padding: 8px 0; min-height: 44px; overflow-wrap: anywhere; }
+.sd-target h2 { margin: 4px 0 12px; }
+@media (max-width: 760px) { .sd-layout { grid-template-columns: minmax(0, 1fr); gap: 24px; } .sd-preview { padding: 12px; } }
