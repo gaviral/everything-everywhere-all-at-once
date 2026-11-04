@@ -66,7 +66,7 @@ async fn a_session_listens_once_answered_relays_everything_and_cleans_up() {
     tx.send(vec![7u8; FRAME_BYTES]).await.unwrap();
     tx.send(vec![8u8; FRAME_BYTES]).await.unwrap();
     drop(tx);
-    run_at(&url, core.clone(), "you".into(), rx).await.unwrap();
+    run_at(&url, core.clone(), "you".into(), rx, None).await.unwrap();
     let (hello, heard, ended) = served.await.unwrap();
     assert_eq!(hello, handshake("test-key"));
     assert_eq!(heard, primer().len() + 2 * FRAME_BYTES, "the primer, then every mic frame");
@@ -92,7 +92,7 @@ async fn a_refused_session_never_listens_and_says_why_in_words() {
     let (core, path) = keyed("bad-key");
     let mut updates = core.updates.subscribe();
     let (_tx, rx) = tokio::sync::mpsc::channel(8);
-    assert!(run_at(&url, core.clone(), "you".into(), rx).await.is_err());
+    assert!(run_at(&url, core.clone(), "you".into(), rx, None).await.is_err());
     served.await.unwrap();
     assert!(core.key_refused());
     assert!(std::iter::from_fn(|| updates.try_recv().ok()).all(|out| !matches!(out.message, ServerMsg::Status { listening: true, .. })));
@@ -100,7 +100,7 @@ async fn a_refused_session_never_listens_and_says_why_in_words() {
     let (url, served) = stand_in(serde_json::json!({"type": "error", "errorType": "invalid_request_error", "message": "Unknown model"}), vec![]).await;
     let (core, path2) = keyed("test-key");
     let (_tx, rx) = tokio::sync::mpsc::channel(8);
-    let error = run_at(&url, core.clone(), "you".into(), rx).await.unwrap_err().to_string();
+    let error = run_at(&url, core.clone(), "you".into(), rx, None).await.unwrap_err().to_string();
     served.await.unwrap();
     assert!(!core.key_refused());
     assert!(error.contains("Unknown model") && !error.contains('{'), "the notice would read: {error}");

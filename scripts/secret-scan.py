@@ -28,8 +28,12 @@ RULES = {
 }
 PATTERNS = {name: re.compile(pattern) for name, pattern in RULES.items()}
 # JSON/YAML, shell/.env, Python, Rust and JS credential assignments. Bare values are
-# longer to avoid treating ordinary variable references as credentials.
+# longer to avoid treating ordinary variable references as credentials. Generic
+# key/token assignments need 16 characters, even when quoted; passwords and
+# secrets still accept shorter literals. Provider-specific rules above apply at
+# any location independently of this heuristic.
 NAME = re.compile(r"(?:^|[_-])(?:api[_-]?key|access[_-]?key(?:[_-]?id)?|secret|client[_-]?secret|private[_-]?key|password|passwd|pwd|token|auth[_-]?token)(?:$|[_-])", re.I)
+SHORT_SECRET = re.compile(r"(?:^|[_-])(?:secret|password|passwd|pwd)(?:$|[_-])", re.I)
 ASSIGNMENT = re.compile(
     r"\b([a-z][a-z0-9_-]{0,127})['\"]?\s*[:=]\s*(?:['\"]([^'\"\r\n]{8,})['\"]|([A-Za-z0-9_./+=!@#$%^&*~-]{16,}))", re.I
 )
@@ -56,6 +60,8 @@ def findings(data):
         if not NAME.search(match.group(1)):
             continue
         value = match.group(2) or match.group(3)
+        if len(value) < 16 and not SHORT_SECRET.search(match.group(1)):
+            continue
         # References and explanatory prose are not literal credentials.
         if PLACEHOLDER.fullmatch(value) or re.search(r"\$\{|process\.env\.|std::env|os\.environ", value):
             continue

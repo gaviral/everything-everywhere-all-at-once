@@ -187,21 +187,28 @@ try {
       await shoot("cards");
       await healthy("on Cards");
 
-      // The end of the list clears the stage, however tall it is: a notice over the card makes it taller than the 180 px
-      // the page used to keep, and the last card ended under it.
-      await evaluate("window.scrollTo(0, 1e6)");
+      // Each queued card gets the stage in turn. The longest card and the notice
+      // must both leave the last map card reachable above the stage.
+      const lastClear = async (kind) => {
+        await evaluate("window.scrollTo(0, 1e6)");
+        await sleep(200);
+        const end = await evaluate(`(() => {
+          const stage = document.querySelector(".shell-stage").getBoundingClientRect();
+          const cards = [...document.querySelectorAll("main.map .thread")].filter((card) => card.getClientRects().length);
+          return { stageTop: stage.top, last: Math.max(...cards.map((card) => card.getBoundingClientRect().bottom)), scrolled: Math.round(window.scrollY), room: document.documentElement.scrollHeight - innerHeight };
+        })()`);
+        assert.ok(end.scrolled >= end.room - 2, `${label}: ${kind}: scrolled to the end (${end.scrolled} of ${end.room})`);
+        assert.ok(end.last <= end.stageTop - FADE + 0.5, `${label}: ${kind}: last card ends ${end.stageTop - end.last} px clear of the stage`);
+        return end;
+      };
+      await lastClear("unfinished card");
       core.send({ type: "notice", message: "Saved the map to your Downloads folder." });
-      assert.ok(await until('!!document.querySelector(".shell-stage .notice")', 3000), `${label}: a notice shows over the stage's card`);
+      await frames();
+      assert.equal(await evaluate('!!document.querySelector(".shell-stage .notice")'), false, `${label}: notice waits for the unread card`);
+      await tap(".pullback-actions button:last-child", "Forget it");
+      assert.ok(await until('!!document.querySelector(".shell-stage .notice") && !document.querySelector(".pullback")', 3000), `${label}: the queued notice takes its own turn`);
       await sleep(500);
-      await evaluate("window.scrollTo(0, 1e6)");
-      await sleep(200);
-      const end = await evaluate(`(() => {
-        const stage = document.querySelector(".shell-stage").getBoundingClientRect();
-        const cards = [...document.querySelectorAll("main.map .thread")].filter((card) => card.getClientRects().length);
-        return { stageTop: stage.top, last: Math.max(...cards.map((card) => card.getBoundingClientRect().bottom)), scrolled: Math.round(window.scrollY), room: document.documentElement.scrollHeight - innerHeight };
-      })()`);
-      assert.ok(end.scrolled >= end.room - 2, `${label}: the page is scrolled to its end (${end.scrolled} of ${end.room})`);
-      assert.ok(end.last <= end.stageTop - FADE + 0.5, `${label}: the last card ends at ${end.last.toFixed(0)}, ${(end.last - end.stageTop).toFixed(0)} px under the stage's top (${end.stageTop.toFixed(0)}), not clear of it by ${FADE}`);
+      const end = await lastClear("notice");
       await shoot("cards-end");
       summary.push(`${label}: gap ${blank.most}/255 off, last card ${(end.stageTop - end.last).toFixed(0)} px clear of the stage`);
 
@@ -271,5 +278,5 @@ try {
   if (browser) await browser.close();
   core.close();
 }
-console.log(`dock-slivers-check: ok (${runs} runs: the page's words never show between the stage's card and its composer, the end of Cards clears a stage with a notice over its card, the Palace's pictures end above the band, the Countdown's editor leaves no word of the Live outline showing; laptop and phone, light and dark)`);
+console.log(`dock-slivers-check: ok (${runs} runs: the page's words never show between the stage's card and its composer, the end of Cards clears the stage during each queued card, the Palace's pictures end above the band, the Countdown's editor leaves no word of the Live outline showing; laptop and phone, light and dark)`);
 if (process.env.VERBOSE) console.log(summary.join("\n"));

@@ -1,6 +1,6 @@
 // The ready-to-send message card (send-card.ts has its rules; core/src/messages.rs sends). Up under the header while
 // it counts down, with Stop; Esc stops it from anywhere. Once it ends it says how, for a reading time, then goes.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { announcement, cardWords, elapsed, lingerMs, nextTick, STATE_CLASS, stopsOnKey, type Card } from "./send-card";
 import "./send-card.css";
 import { Markdown } from "./md";
@@ -8,9 +8,20 @@ import { Markdown } from "./md";
 export function SendCard({ card, onStop, onGone }: { card: Card | null; onStop: (id: number) => void; onGone: (id: number) => void }) {
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
+  const element = useRef<HTMLElement>(null);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => { setHovered(false); setFocused(false); }, [card?.id]);
+
+  // Removing Stop can move the card away without blur/leave events. Reconcile
+  // after layout and on later pointer movement, including movement outside the card.
+  useEffect(() => {
+    setFocused(!!element.current?.contains(document.activeElement));
+    const frame = requestAnimationFrame(() => setHovered(!!element.current?.matches(":hover")));
+    const moved = (event: PointerEvent) => setHovered(!!element.current?.contains(event.target as Node));
+    document.addEventListener("pointermove", moved, true);
+    return () => { cancelAnimationFrame(frame); document.removeEventListener("pointermove", moved, true); };
+  }, [card?.id, card?.state, card?.stopPending]);
 
   // The digit changes on each whole second left, not on a fixed beat, so it never shows a second it has passed.
   useEffect(() => {
@@ -20,6 +31,7 @@ export function SendCard({ card, onStop, onGone }: { card: Card | null; onStop: 
       const timer = window.setTimeout(() => onGone(card.id), lingerMs(card));
       return () => window.clearTimeout(timer);
     }
+    if (card.stopPending) return;
     let timer: number | undefined;
     const tick = () => {
       const at = Date.now();
@@ -55,7 +67,7 @@ export function SendCard({ card, onStop, onGone }: { card: Card | null; onStop: 
   // Without motion, the bar steps with the digits instead (`--left`, the share of the count still to go).
   const bar = counting ? { animationDuration: `${card.total}ms`, animationDelay: `-${Math.round(done * card.total)}ms`, "--left": 1 - elapsed(card, now) } as React.CSSProperties : undefined;
   return (
-    <section className={`send-card ${STATE_CLASS[card.state]}`} aria-label={words.heading} data-guide="send-card"
+    <section ref={element} className={`send-card ${STATE_CLASS[card.state]}`} aria-label={words.heading} data-guide="send-card"
       onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
       onFocus={() => setFocused(true)} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocused(false); }}>
       <div className="sr-only" role="status">{announcement(card)}</div>

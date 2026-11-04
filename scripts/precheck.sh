@@ -27,10 +27,16 @@ ui_check() {
 }
 ui_checks() {
   if [ -d ui/node_modules ]; then
-    log_root=${PRECHECK_LOGS:-${TMPDIR:-/tmp}}
-    mkdir -p "$log_root" || { fail "UI checks could not create log directory"; exit "$failed"; }
-    # Fresh status files: an interrupted worker must never inherit a previous run's success.
-    check_logs=$(mktemp -d "$log_root/precheck.XXXXXX") || { fail "UI checks could not create log directory"; exit "$failed"; }
+    # overnight/merge.sh reads <check>.log and <check>.status directly here.
+    check_logs=${PRECHECK_LOGS:-$(mktemp -d)}
+    [ -n "$check_logs" ] && mkdir -p "$check_logs" || { fail "UI checks could not create log directory"; exit "$failed"; }
+    # Clear selected statuses before any workers start: an interrupted worker must
+    # never inherit a previous run's success in a caller-supplied log directory.
+    for c in scripts/*-check.mjs; do
+      ui_check "$c" || continue
+      name=$(basename "$c" .mjs)
+      rm -f "$check_logs/$name.status" || { fail "UI checks could not clear stale status"; exit "$failed"; }
+    done
     for c in scripts/*-check.mjs; do
       ui_check "$c" || continue
       printf '%s\0' "$c"
@@ -48,7 +54,7 @@ ui_checks() {
       rc=$(cat "$check_logs/$name.status" 2>/dev/null)
       if [ "$rc" = 3 ]; then
         if [ "${PRECHECK_STRICT:-0}" = 1 ]; then fail "$name could not run (Chrome and a built UI are required)"
-        else warn "$name skipped: Chrome or built UI unavailable (set CHROME; build ui)"; fi
+        else warn "$name: $(tail -n 1 "$check_logs/$name.log")"; fi
         continue
       fi
       if [ "$rc" = 0 ]; then pass "$name passes"

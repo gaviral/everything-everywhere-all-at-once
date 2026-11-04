@@ -4,13 +4,15 @@
 // checks them without a page.
 import { upFor } from "./notice-rules";
 
+export const STOP_WAITS = "Not connected: your Stop goes as soon as this window reconnects.";
+
 export type SendState = "counting" | "stopped" | "sent" | "dry_run" | "failed";
 
 /** The core's `send_card` message. */
 export type SendCardMsg = { type: "send_card"; id: number; to: string; text: string; state: SendState; in_ms: number; live: boolean; message: string };
 
 /** The card shown: `until` is when the count ends on this window's clock, `total` how long the whole count was. */
-export type Card = { id: number; to: string; text: string; state: SendState; live: boolean; message: string; until: number; total: number };
+export type Card = { id: number; to: string; text: string; state: SendState; live: boolean; message: string; until: number; total: number; stopPending?: boolean };
 
 /** The card after the core's message at `now`: a new message's card replaces the one up; an end (stopped, sent…)
  *  changes only the card it's about, so a late word on an older one never takes down the newer, and the end a
@@ -58,6 +60,7 @@ export function cardWords(card: Card, now: number): { heading: string; status: s
   const heading = card.live ? `Message to ${card.to}` : `Message to ${card.to} · dry run`;
   switch (card.state) {
     case "counting": {
+      if (card.stopPending) return { heading, status: STOP_WAITS, stop: false };
       const s = secondsLeft(card, now);
       return { heading, status: s > 0 ? `Sends in ${s}` : "Sending…", stop: s > 0 };
     }
@@ -70,7 +73,7 @@ export function cardWords(card: Card, now: number): { heading: string; status: s
 
 /** What a screen reader hears, once per state (never each second): the start says how to stop it. */
 export function announcement(card: Card): string {
-  if (card.state !== "counting") return cardWords(card, card.until).status;
+  if (card.state !== "counting" || card.stopPending) return cardWords(card, card.until).status;
   const seconds = Math.round(card.total / 1000);
   const what = card.live ? "Sends" : "Dry run: would send";
   return `${what} “${card.text}” to ${card.to} in ${seconds} seconds. Say stop or press Escape to stop it.`;
@@ -78,7 +81,7 @@ export function announcement(card: Card): string {
 
 /** Esc stops the message while it counts, wherever focus is: the one key that is always in reach. */
 export function stopsOnKey(card: Card | null, key: string, now: number): card is Card {
-  return !!card && key === "Escape" && card.state === "counting" && card.until > now;
+  return !!card && !card.stopPending && key === "Escape" && card.state === "counting" && card.until > now;
 }
 
 /** A message that starts counting comes first: a modal sheet (Recap, Import) makes the rest of the window inert and

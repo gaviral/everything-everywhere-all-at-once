@@ -65,6 +65,7 @@ try {
     await page("Page.enable");
     await page("Page.addScriptToEvaluateOnNewDocument", { source: `
       localStorage.setItem("e2a2o.toured", "1");
+      localStorage.setItem("e2a2o.brick.tiny-transcript.hinted", "true");
       localStorage.setItem("e2a2o.features", JSON.stringify({ cards: true, pictures: true }));
       window.__errors = [];
       addEventListener("error", e => {
@@ -121,6 +122,8 @@ try {
       };
 
       shown = world;
+      // Each shell is a fresh synthetic scene; saved choices are covered by phone-walk-check.
+      await evaluate('if (location.protocol === "http:") Object.keys(localStorage).filter(key => key.startsWith("e2a2o.unfinished:")).forEach(key => localStorage.removeItem(key))');
       await page("Page.navigate", { url: `http://127.0.0.1:${core.port}/${shell ? "?shell=2" : "?cards"}` });
       await check(`!!document.querySelector('#type-a-thought') && !document.querySelector('.tour-tip')`, "sample loaded");
       if (shell) {
@@ -143,11 +146,11 @@ try {
       }
       // The actual pause/card condition, with no changes to clocks or product timing.
       await expectQuote(quote, "initial dropped thread ignores another speaker and appended older imports");
-      const cardAt = await evaluate(`(() => {
+      const cardAt = () => evaluate(`(() => {
         const r = document.querySelector('.pullback').getBoundingClientRect();
         return { x: r.left + r.width / 2, y: r.top + 8 };
       })()`);
-      await page("Input.dispatchMouseEvent", { type: "mouseMoved", ...cardAt });
+      await page("Input.dispatchMouseEvent", { type: "mouseMoved", ...await cardAt() });
       if (width === 1440 && scheme === "light") {
         await sleep(lingerMs("Riverside picnic", quote) + 500);
         await expectQuote(quote, "hover holds the card beyond its reading time");
@@ -203,7 +206,8 @@ try {
       await check('document.body.textContent.includes("I am still explaining the picnic")', "live speech reached the page");
       await page("Input.dispatchMouseEvent", { type: "mouseMoved", x: 0, y: 0 });
       await expectQuote(null, "live speech leaves the card up after the pointer leaves");
-      await page("Input.dispatchMouseEvent", { type: "mouseMoved", ...cardAt });
+      await page("Input.dispatchMouseEvent", { type: "mouseMoved", ...await cardAt() });
+      await check('document.querySelector(".pullback")?.matches(":hover")', "the pointer holds the current card position");
       const spoken = thought("spoken", "Choose a shady picnic spot before—", "T2", { at_ms: Date.now(), complete: false });
       relay({ type: "thought_added", thought: spoken });
       relay({ type: "thread_touched", thread_id: "T2", last_point: spoken.point, at_ms: spoken.at_ms });

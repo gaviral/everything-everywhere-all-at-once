@@ -5,9 +5,10 @@ import { useSyncExternalStore } from "react";
 import { talkOn, watchTalk } from "../talk-preset";
 import type { BrickKind } from "../bricks/contract";
 
-export type BuiltIn = { id: "listening" | "recap" | "import" | "export" | "cards" | "pictures"; kind: BrickKind; defaultOn: boolean };
+export type BuiltIn = { id: "partner" | "listening" | "recap" | "import" | "export" | "cards" | "pictures"; kind: BrickKind; defaultOn: boolean };
 
 export const BUILT_INS: readonly BuiltIn[] = [
+  { id: "partner", kind: "input", defaultOn: false },
   // The views beside the Canvas: off until switched on; each then has its Show.
   { id: "cards", kind: "view", defaultOn: false },
   { id: "pictures", kind: "view", defaultOn: false },
@@ -52,3 +53,6 @@ export function switchBuiltIn(id: BuiltIn["id"], value: boolean) {
   try { localStorage.setItem(STORE, JSON.stringify(switches)); } catch { /* private mode: for this visit */ }
   changed();
 }
+
+export const builtInOn = (id: BuiltIn["id"]) => on.has(id);
+export const watchBuiltIns = (watcher: () => void) => { watchers.add(watcher); return () => { watchers.delete(watcher); }; };

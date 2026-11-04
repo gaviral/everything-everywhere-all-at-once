@@ -434,7 +434,7 @@ mod tests {
         super::caption(&core, "Claude", 42, &mut Pace::default(), "Silent caption.".into());
         let silent = updates.try_recv().unwrap();
         assert_eq!(serde_json::to_value(&silent).unwrap(), serde_json::to_value(&silent.message).unwrap());
-        core.take_turn("Claude", "This is a spoken thought.", true, true, true);
+        core.take_turn("Claude", "This is a spoken thought.", true, true, true, None);
         let mut thoughts = Vec::new();
         while let Ok(update) = updates.try_recv() {
             if matches!(update.message, crate::protocol::ServerMsg::Change { change: Change::ThoughtAdded { .. } }) {

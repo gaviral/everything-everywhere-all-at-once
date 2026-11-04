@@ -74,6 +74,24 @@ class SafetyTests(unittest.TestCase):
         for name in SCAN.TEMPLATES:
             self.assertFalse(SCAN.private_env(name))
 
+    def test_short_key_fixtures_and_real_key_in_start_check(self):
+        self.init_repo()
+        path = "scripts/start-check.mjs"
+        fixture = '\n'.join('MODEL_API_KEY: "' + value + '"'
+                            for value in ("from-env", r"multi\nline", "fixture-env-key"))
+        self.write(path, fixture)
+        self.git("add", path)
+        self.assertEqual(self.scan().returncode, 0)
+        # Same filename and location: no file exemption, including worktree edits.
+        key = "B7" * 16
+        self.write(path, fixture + '\nMODEL_API_KEY: "' + key + '"\n')
+        result = self.scan()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("credential-assignment", result.stdout)
+        self.assertNotIn(key, result.stdout)
+        (self.root / path).unlink()
+        self.assertEqual(self.scan().returncode, 0)
+
     def test_worktree_history_binary_messages_tags_and_refs_are_redacted(self):
         self.init_repo()
         token = "ghp_" + "B7" * 20
@@ -180,8 +198,43 @@ esac
         self.assertEqual(self.run_cmd("sh", "scripts/precheck.sh", env=env).returncode, 1)
         self.assertEqual(self.run_cmd("sh", "scripts/precheck.sh", env={**env, "PRECHECK_STRICT": "0"}).returncode, 0)
         self.assertEqual(self.run_cmd("sh", "scripts/precheck.sh", env={**env, "FIXTURE_NODE_RC": "0"}).returncode, 0)
+        status = self.root / "logs/browser-check.status"
+        self.assertEqual(status.read_text().strip(), "0")
+        self.assertTrue((self.root / "logs/browser-check.log").is_file())
         self.write("bin/node", "#!/bin/sh\nkill -TERM \"$PPID\"\n", True)
         self.assertEqual(self.run_cmd("sh", "scripts/precheck.sh", env=env).returncode, 1)
+        self.assertFalse(status.exists(), "an interrupted check must not retain a passing status")
+
+    def test_precheck_page_modes_and_direct_log_contract(self):
+        self.write("scripts/precheck.sh", (ROOT / "scripts/precheck.sh").read_text())
+        self.write("scripts/browser-check.mjs", 'await import("./headless.mjs");\n')
+        self.write("scripts/offline-check.mjs", '// Node-only check\n')
+        self.write("bin/node", '#!/bin/sh\necho "fixture $1"\n', True)
+        # Exercise the actual script offline; missing product files may fail the
+        # static guards, but selection and the overnight log contract must hold.
+        for tool in ("git", "python3", "npm", "perl", "cargo"):
+            self.write("bin/" + tool, "#!/bin/sh\nexit 0\n", True)
+        self.write("bin/curl", "#!/bin/sh\nprintf 000\nexit 1\n", True)
+        (self.root / "ui/node_modules").mkdir(parents=True)
+        for mode, selected in (("0", {"offline-check"}),
+                               ("only", {"browser-check"}),
+                               ("all", {"offline-check", "browser-check"})):
+            with self.subTest(mode=mode):
+                logs = self.root / ("logs-" + mode)
+                result = self.run_cmd("sh", "scripts/precheck.sh", env={
+                    "PATH": str(self.root / "bin") + os.pathsep + os.environ["PATH"],
+                    "PRECHECK_PAGES": mode, "PRECHECK_LOGS": str(logs),
+                })
+                self.assertEqual({p.stem for p in logs.glob("*.status")}, selected)
+                for name in selected:
+                    self.assertEqual((logs / (name + ".status")).read_text().strip(), "0")
+                    self.assertIn("fixture scripts/" + name + ".mjs",
+                                  (logs / (name + ".log")).read_text())
+                if mode == "only":
+                    self.assertEqual(result.returncode, 0, result.stdout)
+                    self.assertNotIn("run.sh parses", result.stdout)
+                else:
+                    self.assertIn("run.sh parses", result.stdout)
 
 
 if __name__ == "__main__":

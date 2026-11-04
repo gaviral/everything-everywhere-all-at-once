@@ -434,10 +434,20 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
     const timer = window.setTimeout(() => setReady(true), 0);
     return () => window.clearTimeout(timer);
   }, [top, ready]);
-  // A resize can leave every topic outside the new window, even with no active thread or following held.
+  // Follow the active words on resize; a held view keeps its center and zoom.
+  // Fitting everything while held would dismiss unread edge cues without the person going there.
+  const previousSize = useRef<{ width: number; height: number } | null>(null);
   useEffect(() => {
-    if (!ready || !box) return;
-    const g = following ? goal() : null;
+    if (!box) return;
+    const previous = previousSize.current;
+    previousSize.current = { width, height: box.tall };
+    if (!ready) return;
+    if (!following && previous) {
+      const view = flow.getViewport();
+      void flow.setViewport({ ...view, x: view.x + (width - previous.width) / 2, y: view.y + (box.tall - previous.height) / 2 }, { duration: 0 });
+      return;
+    }
+    const g = goal();
     if (g) camera.aim(g.box, { instant: true }); else camera.fit(all(), 1, minZoom, { instant: true });
   }, [width, box?.tall]);
   // Following: where you are stays in view as you talk (the camera spaces and limits the moves).
@@ -468,9 +478,15 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
     }
     const item = point ?? layout.byKey.get(`t:${threadId}`);
     if (!item) return;
+    setFollowing(false);
+    camera.hold();
+    if (point && !originals.has(point.id)) {
+      setOriginals((was) => new Set([...was, point.id]));
+      return; // Aim after the original words have their measured space.
+    }
     reached.current = destination;
     camera.aim(item.box, { ring: item.key });
-  }, [ready, destination, layout, map.threads, open?.id, camera.aim]);
+  }, [ready, destination, layout, map.threads, open?.id, originals, camera.aim]);
 
   const touch = () => { touched.current = Date.now(); setHeldAt(touched.current); };
   const stopFollowing = () => { touch(); setFollowing(false); camera.hold(); };
@@ -725,7 +741,8 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
   };
 
   // The zoom stops: one place at three distances. Words is reading size at what you follow (or the middle of the view);
-  // Titles and Pictures fit the whole map, Pictures a little further out.
+  // Titles keeps the name's usual three-line measure at 13 px; larger maps need panning.
+  // Pictures fits the whole map, a little further out.
   const farOut = useStore((s) => s.transform[2] < READ);
   const shownStop: Stop = farOut ? (stop === "words" ? "titles" : stop) : "words";
   const choose = (next: Stop) => {
@@ -737,7 +754,9 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
       return;
     }
     stopFollowing();
-    camera.fit(all(), next === "titles" ? 0.6 : 0.42, minZoom);
+    // The usual title measure, resized from 18 px to 13 px, plus the label's 6 px padding.
+    const titleZoom = (G.titleW * 13 / 18 + 2 * 6) / G.colW;
+    camera.fit(all(), next === "titles" ? 0.6 : 0.42, next === "titles" ? Math.max(minZoom, titleZoom) : minZoom);
   };
   const seeAll = () => { stopFollowing(); camera.fit(all(), 1, minZoom); };
 

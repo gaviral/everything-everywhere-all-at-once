@@ -1,8 +1,10 @@
+import { ignorePartner } from "./partner";
 import { noticeCommand, useNoticeQueue } from "./notice-queue";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { thoughtId, readWaiting, saveWaiting, receivedWaiting } from "./waiting";
 import { switchTalk, talkCommand } from "./talk-preset";
 import { receiveStep, resetSteps, stopListeningStep, type StepMsg } from "./model-line";
-import { caughtUp, comesFirst, received as cardReceived, type Card as SendCardShown, type SendCardMsg } from "./send-card";
+import { STOP_WAITS, caughtUp, comesFirst, received as cardReceived, type Card as SendCardShown, type SendCardMsg } from "./send-card";
 import { gone as pullsGone, NO_PULLS, received as pullsReceived, type Pulls, type PullsCardMsg } from "./pulls-card";
 import { comesFirst as noteFirst, received as noteReceived, type NoteCardMsg } from "./note-card";
 import { receiveRoute, resetRoute, routePlacing } from "./route";
@@ -116,7 +118,7 @@ export type UnfoldAsk = { thread_id: string | null; open: boolean; revision: num
 // when something newer stops the search.
 export const LOOKING = "Looking through your topics…";
 /** The message card's Stop pressed with the connection down (`stopSend`). */
-export const STOP_WAITS = "Not connected: your Stop goes as soon as this window reconnects.";
+export { STOP_WAITS } from "./send-card";
 
 export interface Suggestion {
   id: string;
@@ -237,6 +239,9 @@ type Change =
   | { type: "messages_read"; at_ms: number[] };
 
 type ServerMsg =
+  | { type: "command_reply"; text: string; speak?: boolean }
+  | { type: "partner_state"; state: string; message: string }
+  | { type: "text_received"; id: string }
   | JobMsg
   | StepMsg
   | RecapServerMsg
@@ -736,7 +741,9 @@ export function useCore(speaker?: string) {
   useEffect(() => { noticeShown.current = notice; }, [notice]);
   // The notice's Undo: the id the core sent for the request it answers (catalog.rs), until a newer notice.
   const undoId = currentNotice?.kind === "notice" ? currentNotice.value.undo : null;
-  const setUndoId = (id: number | null) => noticeQueue.updateUndo(id);
+  // History follows the latest answered turn even when its notice is queued or only shown in the status line.
+  const [latestUndoId, setLatestUndoId] = useState<number | null>(null);
+  const setUndoId = (id: number | null) => { setLatestUndoId(id); noticeQueue.updateUndo(id); };
   // Every answer shown, counted, the same words again too: a repeat gets its reading time again (App.tsx), and an
   // answer the window makes for a view request stands down when the core has answered since (showNotice).
   const answers = useRef(0);
@@ -755,7 +762,14 @@ export function useCore(speaker?: string) {
   // The core says so on connect when it has no model key, or once the service refused it: the map can be
   // browsed, nothing new is placed. Kept, so it can be said again when the mic is tried.
   const [keyNotice, setKeyNotice] = useState("");
-  const [queuedCount, setQueuedCount] = useState(0);
+  const queueKey = `e2a2o.waiting.${speaker ?? "you"}`;
+  const outbox = useRef<string[] | null>(null);
+  if (outbox.current === null) {
+    try {
+      outbox.current = readWaiting(queueKey);
+    } catch { outbox.current = []; }
+  }
+  const [queuedCount, setQueuedCount] = useState(outbox.current.length);
   const [placing, setPlacing] = useState<Placing>({ now: null, retryAt: {} });
   const [explanations, setExplanations] = useState<Record<string, Explanation>>({});
   const [whys, setWhys] = useState<Record<string, WhyAnswer>>({});
@@ -780,7 +794,6 @@ export function useCore(speaker?: string) {
   // The note card: what "save this thread as a note" wrote, or would have (note-card.ts).
   const noteCard = currentNotice?.kind === "note" ? currentNotice.value : null;
   const socket = useRef<WebSocket | null>(null);
-  const outbox = useRef<string[]>([]);
   // A message card's Stop pressed while the connection was down: the next connection carries it (`open`).
   const stopWaiting = useRef<number | null>(null);
 
@@ -818,13 +831,15 @@ export function useCore(speaker?: string) {
         stopWaiting.current = null;
         if (late !== null && late !== waiting) ws.send(JSON.stringify({ type: "stop_send", id: late }));
         // Thoughts typed while the connection was down go out now, and pictures that failed while it was are fetched again.
-        for (const message of outbox.current.splice(0)) ws.send(message);
+        // A send only hands bytes to the browser. Keep them saved until the core confirms the id.
+        try { outbox.current = readWaiting(queueKey); } catch { /* Keep the last readable copy. */ }
+        setQueuedCount(outbox.current!.length);
+        for (const message of outbox.current!) ws.send(message);
         attention.current.resend((message) => ws.send(message));
         coreBack();
-        setQueuedCount(0);
-        // The new connection may belong to a restarted core whose note ids start again at 1.
       };
       ws.onmessage = (event) => {
+        if (ignorePartner(event.data)) return;
         const msg = JSON.parse(event.data as string) as ServerMsg;
         // In the same update as the move, so the map follows you there (App.tsx doesn't while Recap is open).
         if (asked(currentWorld, msg)) closeRecap();
@@ -837,6 +852,12 @@ export function useCore(speaker?: string) {
         if (receiveGuide(msg)) return;
         if (receiveJob(msg)) return;
         switch (msg.type) {
+          case "text_received": {
+            try { receivedWaiting(queueKey, msg.id); outbox.current = readWaiting(queueKey); }
+            catch { break; } // Retrying a saved entry is safe: the core remembers its id.
+            setQueuedCount(outbox.current!.length);
+            break;
+          }
           case "usage":
             setUsage(msg.data);
             break;
@@ -1017,8 +1038,15 @@ export function useCore(speaker?: string) {
         if (!closed) timer = window.setTimeout(open, (retry = Math.min(retry * 2, 8000)));
       };
     };
+    const storageChanged = (event: StorageEvent) => {
+      if (event.key !== null && event.key !== queueKey && !event.key.startsWith(`${queueKey}.`)) return;
+      try { outbox.current = readWaiting(queueKey); } catch { return; }
+      setQueuedCount(outbox.current.length);
+    };
+    window.addEventListener("storage", storageChanged);
     open();
     return () => {
+      window.removeEventListener("storage", storageChanged);
       closed = true;
       window.clearTimeout(timer);
       window.clearTimeout(handoffTimer);
@@ -1051,7 +1079,10 @@ export function useCore(speaker?: string) {
   const stopSend = useCallback((id: number) => {
     if (send(JSON.stringify({ type: "stop_send", id }))) return true;
     stopWaiting.current = id;
-    sayNotice(STOP_WAITS);
+    if (sendSource.current?.id === id) {
+      setSendCard({ ...sendSource.current, stopPending: true });
+      notices.current.push({ text: STOP_WAITS, kind: "notice", time: Date.now() });
+    } else sayNotice(STOP_WAITS);
     answered();
     return false;
   }, [send]);
@@ -1126,6 +1157,7 @@ export function useCore(speaker?: string) {
     placing,
     clearNotice: useCallback(() => { const e = noticeQueue.snapshot(); if (e?.kind === "notice") noticeQueue.drop("notice", e.key); }, [noticeQueue]),
     undoId,
+    latestUndoId,
     revertAsk,
     correctable,
     // Where your attention is, as told to the core: the "this" mark on the map picks from it (Attention.tsx).
@@ -1174,17 +1206,24 @@ export function useCore(speaker?: string) {
       if (control !== null) { noticeQueue.control(control); return true; }
       if (isDefaultRecap(text)) { requestRecap(); return true; }
       const parts = splitThought(text);
+      try { outbox.current = readWaiting(queueKey); } catch { /* A failed save below keeps the draft. */ }
       const online = socket.current?.readyState === WebSocket.OPEN;
       // Reserve the whole batch before sending: a full offline queue must keep the entire draft for retry.
-      if (!online && outbox.current.length + parts.length > 50) {
+      if (outbox.current!.length + parts.length > 50) {
         sayNotice("Too many thoughts are waiting to send. Reconnect, then try sending this one again."); answered(); return false;
       }
-      for (const part of parts) {
-        const message = JSON.stringify({ type: "text", text: part });
-        if (online) socket.current!.send(message);
-        else outbox.current.push(message);
+      const messages = parts.map((part) => JSON.stringify({ type: "text", id: thoughtId(), text: part }));
+      {
+        try {
+          // Save the entire batch before telling the composer it can clear the draft.
+          saveWaiting(queueKey, messages);
+        } catch {
+          sayNotice("Couldn't save this thought. Keep it here and try again when connected."); answered(); return false;
+        }
+        outbox.current = readWaiting(queueKey);
+        setQueuedCount(outbox.current.length);
       }
-      if (!online) setQueuedCount(outbox.current.length);
+      if (online) for (const message of messages) socket.current!.send(message);
       if (parts.length > 1) { sayNotice(`Sent in ${parts.length} parts`); setUndoId(null); answered(); }
       return true;
     },

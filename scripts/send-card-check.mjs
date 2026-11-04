@@ -13,7 +13,7 @@ const src = (name) => readFileSync(new URL(`../ui/src/${name}`, import.meta.url)
 globalThis.location = new URL("http://localhost:4321/");
 const server = await uiServer();
 try {
-  const { received, caughtUp, secondsLeft, elapsed, nextTick, cardWords, announcement, stopsOnKey, lingerMs, STATE_CLASS, comesFirst } = await server.ssrLoadModule("/src/send-card.ts");
+  const { received, caughtUp, secondsLeft, elapsed, nextTick, cardWords, announcement, stopsOnKey, lingerMs, STATE_CLASS, comesFirst, STOP_WAITS } = await server.ssrLoadModule("/src/send-card.ts");
   const { upFor } = await server.ssrLoadModule("/src/notice-rules.ts");
   const text = "Hi Mia, could you confirm what to bring?";
   const msg = (state, extra = {}) => ({ type: "send_card", id: 1, to: "Mia", text, state, in_ms: 0, live: false, message: "", ...extra });
@@ -47,6 +47,13 @@ try {
   assert.equal(stopsOnKey(card, "Enter", t0), false);
   assert.equal(stopsOnKey(null, "Escape", t0), false);
   assert.equal(lingerMs(card), 0, "a counting card stays until it ends");
+
+  const waiting = { ...card, stopPending: true };
+  assert.equal(cardWords(waiting, t0).status, STOP_WAITS, "offline Stop is explained in its own card");
+  assert.equal(cardWords(waiting, t0).stop, false, "the same Stop cannot be submitted twice");
+  assert.equal(announcement(waiting), STOP_WAITS);
+  assert.equal(stopsOnKey(waiting, "Escape", t0), false);
+  assert.equal(received(waiting, msg("stopped"), t0).stopPending, undefined, "the core's reply retires the local waiting state");
 
   // The end: only for this card; a newer card replaces an older one, and a late end of the older is ignored.
   const stopped = received(card, msg("stopped", { message: "Stopped: not sent" }), t0 + 3000);

@@ -72,12 +72,23 @@ impl Runtime {
 }
 
 pub fn message(core: &Core) -> ServerMsg {
-    let data = core.usage.data.lock().unwrap().clone();
-    ServerMsg::Usage { data: data.map(|data| Snapshot { data, calls: core.service.calls(crate::now_ms()) }) }
+    message_at(core, crate::now_ms())
+}
+
+fn message_at(core: &Core, now: u64) -> ServerMsg {
+    let data = core.usage.data.lock().unwrap().clone().unwrap_or_else(|| {
+        let seconds = now / 1000;
+        let (year, month, day) = crate::import::civil_from_days((seconds / 86_400) as i64);
+        Data {
+            updated: format!("{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}.{:03}Z",
+                seconds / 3600 % 24, seconds / 60 % 60, seconds % 60, now % 1000),
+            rows: Vec::new(),
+        }
+    });
+    ServerMsg::Usage { data: Some(Snapshot { data, calls: core.service.calls(now) }) }
 }
 
 pub async fn run(core: Arc<Core>) {
-    if core.usage.path.is_none() { return; }
     let mut timer = tokio::time::interval_at(tokio::time::Instant::now() + REFRESH, REFRESH);
     timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
@@ -94,6 +105,19 @@ mod tests {
     use serde_json::{json, Value};
 
     fn value(message: ServerMsg) -> Value { serde_json::to_value(message).unwrap() }
+
+    fn assert_calls_only(message: ServerMsg, used: usize, limit: usize) -> Value {
+        let data = value(message)["data"].clone();
+        assert_eq!(data["rows"], json!([]), "no fabricated external allowances");
+        assert_eq!(data["calls"]["used"], used);
+        assert_eq!(data["calls"]["limit"], limit);
+        let now = data["calls"]["at_ms"].as_u64().unwrap();
+        let seconds = now / 1000;
+        let (y, m, d) = crate::import::civil_from_days((seconds / 86_400) as i64);
+        assert_eq!(data["updated"], format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}.{:03}Z",
+            seconds / 3600 % 24, seconds / 60 % 60, seconds % 60, now % 1000));
+        data
+    }
 
     #[tokio::test(start_paused = true)]
     async fn usage_replays_and_refreshes_each_minute_and_clears_bad_data() {
@@ -134,27 +158,69 @@ mod tests {
         ] {
             std::fs::write(&path, contents).unwrap();
             tokio::time::advance(REFRESH).await;
-            assert!(value(updates.recv().await.unwrap().message)["data"].is_null());
+            assert_calls_only(updates.recv().await.unwrap().message, 1, model::CALLS_PER_HOUR);
         }
         std::fs::remove_file(&path).unwrap();
         tokio::time::advance(REFRESH).await;
-        assert!(value(updates.recv().await.unwrap().message)["data"].is_null());
+        assert_calls_only(updates.recv().await.unwrap().message, 1, model::CALLS_PER_HOUR);
+        // A repaired external file returns without a restart.
+        std::fs::write(&path, sample.to_string()).unwrap();
+        tokio::time::advance(REFRESH).await;
+        let restored = value(updates.recv().await.unwrap().message);
+        assert_eq!(restored["data"]["rows"], sample["rows"]);
+        assert_eq!(restored["data"]["calls"]["used"], 1);
         task.abort();
         drop(core);
         assert!(std::fs::read(dir.join("journal.jsonl")).unwrap().is_empty(), "usage never enters the journal");
         std::fs::remove_dir_all(dir).unwrap();
     }
 
-    #[tokio::test]
-    async fn no_file_has_no_allowances_or_core_row() {
+    #[tokio::test(start_paused = true)]
+    async fn no_file_keeps_live_core_calls_and_periodic_updates() {
         let path = std::env::temp_dir().join(format!("e2a2o-usage-{}.jsonl", uuid::Uuid::new_v4()));
         let (journal, world) = Journal::open(&path).unwrap();
-        let core = Core { usage: Runtime::with_path(None).await, ..Core::test(journal, world) };
+        let core = Arc::new(Core { usage: Runtime::with_path(None).await, service: model::Service::with_limit(2), ..Core::test(journal, world) });
         core.spend().unwrap();
-        assert_eq!(value(message(&core)), json!({"type":"usage", "data":null}));
-        let missing = Core { usage: Runtime::with_path(Some(path.with_extension("missing"))).await, ..core };
-        assert_eq!(value(message(&missing)), json!({"type":"usage", "data":null}));
-        drop(missing);
+        let first = assert_calls_only(message(&core), 1, 2);
+        assert_eq!(core.calls_left(), 1, "remaining uses the existing budget");
+        let mut updates = core.updates.subscribe();
+        let task = tokio::spawn(run(core.clone()));
+        tokio::task::yield_now().await;
+        tokio::time::advance(REFRESH - Duration::from_secs(1)).await;
+        assert!(updates.try_recv().is_err());
+        core.spend().unwrap();
+        tokio::time::advance(Duration::from_secs(1)).await;
+        assert_calls_only(updates.recv().await.unwrap().message, 2, 2);
+        assert_eq!(core.calls_left(), 0);
+        assert!(core.spend().is_err(), "reporting does not disable the cap");
+        // The same reporting path ages out real calls at the rolling-hour boundary.
+        let now = crate::now_ms();
+        assert_calls_only(message_at(&core, now + 3_600_000), 0, 2);
+        assert_eq!(core.calls_left(), 2);
+        tokio::time::advance(REFRESH).await;
+        // spend() above also emitted a cap notice; skip it to read the next periodic usage.
+        let next = loop {
+            let message = updates.recv().await.unwrap().message;
+            if matches!(message, ServerMsg::Usage { .. }) { break message; }
+        };
+        let next = assert_calls_only(next, 0, 2);
+        assert!(next["calls"]["at_ms"].as_u64().unwrap() >= first["calls"]["at_ms"].as_u64().unwrap());
+        task.abort();
+        task.await.unwrap_err();
+        drop(core);
+        assert!(std::fs::read(&path).unwrap().is_empty(), "usage never enters the journal");
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[tokio::test]
+    async fn missing_file_and_uncapped_calls_still_report() {
+        let path = std::env::temp_dir().join(format!("e2a2o-usage-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, world) = Journal::open(&path).unwrap();
+        let core = Core { usage: Runtime::with_path(Some(path.with_extension("missing"))).await,
+            service: model::Service::with_limit(0), ..Core::test(journal, world) };
+        core.spend().unwrap();
+        assert_calls_only(message(&core), 1, 0);
+        drop(core);
         std::fs::remove_file(path).unwrap();
     }
 }

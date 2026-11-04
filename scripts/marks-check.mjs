@@ -24,11 +24,13 @@ try {
     return { getTracks: () => [track], getAudioTracks: () => [track] };
   } } } });
   globalThis.window ??= globalThis;
-  globalThis.AudioWorkletNode = class { port = {}; connect(next) { return next; } disconnect() {} };
+  const capture = [];
+  globalThis.AudioWorkletNode = class { port = { postMessage: (state) => capture.push(state), close() {} }; connect(next) { return next; } disconnect() {} };
   globalThis.AudioContext = class { sampleRate = 24000; state = "running"; async resume() {} audioWorklet = { addModule: async () => {} }; destination = {};
     createMediaStreamSource() { return audioNode(); } createGain() { return { gain: { value: 1 }, ...audioNode() }; } close() {} };
   let lost = 0;
   const stopMic = await startMic(() => {}, () => lost++);
+  assert.ok(capture.length > 0, "capture state is sent to the worklet");
   end();
   end();
   assert.equal(lost, 1, "a track that ends on its own is said once");

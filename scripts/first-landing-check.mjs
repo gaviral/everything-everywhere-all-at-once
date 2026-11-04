@@ -155,7 +155,7 @@ try {
     assert.ok(await until('!!document.querySelector(".bubble-flight-bubble")', 1500), `${label}: its bubble lifts out of the box`);
     // Held above the box, still on the empty map, until the core answers.
     await sleep(PLACE_MS - 400);
-    const waiting = await evaluate(`(() => { const b = document.querySelector(".bubble-flight-bubble"), c = document.querySelector(".composer, [data-slot=stage]").getBoundingClientRect(), r = b?.getBoundingClientRect();
+    const waiting = await evaluate(`(() => { const b = document.querySelector(".bubble-flight-bubble"), c = document.querySelector('[data-guide="composer"]').getBoundingClientRect(), r = b?.getBoundingClientRect();
       return { bubble: !!b, above: !!r && r.bottom <= c.top + 1, hero: !!document.querySelector(".shell-welcome"), canvas: !!document.querySelector(".spine-frame") }; })()`);
     assert.deepEqual(waiting, { bubble: true, above: true, hero: true, canvas: false }, `${label}: while it is placed, its bubble hovers above the box over the welcome`);
     if (shots && !hold) {

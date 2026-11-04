@@ -31,12 +31,12 @@ fn refused(answer: &Value) -> String {
     format!("Voice Transcribe refused the session: {}", message.unwrap_or("it didn't start"))
 }
 
-pub async fn run(core: Arc<Core>, speaker: String, audio: mpsc::Receiver<Vec<u8>>) -> anyhow::Result<()> {
-    run_at(URL, core, speaker, audio).await
+pub async fn run(core: Arc<Core>, speaker: String, audio: mpsc::Receiver<Vec<u8>>, window: u64) -> anyhow::Result<()> {
+    run_at(URL, core, speaker, audio, Some(window)).await
 }
 
 /// `run` against the service at `url` (a test's stand-in on this machine).
-async fn run_at(url: &str, core: Arc<Core>, speaker: String, mut audio: mpsc::Receiver<Vec<u8>>) -> anyhow::Result<()> {
+async fn run_at(url: &str, core: Arc<Core>, speaker: String, mut audio: mpsc::Receiver<Vec<u8>>, window: Option<u64>) -> anyhow::Result<()> {
     let key = core.listening_key()?.to_string();
     let session = format!("e2a2o-{}", uuid::Uuid::new_v4().simple());
     let (socket, _) = tokio::time::timeout(QUIET_MAX, tokio_tungstenite::connect_async(format!("{url}?sessionId={session}")))
@@ -75,7 +75,7 @@ async fn run_at(url: &str, core: Arc<Core>, speaker: String, mut audio: mpsc::Re
 
     // However the stream ends, the writer stops too: it holds the audio channel, and this window can
     // only start listening again once that closes. The caller says listening stopped.
-    let ended = hear(&core, &speaker, &mut stream).await;
+    let ended = hear(&core, &speaker, &mut stream, window).await;
     writer.abort();
     core.send_to(&speaker, ServerMsg::Partial { text: String::new() });
     core.listen_step(&speaker, step, MODEL, true);
@@ -83,7 +83,7 @@ async fn run_at(url: &str, core: Arc<Core>, speaker: String, mut audio: mpsc::Re
 }
 
 /// Reads the service's events until the stream ends, a spoken "stop listening", or a silence past `QUIET_MAX`.
-async fn hear<S>(core: &Arc<Core>, speaker: &str, stream: &mut S) -> anyhow::Result<()>
+pub(crate) async fn hear<S>(core: &Arc<Core>, speaker: &str, stream: &mut S, window: Option<u64>) -> anyhow::Result<()>
 where
     S: futures_util::Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
 {
@@ -97,7 +97,7 @@ where
             Some(Ok(Message::Text(t))) if t.as_str().contains(r#""audioProgress""#) => {}
             // "Stop listening": nothing after it is heard, kept or sent on, even words the service still had.
             Some(Ok(Message::Text(t))) => {
-                if handle(core, speaker, &mut primer, t.as_str()) {
+                if handle(core, speaker, &mut primer, t.as_str(), window) {
                     return Ok(());
                 }
             }
@@ -240,7 +240,7 @@ impl Primer {
 }
 
 /// One event from the service; true when it was a spoken "stop listening", which ends the stream.
-fn handle(core: &Arc<Core>, speaker: &str, primer: &mut Primer, text: &str) -> bool {
+fn handle(core: &Arc<Core>, speaker: &str, primer: &mut Primer, text: &str, window: Option<u64>) -> bool {
     let Ok(mut event) = serde_json::from_str::<Value>(text) else { return false };
     // The primer's words ("Uh", or nothing) and its turn: never shown or kept. Mostly that is everything up to
     // PRIMER_MS; but its turn can end late (seen at 3.1–3.8 s) and then its end, or the first line joined to it
@@ -298,7 +298,7 @@ fn handle(core: &Arc<Core>, speaker: &str, primer: &mut Primer, text: &str) -> b
             core.trace.write(|| json!({"kind": "heard", "speaker": speaker, "raw": raw, "kept": words}));
             core.send_to(speaker, ServerMsg::Partial { text: String::new() });
             if !words.is_empty() {
-                core.add_thought(speaker, &words);
+                core.take_turn(speaker, &words, true, false, false, window);
             }
             // After the turn's thought, so the other windows see its words come as "Speaking now…" goes (call.rs).
             crate::call::speaking(core, speaker, false);
@@ -350,8 +350,8 @@ mod tests {
         let mut updates = core.updates.subscribe();
         let turn = |words: &str| serde_json::json!({"type": "speechComplete", "transcript": words}).to_string();
         let mut primer = Primer::default();
-        assert!(!handle(&core, "you", &mut primer, &turn("i should stop listening to podcasts at night")));
-        assert!(handle(&core, "you", &mut primer, &turn("okay stop listening")));
+        assert!(!handle(&core, "you", &mut primer, &turn("i should stop listening to podcasts at night"), None));
+        assert!(handle(&core, "you", &mut primer, &turn("okay stop listening"), None));
         let paused = std::iter::from_fn(|| updates.try_recv().ok()).any(|out| matches!(out.message, ServerMsg::View { view: View::Pause }));
         assert!(paused);
         let texts: Vec<String> = core.snapshot().thoughts.iter().map(|t| t.text.clone()).collect();
@@ -420,16 +420,16 @@ mod tests {
         ];
         let mut state = Primer::default();
         for event in &primer {
-            assert!(!handle(&core, "you", &mut state, &event.to_string()));
+            assert!(!handle(&core, "you", &mut state, &event.to_string(), None));
         }
         assert!(std::iter::from_fn(|| updates.try_recv().ok()).all(|out| !matches!(out.message, ServerMsg::Partial { .. })));
         assert!(core.snapshot().thoughts.is_empty());
         let words = serde_json::json!({"type": "transcript", "transcript": "Okay, rent", "final": false, "audioProcessedMs": PRIMER_MS + 1_100});
-        handle(&core, "you", &mut state, &words.to_string());
+        handle(&core, "you", &mut state, &words.to_string(), None);
         let shown = std::iter::from_fn(|| updates.try_recv().ok()).any(|out| matches!(&out.message, ServerMsg::Partial { text } if text == "Okay, rent"));
         assert!(shown, "the first line's words show as they come");
         let line = serde_json::json!({"type": "speechComplete", "audioProcessedMs": PRIMER_MS + 4_900, "turnId": 1, "transcript": "Okay, rent is due Friday."});
-        handle(&core, "you", &mut state, &line.to_string());
+        handle(&core, "you", &mut state, &line.to_string(), None);
         let texts: Vec<String> = core.snapshot().thoughts.iter().map(|t| t.text.clone()).collect();
         assert_eq!(texts, ["Okay, rent is due Friday."]);
         let _ = std::fs::remove_file(&path);
@@ -448,10 +448,10 @@ mod tests {
         let mut state = Primer::default();
         for (at, words) in [(PRIMER_MS + 600, "Okay"), (PRIMER_MS + 900, "Okay, rent"), (PRIMER_MS + 1_200, "Okay, rent is due")] {
             let event = serde_json::json!({"type": "transcript", "transcript": words, "final": false, "audioProcessedMs": at});
-            handle(&core, "you", &mut state, &event.to_string());
+            handle(&core, "you", &mut state, &event.to_string(), None);
         }
         let end = serde_json::json!({"type": "speechComplete", "audioProcessedMs": PRIMER_MS + 2_000, "turnId": 1, "transcript": "Okay, rent is due Friday."});
-        handle(&core, "you", &mut state, &end.to_string());
+        handle(&core, "you", &mut state, &end.to_string(), None);
         let told: Vec<String> = std::iter::from_fn(|| updates.try_recv().ok())
             .filter_map(|out| match out.message {
                 ServerMsg::Call { people, .. } => {
@@ -478,7 +478,7 @@ mod tests {
         let mut updates = core.updates.subscribe();
         let mut state = Primer::default();
         for event in events {
-            handle(&core, "you", &mut state, &event.to_string());
+            handle(&core, "you", &mut state, &event.to_string(), None);
         }
         let shown = std::iter::from_fn(|| updates.try_recv().ok())
             .filter_map(|out| match out.message {
@@ -580,16 +580,16 @@ mod tests {
         let mut updates = core.updates.subscribe();
         let turn = |words: &str| serde_json::json!({"type": "speechComplete", "transcript": words}).to_string();
         let mut primer = Primer::default();
-        assert!(handle(&core, "you", &mut primer, &turn("call mom tomorrow about the flight. Stop listening.")));
+        assert!(handle(&core, "you", &mut primer, &turn("call mom tomorrow about the flight. Stop listening."), None));
         let paused = std::iter::from_fn(|| updates.try_recv().ok()).any(|out| matches!(out.message, ServerMsg::View { view: View::Pause }));
         assert!(paused, "the mic pauses");
         let texts: Vec<String> = core.snapshot().thoughts.iter().map(|t| t.text.clone()).collect();
         assert_eq!(texts, ["Call mom tomorrow about the flight."]);
-        assert!(handle(&core, "you", &mut primer, &turn("That's all for today, okay, stop listening, thanks.")));
+        assert!(handle(&core, "you", &mut primer, &turn("That's all for today, okay, stop listening, thanks."), None));
         // Only courtesy before it: no thought.
         let before = core.snapshot().thoughts.len();
         for said in ["Thanks, stop listening.", "Okay thank you. Stop listening.", "Hey Muse, mic off."] {
-            assert!(handle(&core, "you", &mut primer, &turn(said)), "{said}");
+            assert!(handle(&core, "you", &mut primer, &turn(said), None), "{said}");
         }
         assert_eq!(core.snapshot().thoughts.len(), before, "{:?}", core.snapshot().thoughts.iter().map(|t| &t.text).collect::<Vec<_>>());
         let _ = std::fs::remove_file(&path);
@@ -615,13 +615,13 @@ mod tests {
             progress(ms)
         });
         let mut quiet_room = Box::pin(quiet_room.chain(futures_util::stream::once(async { Ok(Message::Close(None)) })));
-        assert!(hear(&core, "you", &mut quiet_room).await.is_ok());
+        assert!(hear(&core, "you", &mut quiet_room, None).await.is_ok());
         assert!(updates.try_recv().is_err(), "progress reports never reach the window");
 
         // One report, then nothing at all: an error just past QUIET_MAX, not a wait forever.
         let started = tokio::time::Instant::now();
         let mut gone = Box::pin(futures_util::stream::iter([progress(80)]).chain(futures_util::stream::pending()));
-        let ended = hear(&core, "you", &mut gone).await;
+        let ended = hear(&core, "you", &mut gone, None).await;
         assert!(ended.is_err());
         let waited = started.elapsed();
         assert!(waited >= QUIET_MAX && waited < QUIET_MAX + std::time::Duration::from_millis(100), "{waited:?}");

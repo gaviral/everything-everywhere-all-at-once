@@ -34,6 +34,7 @@ const STEPS: Record<string, string> = {
   "app run": "running your app",
   find: "searching your topics",
   explain: "explaining",
+  conversation: "answering",
   "safety net": "checking that",
   import: "reading your chats",
 };
@@ -41,7 +42,7 @@ const RULES: Record<string, string> = { back: "back to your topic", tune: "playe
 
 /** Steps you asked for and wait on, "Where was I?" included; the rest (pictures, tidying, an app a watcher woke, a
  *  Recap draft nobody asked for) run behind, so they never cover a placing time. */
-const FOREGROUND = new Set(["placer", "recap", "app", "app search", "find", "explain", "safety net", "import", "back"]);
+const FOREGROUND = new Set(["placer", "recap", "app", "app search", "find", "explain", "safety net", "import", "back", "conversation"]);
 
 const kind = (step: string) => (step.startsWith("import") ? "import" : step);
 export function verb(step: string, done: boolean): string {

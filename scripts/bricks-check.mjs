@@ -242,9 +242,10 @@ function sourceProblems(dir, file, text) {
   // The page has one header, the app's: the map measures every <header> to keep a landing clear of it (App.tsx
   // `mapTop`), and styles.css styles them all.
   if (/<header\b/.test(text)) out.push("draws a <header>: use a div (the app's header is the page's only one)");
+  // Match JSX attributes, not an attribute selector reading the app's named input.
   // A part's name for a hint or the guide: the brick's own, starting with its id, or a thread's or point's (a view's).
   const own = dir.split("/").at(-1).replace(/^_/, "");
-  for (const [, name] of text.matchAll(/data-guide=\{?\s*["'`]([^"'`$]*)/g)) {
+  for (const [, name] of text.matchAll(/\sdata-guide=\{?\s*["'`]([^"'`$]*)/g)) {
     if (!(name === own || name.startsWith(`${own}:`) || name.startsWith(`${own}-`) || name.startsWith("thread:") || name.startsWith("point:"))) {
       out.push(`data-guide="${name}": a brick's own parts are named starting with "${own}" (threads and points: thread:<id>, point:<id>)`);
     }
@@ -279,7 +280,7 @@ const wordsIn = (text) => new Set([...text.matchAll(/"([^"\\\n]*)"|'([^'\\\n]*)'
   }
   for (const fine of [`import { useState } from "react";`, `import { useBrickEvent } from "../contract";`, `import "./pin.css";`, `import { motion } from "motion/react";`,
     `import { ReactFlow } from "@xyflow/react";`, `import "@xyflow/react/dist/base.css";`, `return <i data-guide="pin" />;`, `return <i data-guide="pin:size" />;`,
-    `return <i data-guide={\`point:\${id}\`} />;`]) {
+    `return <i data-guide={\`point:\${id}\`} />;`, `document.querySelector('[data-guide="composer"]');`]) {
     assert.deepEqual(sourceProblems(dir, "index.tsx", fine), [], `the check refuses: ${fine}`);
   }
   assert.deepEqual(sourceProblems(dir, "parts/more.tsx", `import { a } from "../index";`), [], "a file in a subfolder may import the brick's own files");
@@ -798,8 +799,12 @@ try {
         const at = `live-outline in the app at ${w} × ${h} px`;
         await width(w, h);
         await go(`${base}/?cards`);
-        if (!await until(`!!document.querySelector(".live-outline") && !!document.querySelector(".dock")`, 8000)) { fail(at, "no panel"); continue; }
+        // Panels mount before /ws opens. Wait for this page's snapshot, then
+        // acknowledge a notice before sending landings: neither a mounted panel
+        // nor the server's socket count proves the page is ready to hear them.
+        if (!await until(`!!document.querySelector(".live-outline") && !!document.querySelector(".dock") && ${JSON.stringify(full.threads.map((t) => t.id))}.every((id) => !!document.getElementById("thread-" + id))`, 8000)) { fail(at, "panels or core snapshot never became ready"); continue; }
         core.send({ type: "notice", message: "A notice to come back to" });
+        if (!await until(`!!document.querySelector(".notice-timeline-clock")`, 5000)) { fail(at, "core notice was not received before sending points"); continue; }
         talk.forEach((threadId, i) => core.send({ type: "change", change: { type: "thought_added", thought: thought(`lo-${w}-${i}`, `Point ${i + 1} of the talk, um, said at a length that takes a line or two of the outline`, threadId) } }));
         if (!await until(`${bullets}.length === ${talk.length} && !!document.querySelector(".notice-timeline-clock")`, 5000)) { fail(at, "the points from the core never all showed, or no clock"); continue; }
         await settle();
@@ -1469,6 +1474,7 @@ try {
           words: document.querySelectorAll(".spine-text").length, bars: document.querySelectorAll(".spine-point .spine-bars").length,
           heads: [...document.querySelectorAll(".spine-head .spine-title")].map((t) => t.textContent).sort().join(" | "),
           labels: [...document.querySelectorAll(".spine-label")].filter((l) => l.checkVisibility()).map((l) => l.textContent).sort().join(" | "),
+          labelMin: Math.min(...[...document.querySelectorAll(".spine-head .spine-label")].map((l) => parseFloat(getComputedStyle(l).fontSize))) * new DOMMatrix(getComputedStyle(document.querySelector(".react-flow__viewport")).transform).a,
           pictures: document.querySelector(".spine-frame").classList.contains("spine-stop-pictures"),
           cards: [...document.querySelectorAll(".spine-card")].map((c) => getComputedStyle(c).visibility).join(),
           tangentPictures: [...document.querySelectorAll(".spine-card-pic .spine-tile")].filter((t) => t.checkVisibility()).length, tangents: document.querySelectorAll(".spine-card").length,
@@ -1494,7 +1500,7 @@ try {
         [!atWords.labels && !atWords.pictures, "a far-out look is on at reading size"], [!atWords.inside, "the check's map fits the screen at reading size, so See all couldn't be told from Words"]]);
       const atTitles = await goTo("2", "Titles");
       if (atTitles) judge("2 (Titles)", atTitles, [[atTitles.zoom < atWords.zoom, "the view didn't zoom out"], [!atTitles.words && atTitles.bars > 0, "words didn't turn to bars"],
-        [atTitles.labels === atWords.heads, "the topics' titles don't show"], [!atTitles.pictures, "it has the Pictures look"], [!atTitles.cards.includes("hidden"), "tangent cards are gone"], [atTitles.inside, "the whole map isn't in view"]]);
+        [atTitles.labels === atWords.heads, "the topics' titles don't show"], [!atTitles.pictures, "it has the Pictures look"], [!atTitles.cards.includes("hidden"), "tangent cards are gone"], [atTitles.labelMin >= 12.9, "Titles must keep names readable; See all fits the whole map"]]);
       const atPictures = await goTo("3", "Pictures");
       // Every thread shows there: a tangent as its own small picture where its card is (scripts/spine-all-threads-check.mjs holds where).
       if (atPictures) judge("3 (Pictures)", atPictures, [[atPictures.pictures, "the Pictures look isn't on"], [atPictures.tangents > 0 && atPictures.tangentPictures === atPictures.tangents, "a tangent has no picture"],

@@ -19,7 +19,7 @@ type Kind = keyof Values;
 type Entry = { [K in Kind]: { kind: K; key: string; value: Values[K]; group: string } }[Kind];
 const STORAGE = "e2a2o.hiddenNotices";
 
-/** One arrival order. Updating an in-flight card keeps its place; read cards never return. */
+/** One reading order, interrupted only by an active send whose Stop must be reachable. */
 export function noticeQueue() {
   let items: Entry[] = [];
   const read = new Set<string>();
@@ -34,11 +34,19 @@ export function noticeQueue() {
     find: (kind: Kind, key: string) => items.find((e) => e.kind === kind && e.key === key),
     push<K extends Kind>(kind: K, key: string, value: Values[K], group: string = kind) {
       const id = `${kind}:${key}`;
-      if (read.has(id) || hidden.includes(group)) return;
       const entry = { kind, key, value, group } as Entry;
+      const counting = entry.kind === "send" && entry.value.state === "counting";
+      if ((!counting && read.has(id)) || hidden.includes(group)) return;
+      // A restarted core may reuse an id whose old completion was already read.
+      if (counting) read.delete(id);
       const at = items.findIndex((e) => e.kind === kind && e.key === key);
-      if (at >= 0 && (items[at].value === value || kind === "unfinished")) return;
-      items = at < 0 ? [...items, entry] : items.map((e, i) => i === at ? entry : e);
+      if (at >= 0 && (items[at].value === value || kind === "unfinished") && (!counting || at === 0)) return;
+      if (counting) {
+        // Core owns one current send per person. A new count supersedes an older
+        // count, but completed cards and other unread answers resume afterwards.
+        items = [entry, ...items.filter((e) => !(e.kind === kind && e.key === key)
+          && !(e.kind === "send" && e.value.state === "counting"))];
+      } else items = at < 0 ? [...items, entry] : items.map((e, i) => i === at ? entry : e);
       publish();
     },
     drop(kind: Kind, key?: string, remember = true) {

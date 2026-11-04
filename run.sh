@@ -42,6 +42,7 @@ fi
 # Before the build, as the core will see it (environment, then .env): demo and room stop without a key, and a busy
 # port (on every address this mode opens) is reported with the same command on the next port. Prints the port.
 port="$(node scripts/start.mjs --selected-core "$core" "$@")" || exit 1
+url="$(node scripts/start.mjs --open-url "$port" "${1:-}")"
 # `./run.sh sample [founder]` opens a ready-made map to explore without a key or a mic (a student's week,
 # or a founder's day); it starts fresh from samples/ each time. Its pictures were drawn once, by the app's
 # own picture pipeline, and the sample's journal names them: they go where the core serves /images from
@@ -56,25 +57,31 @@ if [ -n "$1" ]; then
   export E2A2O_DATA="../data/$1"
 fi
 if [ ! -d ui/node_modules ]; then
+  echo "Installing UI dependencies..."
   if ! (cd ui && npm install --no-audit --no-fund --no-update-notifier); then
     echo "The UI dependency install failed (see above). Fix the npm error, then run this again." >&2
     exit 1
   fi
 fi
+echo "Building UI..."
 if ! out="$(cd ui && npm run build 2>&1)"; then
   echo "$out" >&2
   echo "The UI build failed (see above)." >&2
   exit 1
 fi
+echo "UI build complete."
 case "${1:-}" in
   demo) echo "When it says \"E2A2O core on\", open http://localhost:$port, then in a second terminal run: node scripts/demo.mjs scripts/demo-talk.jsonl --port $port" ;;
   room) echo "On this laptop open http://localhost:$port. The link for the second laptop is printed below." ;;
-  ""|sample) ;;
+  sample) echo "After the core starts, open the sample fixture (no key or mic): $url" ;;
+  "") ;;
   # Any other name is a map of its own; say so, or a mistyped `sample` just looks like an empty sample.
   *) [ -d "data/$1" ] || echo "New empty map \"$1\" (kept in data/$1). For the ready-made sample map: ./run.sh sample" ;;
 esac
 cd core
 if [ -n "$core" ]; then
+  echo "Starting bundled core..."
   exec "$core"
 fi
+echo "Building and starting Rust core (cold source build: about 4 min)..."
 exec cargo run --release

@@ -2,6 +2,8 @@
 
 Every model call from one run of the demo talk, as the core traced it. Nothing here was written by hand except the headings and the sentences between them; the lines are shortened by `scripts/trace-summary.mjs`, never edited.
 
+**Historical synthetic evidence, not final-build validation.** This excerpt belongs to bd04356 on 2026-11-02. Its reported beat score below belongs to the recorder used then; it does not certify the current Canvas, audible app output, native actions, human microphone reliability or the hosted guest route. The selected release SHA, new take trace and final video link are pending. No new model calls were made to prepare this packet.
+
 - **The run:** 2026-11-02, app commit bd04356, one recorded take of the demo talk with `E2A2O_TRACE=1` on the core. The talk (spine A: 12 lines, about 2 minutes) was spoken by a synthesized voice (macOS `say`) into headless Chrome's mic, so every line went through the real speech path: the page streams the mic to the core, the core to Muse Voice Transcribe. The take passed its checks: 14 of 14 beats, words to map median 2.8 s, slowest 3.4 s (n = 8).
 - **Shortened:** what was sent becomes its size and the last message's first 240 characters, and an answer keeps its first 240. The full prompts carry the whole map, so they stay out. The trace never holds the key or any request header (core/src/trace.rs).
 - **Make your own:** with a key, `E2A2O_TRACE=1 ./run.sh demo`, talk or play `node scripts/demo.mjs scripts/demo-talk-v4.jsonl`, then `node scripts/trace-summary.mjs data/demo/trace.jsonl --excerpt`. `node scripts/where.mjs data/demo` shows where each thought went and why.

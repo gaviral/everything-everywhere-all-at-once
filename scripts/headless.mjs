@@ -14,8 +14,9 @@ const chromePath = [process.env.CHROME, "/Applications/Google Chrome.app/Content
   .find((p) => p && existsSync(p));
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** Why this machine can't run a page check, or "" when it can. */
+/** Why a page check is disabled or unavailable, or "" when it can run. */
 export function ready() {
+  if (process.env.PRECHECK_PAGES === "0") return "page checks disabled by PRECHECK_PAGES=0";
   if (!chromePath) return "no Chrome (set CHROME)";
   if (!existsSync(join(dist, "index.html"))) return "no ui/dist (build the UI first)";
   return "";
@@ -124,10 +125,10 @@ function watchExit() {
 }
 
 /** Headless Chrome with one page at `url`, `width` × `height`, light, the app's own motion. */
-export async function openPage(url, { width = 1440, height = 900, debugPort = 0 } = {}) {
+export async function openPage(url, { width = 1440, height = 900, debugPort = 0, chromeArgs = [] } = {}) {
   const profile = mkdtempSync(join(tmpdir(), "page-check-"));
   const chrome = spawn(chromePath, ["--headless=new", `--remote-debugging-port=${debugPort}`, `--user-data-dir=${profile}`, "--no-first-run",
-    "--no-default-browser-check", "--mute-audio", "--hide-scrollbars", `--window-size=${width},${height}`, "about:blank"], { stdio: ["ignore", "ignore", "pipe"] });
+    "--no-default-browser-check", "--mute-audio", "--hide-scrollbars", `--window-size=${width},${height}`, ...chromeArgs, "about:blank"], { stdio: ["ignore", "ignore", "pipe"] });
   running.set(chrome, profile);
   chrome.once("exit", () => running.delete(chrome));
   watchExit();

@@ -167,6 +167,7 @@ try {
       await page("Page.addScriptToEvaluateOnNewDocument", { source: `
         localStorage.clear(); sessionStorage.clear();
         localStorage.setItem("e2a2o.toured", "1");
+        localStorage.setItem("e2a2o.install-hint", "1");
         window.__errors = [];
         addEventListener("error", e => { if (!/^ResizeObserver loop/.test(e.message)) __errors.push(e.message || "Resource failed: " + e.target?.src); }, true);
         addEventListener("unhandledrejection", e => __errors.push(String(e.reason)));
@@ -217,7 +218,12 @@ try {
         const seen = keyState
           ? `document.querySelector('.shell-status-word')?.textContent === ${JSON.stringify(keyState)}`
           : `document.querySelector('.notice')?.textContent.includes(${JSON.stringify(message)})`;
-        assert.ok(await until(seen, 3000), `${label}: live feedback still displays ${keyState ?? message}`);
+        assert.ok(await until(seen, 3000), `${label}: live feedback still displays ${keyState ?? message}; stage=${await evaluate('document.querySelector(".shell-stage")?.textContent')} errors=${JSON.stringify(await evaluate('__errors'))}`);
+        // Read each visible answer before the next scene. History must retain it after dismissal.
+        if (!keyState) {
+          await tap('.notice [aria-label="Dismiss notice"]', "read the live answer");
+          assert.ok(await until('!document.querySelector(".notice")', 3000), "the answer was read");
+        }
         // Separate deliveries, including identical text, must each reach the app's notice effect.
         await sleep(100);
       };

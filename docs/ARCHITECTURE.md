@@ -37,6 +37,9 @@ Browser, one page per window (ui/src)
   route.ts       live routing: while a thought is placed, the topics the prompt names light up and the bottom bar shows the racing calls; then the path to where it landed settles, naming a rule that overrode the model (from the core's `route` messages, placer.rs `Route`; held by `scripts/route-check.mjs`)
   model-line.ts  the rules behind it, from the core's `step` messages (model.rs tells every call as it starts and ends; held by `scripts/model-line-check.mjs`)
   Explain.tsx  Palace.tsx  Recap.tsx  Apps.tsx  Import.tsx  Tour.tsx  Away.tsx  room.tsx  find.ts
+  notice-queue.ts one ordered queue for notices and cards, read-state suppression, per-kind preferences and visible-card lifetimes
+  talk-preset.ts Talk mode preference and whole-turn commands, restoring the previous feature selection on exit
+  waiting.ts     per-thought local storage entries shared by tabs; unique receipt IDs and ordered retries until the core acknowledges
   StayHere.tsx   a topic's Stay here action and Staying here chip with × to release (stay-here.css)
   chunks.tsx     a card's points as ideas (parts said across a pause shown as one), ✦ joined and ✦ Assumed
   md.tsx         a thought's typed Markdown as React elements, never HTML: **bold**, *italics*, `code`, "- " and "1. " lists; the rest stays as typed (held by `scripts/map-render-check.mjs`)
@@ -85,6 +88,8 @@ Browser, one page per window (ui/src)
   export-md.ts   Export ("export my map"): the map as a Markdown file, made in the window, nothing sent (held by `scripts/export-check.mjs`)
   Guide.tsx      another participant's ring and short arrow at a `data-guide` part, captions above the input box and held cards; projects held cards into the shell's stack and captions into #shell-caption, with floating placement in the legacy layout
   guide-core.ts  this window's transient point, caption and held-question rules, pauses and local feature hints (docs/guide.md, held by `scripts/guide-check.mjs`)
+  PartnerStatus.tsx optional partner state and Cancel beside the input box and in Talk
+  partner.ts     transient partner state, disconnect reset and late-caption gating
   page-speech.ts  speaks a flagged caption or AI reply in this page (speechSynthesis), so the browser's echo cancellation keeps it out of the mic; stops when a person starts talking
       |  /ws: JSON both ways, audio frames up      POST /import: an export file (host only)
 Core, one process (core/src: axum, tokio)
@@ -92,6 +97,8 @@ Core, one process (core/src: axum, tokio)
   data_lock.rs   startup takes a nonblocking exclusive OS lock on .core.lock before opening the journal; main keeps the handle while serving, and the sidecar stays after exit
   world.rs       World, Change, the journal
   protocol.rs    ServerMsg, ClientMsg
+  conversation.rs opt-in question-led Meta responder; four recent same-speaker thoughts and four completed exchanges; bounded spoken captions, thinking state, cancel/timeout; window guard aborts work on last disable/disconnect
+  replies.rs       deterministic, bounded anchors and command speech: no model calls, no saved replies
   guide.rs       validates and relays point, caption, hold, tour, job and answer; transient guide messages, latest jobs retained in memory for replay, answers addressed to a speaker's windows; never journaled, no model (below)
   asr.rs         relay to Muse Voice Transcribe
   placer.rs      places one thought at a time, telling the map as it decides (`Route`: the topics weighed, then where it went and why)

@@ -1,4 +1,4 @@
-// No extra dependencies: run with `node scripts/hosted-check.mjs`.
+// Offline fixtures only: run with `node scripts/hosted-check.mjs`. No deployed service or guest session is tested.
 // The hosted site (`E2A2O_HOSTED=1`, core/src/main.rs `hosted`) and any computer that isn't a Mac: what the window
 // says and does there (ui/src/site.ts). Hosted, no line sends anyone to a .env file or "the host's computer"; the
 // first screen names the Meta models the core asks; a dated item saves as a calendar file (.ics) that calendars open,
@@ -115,7 +115,7 @@ try {
   assert.match(TIPS.file(false, true), /Download \.ics/);
   assert.match(TIPS.file(false, false), /no day/);
   assert.match(TIPS.file(true, false), /calendar file/);
-  console.log("hosted-check: ok");
+  console.log("hosted-check: offline fixtures ok (hosted guest journey and boot SHA not tested)");
 } finally {
   await server.close();
 }
