@@ -149,12 +149,12 @@ try {
   const pinnedWorld = apply(world, { type: "stay_changed", thread_id: pinnedId });
   const staying = mapOf(draw({ world: pinnedWorld }));
   assert.equal(count(staying, 'class="staying-here nodrag nopan"'), 1, "only the pinned topic wears the chip");
-  assert.ok(staying.includes(`aria-label="Stop sending new thoughts to ${world.threads.find((t) => t.id === pinnedId).title}"`), "release names its topic");
+  assert.ok(staying.includes(`aria-label="Let go: ${world.threads.find((t) => t.id === pinnedId).title}"`), "release names its topic");
   const released = mapOf(draw({ world: apply(pinnedWorld, { type: "stay_changed", thread_id: null }) }));
   assert.ok(!released.includes('class="staying-here'), "release takes down the chip");
-  assert.equal(count(released, 'class="stay-here"'), world.threads.length, "every topic offers Send new thoughts here");
+  assert.equal(count(released, 'class="stay-here"'), world.threads.length, "every topic offers Stay here");
   const offline = mapOf(draw({ world: pinnedWorld, connected: false }));
-  assert.match(offline, /<button[^>]*disabled=""[^>]*aria-label="Stop sending new thoughts to /, "disconnected release cannot silently disappear");
+  assert.match(offline, /<button[^>]*disabled=""[^>]*aria-label="Let go: /, "disconnected release cannot silently disappear");
   assert.equal(junk(page), null, "the sample map");
   const opened = mapOf(page);
   const shown = text(opened);
@@ -175,7 +175,7 @@ try {
   assert.ok(shown.includes("2 new"), "group project: a reminder and an idea");
   // Every picture slot: the letter tile under it, the picture fading in once decoded (pictures.ts).
   assert.equal(count(opened, 'class="picture picture-letter"'), world.threads.length);
-  assert.equal(count(opened, 'class="picture slot-picture"'), world.threads.filter((t) => t.picture).length);
+  assert.equal(count(opened, 'class="picture slot-picture"'), 0, "topic images are off by default");
 
   // 3. Rent, opened (a click or "where was I?"): the reminder with its day and its Add button, and the left-off chip.
   world = apply(world, { type: "active_changed", thread_id: "T2", speaker: "you" });

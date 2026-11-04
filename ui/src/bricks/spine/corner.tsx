@@ -1,9 +1,9 @@
 // Camera controls describe reading, topic scanning and overview; stable internal stop ids keep existing preferences and shortcuts.
 export type Stop = "words" | "titles" | "pictures";
 export const STOPS: { stop: Stop; label: string; key: string; does: string }[] = [
-  { stop: "words", label: "Read", key: "1", does: "every word, at reading size" },
-  { stop: "titles", label: "Topics", key: "2", does: "read topic names; drag to see more" },
-  { stop: "pictures", label: "Overview", key: "3", does: "scan topic landmarks; drag to explore" },
+  { stop: "words", label: "Words", key: "1", does: "every word, at reading size" },
+  { stop: "titles", label: "Titles", key: "2", does: "read topic names; drag to see more" },
+  { stop: "pictures", label: "Pictures", key: "3", does: "scan topic landmarks; drag to explore" },
 ];
 
 const cls = (...names: (string | false | undefined | null)[]) => names.filter(Boolean).join(" ");
@@ -23,7 +23,7 @@ export function Corner({ following, title, stop, narrow, follow, seeAll, choose,
   const followButton = <button type="button" className={cls("spine-pill", "spine-follow", following && "spine-following")} aria-pressed={following} aria-keyshortcuts="F" data-camera-follow onClick={follow}
     title={following ? "View follows new thoughts. Turn off to explore freely (F)" : "View stays where you leave it. Turn on to follow new thoughts (F)"}>
     <FollowIcon />
-    <span className="spine-follow-word">{following ? "Auto-follow on" : "Auto-follow off"}</span>
+    <span className="spine-follow-word">{following ? "Following" : "Follow"}</span>
     {title && !narrow && <><span className="spine-follow-sep" aria-hidden="true">·</span><span className="spine-follow-title">{title}</span></>}
     {!narrow && <kbd className="spine-key">F</kbd>}
   </button>;
@@ -36,7 +36,7 @@ export function Corner({ following, title, stop, narrow, follow, seeAll, choose,
       {s.label}{!narrow && <kbd className="spine-key">{s.key}</kbd>}
     </button>)}
   </div>;
-  const fit = <button type="button" className="spine-pill" data-camera-fit aria-label="Fit map in view" aria-keyshortcuts="0" onClick={seeAll} title="Fit the whole map in view (0)">Fit map{!narrow && <kbd className="spine-key">0</kbd>}</button>;
+  const fit = <button type="button" className="spine-pill" data-camera-fit aria-label="See all" aria-keyshortcuts="0" onClick={seeAll} title="Fit the whole map in view (0)">See all{!narrow && <kbd className="spine-key">0</kbd>}</button>;
   if (narrow) return <>
     {lenses}<div className="spine-phone-zoom"><span className="spine-zoom-label">Map zoom</span>{zooms}</div>
     {followButton}{fit}

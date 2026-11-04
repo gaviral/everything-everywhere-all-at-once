@@ -1469,7 +1469,7 @@ try {
       };
       const atWords = await level();
       const control = await evaluate(`({ stops: [...document.querySelectorAll(".spine-stop")].map((b) => b.textContent).join(), all: document.querySelector(".spine-camera-row .spine-pill")?.textContent })`);
-      if (control.stops !== "Read1,Topics2,Overview3" || control.all !== "Fit map0") fail("spine (zoom stops)", `the control reads ${JSON.stringify(control)}, not Read 1 · Topics 2 · Overview 3 and Fit map 0`);
+      if (control.stops !== "Words1,Titles2,Pictures3" || control.all !== "See all0") fail("spine (zoom stops)", `the control reads ${JSON.stringify(control)}, not Words 1 · Titles 2 · Pictures 3 and See all 0`);
       judge("it opens at Words", atWords, [[atWords.lit === "Read", "the control doesn't show Words"], [atWords.words > 0 && !atWords.bars, "not every word shows"],
         [!atWords.labels && !atWords.pictures, "a far-out look is on at reading size"], [!atWords.inside, "the check's map fits the screen at reading size, so See all couldn't be told from Words"]]);
       const atTitles = await goTo("2", "Topics");

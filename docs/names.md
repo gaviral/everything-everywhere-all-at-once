@@ -32,7 +32,7 @@ The screen, the help list and the docs use the names in the first column. Code, 
 | **Interruption level**: Mark, Ask, Comment, Speak, Interrupt | | levels: Glance, Hand, Note, Speak, Stop | wire values `glance`, `hand`, `note`, `speak`, `stop` (`Level` in `call.rs`, `LEVELS` in `talk/call-core.ts`) |
 | **Shared map** (the button says **Share**; **Join code**, **Leave**) | | room | `./run.sh room`, `?room=`, the `room=` cookie, `/room`, `ROOM_CODE`, `room.tsx`, CSS `.room-*` |
 | **Help** | | the “?” list | `data-guide="help"`, `Act::Help`; saying “What can I say?” still opens it |
-| **Send new thoughts here** | | Stay here | `stay_here`, `stay_changed`, `Stay`; the active topic says **New thoughts go here**, released with **Stop** or the existing spoken “let go” |
+| **Stay here** | | | `stay_here`, `stay_changed`, `Stay`; the active topic says **Staying here**, released with **Let go** |
 | **Deadlines** | countdown | Countdown | feature id `countdown`; **Send countdown** keeps its name |
 
 ## Names only the docs use
@@ -62,16 +62,18 @@ Kept as they were: map (the whole), thought, point, Shelf, Why here, Model line,
 
 ## Find and Features controls
 
-Find uses a magnifying-glass icon on desktop and phone. Its accessible name is **Find topics or words**; clicking it or pressing `/` opens the search field. Escape clears the query and returns to the compact control.
+Find uses a magnifying-glass icon and visible **Find** label on desktop and phone. Its accessible name is **Find topics or words**; clicking it or pressing `/` opens the search field. Escape clears the query and returns to the compact control.
 
-Features starts with its word, four-square icon and visible `C` shortcut. After a successful `C` shortcut opens the panel, the word moves into its useful tip; the icon, visible shortcut and accessible name **Features** remain. Typing `C` in a field and clicking the icon do not mark it learned. This browser remembers learning across reloads. Turn **Learned control icons** off in Features to keep the word and shortcut without recording new learning.
+Features keeps its word, four-square icon and visible `C` shortcut by default. With **Learned control icons** explicitly enabled, a successful `C` shortcut moves the word into its tip; the icon, shortcut and accessible name remain. Typing `C` in a field and clicking the icon do not mark it learned. This browser remembers learning across reloads. Turn **Learned control icons** off in Features to keep the word and shortcut without recording new learning.
 
 Find keeps a visible focus indicator and expands to name what it searches.
 
 ## Canvas controls
 
-**Send new thoughts here** chooses a destination for new input. Its active state is **New thoughts go here**, with **Stop** to release it. **Auto-follow on** and **Auto-follow off** describe whether the view follows new thoughts; they do not change their destination.
+**Stay here** chooses a destination for new input. Its active state is **Staying here**, with **Let go** to release it. **Following** and **Follow** describe whether the view follows new thoughts; they do not change their destination.
 
-**Map zoom** offers **Read** (`1`), **Topics** (`2`), and **Overview** (`3`). **Fit map** (`0`) is a separate action. Existing saved zoom-stop identifiers remain unchanged.
+**Map zoom** offers **Words** (`1`), **Titles** (`2`), and **Pictures** (`3`). **See all** (`0`) is a separate action. Existing saved zoom-stop identifiers remain unchanged.
 
 An empty **Shelf** says **Keep things at hand** and explains: drag a topic or thought here, or use **Keep on the shelf**. Placement keeps its **Placed here** confirmation; placement timing and the model appear under **Details**.
+
+**Topic images** starts off: Canvas and Cards keep their title and initial visuals until enabled. The optional Pictures gallery still shows its pictures. **Full screen** uses the browser’s full-screen mode for the whole app; Escape or **Exit full screen** leaves it.

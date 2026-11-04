@@ -235,3 +235,7 @@ Run `npm --prefix ui run build`, `node scripts/bricks-check.mjs sticky-notes` an
 The entry part only orchestrates smaller parts: name lines and word letters/tails/numbers, session memory, interruptions, home measurement, and motion planning/playback. It imports only the feature contract from the app. It requests no capture, model or map action. The visual part ignores pointer input and has no focusable content. Any key, pointer press or text input dismisses it without consuming the event. Live captured words, a resize, hiding the tab or a motion-preference change also dismiss it. Reduced motion skips the reveal entirely. Session storage remembers a shown reveal across reloads; unavailable storage falls back to memory for the current page.
 
 Build the UI, then run `node scripts/intro-parts-check.mjs`. It renders the built app in Chrome, 4K first, then phone and 320 px, with screenshots retained in a temporary directory. Disk resources are fulfilled through the browser protocol, with synthetic core and microphone fixtures and no app server. It checks compression and landing, usable typing and capture, session replay, reduced motion and unavailable storage. Real speech recognition is separate.
+
+## Topic images
+
+**Topic images** starts off. Enabling it shows existing images on the Canvas and Cards; disabling it restores their initial and title visuals without moving topics. The separate Pictures view keeps its gallery behavior. This presentation choice starts no model or microphone and never deletes saved images.
