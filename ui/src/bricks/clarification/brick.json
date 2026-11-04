@@ -1,0 +1,8 @@
+{
+  "id": "clarification",
+  "name": "Clarification",
+  "does": "Clarify a selected term while keeping its original words.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": true
+}
