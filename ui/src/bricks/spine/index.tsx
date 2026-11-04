@@ -19,7 +19,8 @@ import { Reply, useMargins, type Picking } from "./margin";
 import { ActsContext, ItemView, NowContext, READ, type Acts, type ItemData, type ItemNode } from "./nodes";
 import { Shelf } from "./shelf";
 import { useStayingHere } from "../../StayHere";
-import { CONVERSATION, conversationLayout } from "./conversation";
+import { C, CONVERSATION } from "./conversation";
+import { lensLayout, shiftLayout, type Lens } from "./lenses";
 import "./spine.css";
 import { semanticBlend } from "./semantic-zoom";
 
@@ -178,6 +179,11 @@ function chromeOf(frameBox: DOMRect | undefined) {
 
 function Canvas({ map, actions, on, destination, conversation }: BrickProps & { conversation: boolean }) {
   const flow = useReactFlow<ItemNode>();
+  const [lens, setLens] = useState<{ view: Lens; x: number; y: number }>(() => {
+    let view: Lens = "time";
+    try { if (localStorage.getItem("e2a2o.spine.lens") === "topics") view = "topics"; } catch { /* this visit */ }
+    return { view, x: 0, y: 0 };
+  });
   const semantic = useContext(SemanticZoomContext);
   const staying = useStayingHere();
   const reduced = useReducedMotion();
@@ -250,7 +256,7 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
       const bottomEdge = chrome.frame?.bottom ?? innerHeight;
       // The frame's sides as this measure has them (the frame itself follows on the next render).
       const bottom = chrome.stage
-        ? (chrome.stage.left - next.left >= CORNER_W ? chrome.status + 12 : bottomEdge - chrome.stage.top + 8)
+        ? (chrome.stage.left - next.left >= (conversation ? 600 : CORNER_W) ? chrome.status + 12 : bottomEdge - chrome.stage.top + 8)
         : docked + 12;
       const bottomRight = chrome.stage
         ? (innerWidth - next.right - chrome.stage.right >= SHELF_W ? chrome.status + 12 : bottomEdge - chrome.stage.top + 8)
@@ -340,9 +346,10 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
   const topicNames = useMemo(() => map.topics.map((topic) => topic.name), [map.topics]);
   const pauses = useMemo(() => (map.pauses??[]).filter(p=>p.speaker===map.me&&!p.resolved),[map.pauses,map.me]);
   const pauseCounts = useMemo(()=>{const counts=new Map<string,number>();for(const pause of pauses)counts.set(pause.thought_id,(counts.get(pause.thought_id)??0)+1);return counts;},[pauses]);
-  const layout = useMemo(() => (conversation ? conversationLayout : place)({ threads: conversation ? map.threads : threads, thoughts: map.thoughts, notes: map.notes, rooms: map.rooms, positions, shelf: shelf.items, open: open?.id ?? null,
+  const layoutInput = useMemo(() => ({ threads: conversation ? map.threads : threads, thoughts: map.thoughts, notes: map.notes, rooms: map.rooms, positions, shelf: shelf.items, open: open?.id ?? null,
     me: map.me, speakers: map.speakers, active: staying ?? map.active, slots, paused: pauseCounts, landing, margins: notes.margins, opened, narrow, topics: topicNames, staying, originals }),
   [pauseCounts, conversation, map.threads, threads, map.thoughts, map.notes, map.rooms, positions, shelf.items, open?.id, map.me, map.speakers, map.active, slotKey, landing, notes.margins, opened, narrow, topicNames, staying, originals]);
+  const layout = useMemo(() => conversation ? shiftLayout(lensLayout(layoutInput, lens.view), lens) : place(layoutInput), [conversation, layoutInput, lens]);
   // A move the map now shows, or one that never came (refused, or the core away), stops being held.
   useEffect(() => {
     const ids = Object.keys(moving);
@@ -490,6 +497,33 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
   }, [ready, destination, layout, map.threads, open?.id, originals, camera.aim]);
 
   const stopFollowing = () => { setFollowing(false); camera.hold(); };
+  const switchLens = (view: Lens) => {
+    if (view === lens.view) return;
+    stopFollowing();
+    const next = lensLayout(layoutInput, view);
+    const viewport = flow.getViewport();
+    const a = area();
+    const cx = (a.x0 + a.x1) / 2, cy = (a.y0 + a.y1) / 2;
+    const focused = document.activeElement?.closest<HTMLElement>("[data-thought]")?.dataset.thought;
+    const cards = layout.items.filter(item => item.kind === "point" && next.byKey.has(item.key));
+    const distance = (item: Item) => { const p = at(item); return Math.hypot((p.x + G.textX) * viewport.zoom + viewport.x - cx, (p.y + C.speaker) * viewport.zoom + viewport.y - cy); };
+    const watched = cards.find(item => item.id === focused) ?? cards.sort((a, b) => distance(a) - distance(b))[0];
+    const old = watched ? at(watched) : { x: 0, y: 0 };
+    const target = watched ? next.byKey.get(watched.key)!.box : { x: 0, y: 0 };
+    const apply = () => setLens({ view, x: old.x - target.x, y: old.y - target.y });
+    const element = pane();
+    if (reduced && element) {
+      const fade = element.animate([{ opacity: 1 }, { opacity: 0 }], { duration: FADE_MS / 2, fill: "forwards" });
+      fade.onfinish = () => {
+        apply();
+        requestAnimationFrame(() => {
+          fade.cancel();
+          element.animate([{ opacity: 0 }, { opacity: 1 }], { duration: FADE_MS / 2 });
+        });
+      };
+    } else apply();
+    try { localStorage.setItem("e2a2o.spine.lens", view); } catch { /* this visit */ }
+  };
   const startFollowing = () => {
     setFollowing(true);
     const g = goal();
@@ -605,10 +639,22 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
     return () => document.removeEventListener("selectionchange", changed);
   }, [selecting]);
 
+  const visitAfterLens = useRef<string | null>(null);
+  useEffect(() => {
+    const key = visitAfterLens.current;
+    const item = key && layout.byKey.get(key);
+    if (!item) return;
+    visitAfterLens.current = null;
+    camera.aim(item.box, { ring: item.key, zoom: 1, instant: true });
+    requestAnimationFrame(() => frame.current?.querySelector<HTMLElement>(`[data-id="${CSS.escape(item.key)}"] [data-spine-target]`)?.focus({ preventScroll: true }));
+  }, [layout]);
   const acts = useMemo<Acts>(() => ({
     visit: (key) => {
       const item = layout.byKey.get(key);
-      if (!item) return;
+      if (!item) {
+        if (conversation && lens.view === "time" && key.startsWith("t:")) { visitAfterLens.current = key; switchLens("topics"); }
+        return;
+      }
       stopFollowing();
       setPicked(key);
       camera.aim(item.box, { ring: key, zoom: 1, instant: true });
@@ -796,7 +842,7 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
   const rowStyle = { bottom: corner.row };
   return <div className="spine">
     <div ref={anchor} className="spine-anchor" style={{ height: box?.tall ?? 0 }} />
-    <div ref={frame} className={cls("spine-frame", ready_ && "spine-ready", !semantic && shownStop === "pictures" && "spine-stop-pictures", narrow && "spine-narrow")} style={{ top: top ?? 0, left: box?.left ?? 0, right: box?.right ?? 0 }}>
+    <div ref={frame} data-lens={conversation ? lens.view : undefined} className={cls("spine-frame", ready_ && "spine-ready", !semantic && shownStop === "pictures" && "spine-stop-pictures", narrow && "spine-narrow")} style={{ top: top ?? 0, left: box?.left ?? 0, right: box?.right ?? 0 }}>
       <ActsContext.Provider value={acts}>
       <NowContext.Provider value={now}>
       <ReactFlow<ItemNode>
@@ -833,7 +879,7 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
         minZoom={minZoom} maxZoom={2} nodeDragThreshold={DRAG}
         panOnScroll zoomOnPinch zoomOnDoubleClick={false} selectionOnDrag={false} elementsSelectable={false}
         nodesConnectable={false} nodesFocusable={false} edgesFocusable={false} proOptions={{ hideAttribution: true }}
-        aria-label={conversation ? "Your conversation in time order, with linked topics beside it. Drag the canvas to look around; follow a topic link to explore and a turn link to return." : "Your topics on the canvas: drag the canvas to look around, pinch or Ctrl and scroll to zoom; 1, 2 and 3 for words, titles and pictures"}>
+        aria-label={conversation ? `Your thoughts by ${lens.view}. Drag the canvas to look around.` : "Your topics on the canvas: drag the canvas to look around, pinch or Ctrl and scroll to zoom; 1, 2 and 3 for words, titles and pictures"}>
         <Background className="spine-grid" variant={BackgroundVariant.Dots} gap={28} size={1.2} />
         <ZoomVar semantic={semantic} />
         <EdgeLabelRenderer>
@@ -861,11 +907,11 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
       {/* The camera's corner: bottom left in the shell that has a stage (its regions); in the app without one, over the
           shelf at the right, where the left is the notice timeline's. */}
       {!narrow && corner.shell && <div className="spine-corner spine-corner-left" style={{ bottom: corner.bottom }}>
-        <Corner following={following} title={conversation ? "Conversation" : activeThread?.title ?? ""} stop={shownStop} narrow={false} follow={() => (following ? stopFollowing() : startFollowing())} seeAll={seeAll} choose={choose} />
+        <Corner following={following} lens={conversation ? lens.view : undefined} switchLens={switchLens} title={conversation ? (lens.view === "time" ? "Time" : "Topics") : activeThread?.title ?? ""} stop={shownStop} narrow={false} follow={() => (following ? stopFollowing() : startFollowing())} seeAll={seeAll} choose={choose} />
       </div>}
       <div className={cls("spine-corner", narrow ? "spine-corner-row" : "spine-corner-right")} style={narrow ? rowStyle : { bottom: corner.bottomRight }}>
         {narrow && <Cues cues={cues} layout={layout} area={area} avoid={avoid} width={width} narrow go={goTo} seen={seenCues} />}
-        {(narrow || !corner.shell) && <Corner following={following} title={conversation ? "Conversation" : activeThread?.title ?? ""} stop={shownStop} narrow={narrow} follow={() => (following ? stopFollowing() : startFollowing())} seeAll={seeAll} choose={choose} />}
+        {(narrow || !corner.shell) && <Corner following={following} lens={conversation ? lens.view : undefined} switchLens={switchLens} title={conversation ? (lens.view === "time" ? "Time" : "Topics") : activeThread?.title ?? ""} stop={shownStop} narrow={narrow} follow={() => (following ? stopFollowing() : startFollowing())} seeAll={seeAll} choose={choose} />}
         <Shelf ref={shelfRef} entries={layout.shelf} carrying={!!drag} hot={overShelf} open={shelfOpen} setOpen={setShelfOpen} narrow={narrow}
           putBack={(id) => shelf.remove(id)}
           place={(id, x, y) => {
