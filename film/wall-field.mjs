@@ -73,7 +73,9 @@ export function drawField(shot,local,camera,nodes) {
 export function paintField(shot,local,nodes) {
   const f=fieldFrame(shot,local),ctx=nodes.surface.context,cells=mosaicCells(nodes.length);
   ctx.resetTransform();ctx.globalAlpha=1;ctx.fillStyle='#fff';ctx.fillRect(0,0,1920,1080);
-  ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
+  // Fixed bilinear sampling avoids the history-dependent mip selection used
+  // by the browser's adaptive high-quality downsampler.
+  ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='low';
   ctx.translate(960,540);ctx.scale(f.scale,f.scale);ctx.translate(-f.x,-f.y);
   nodes.forEach((node,i)=>{
     const opacity=Math.max(0,Math.min(1,f.visible-i))*(1-f.white);

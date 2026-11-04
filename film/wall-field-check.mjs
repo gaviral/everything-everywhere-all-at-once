@@ -36,6 +36,13 @@ try {
     await stage.frame(shot,time);
     assert.deepEqual(await stage.screenshot(),await readFile(join(output,`${i}.png`)),'Repeated dense-field seeks reproduce the same pixels');
   }
+  for(let frame=0;frame<=330;frame++) {
+    await stage.frame(shot,frame/30);
+    if(frame===150||frame===210||frame===270||frame===330){
+      const i=new Map([[150,2],[210,3],[270,4],[330,5]]).get(frame);
+      assert.deepEqual(await stage.screenshot(),await readFile(join(output,`${i}.png`)),'Sequential rendering and direct seeks use identical sampling');
+    }
+  }
   assert.equal(await stage.evaluate('document.querySelector(".wall-caption").textContent'),'Recorded demonstrations');
 } finally {await stage.close();}
 console.log(`PASS field: ${shot.tiles.length} distinct tiles; exact square coverage; continuous pull-back; one-second hold; white finish; eight HD review frames`);
