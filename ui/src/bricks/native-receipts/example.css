@@ -1,0 +1,9 @@
+.native-receipts-example { position: fixed; inset: 78px 24px 160px; z-index: 39; overflow: auto; overscroll-behavior: contain; padding: 24px; border: 1px solid var(--line); border-radius: 18px; background: var(--bg); color: var(--ink); box-shadow: var(--shadow); font: 20px/1.5 system-ui, sans-serif; }
+.native-receipts-example > div:first-child { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 20px; }
+.native-receipts-example :is(button, input, select, textarea) { font: inherit; min-height: 44px; }
+.native-receipts-example * { font-size: inherit !important; }
+.native-receipts-example header { display: block; position: static; z-index: auto; padding: 0; background: transparent; backdrop-filter: none; }
+.native-receipts-example header::after { content: none; }
+.native-receipts-example :is(h1, h2) { font-size: 1.3em !important; }
+.native-receipts-example svg { max-width: 100%; }
+@media (max-width: 600px) { .native-receipts-example { inset: 70px 8px 150px; padding: 12px; font-size: 18px; } }

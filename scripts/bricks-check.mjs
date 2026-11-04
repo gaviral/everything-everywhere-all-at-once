@@ -233,6 +233,20 @@ function sourceProblems(dir, file, text) {
     if (PACKAGES.includes(spec)) continue;
     // The built-in conversation view shares the pin control and the existing filler cleaner.
     if (dir === join(bricksDir, "spine") && ["../../StayHere", "../live-outline/outline"].includes(spec)) continue;
+    // Optional example wrappers compose only their designated, bundled feature part.
+    const exampleParts = {
+      clarification: "msg1351/clarification", "demo-variants": "msg1351/demo-variants",
+      "dictation-breakdown": "msg1351/dictation-breakdown", "part-dimensions": "msg1351/part-dimensions",
+      "sketch-exchange": "msg1351/sketch-exchange", "workflow-inspector": "msg1351/workflow-inspector",
+      "demo-parts": "intake1411/demo-parts", "live-area": "intake1411/live-area",
+      "pen-devices": "intake1411/pen-devices", "reload-session": "intake1411/reload-session",
+      "sketch-labels": "intake1411/sketch-labels", "worktree-map": "intake1411/worktree-map",
+      "dependency-sequences": "intake1417/dependency-sequences", "machine-demo": "intake1417/machine-demo",
+      "native-receipts": "intake1417/native-receipts", "populated-variants": "intake1417/populated-variants",
+      "research-walkthrough": "msg1351/research-walkthrough",
+    };
+    const part = exampleParts[dir.split("/").at(-1)];
+    if (part && (spec === "../../" + part || spec.startsWith("../../" + part + "/")) && !spec.split("/").slice(2).includes("..")) continue;
     // Relative: inside the brick's own folder, or the contract beside it.
     const to = spec.startsWith(".") ? resolve(dir, dirname(file), spec) : "";
     if (to && (to.startsWith(`${dir}/`) || to === join(bricksDir, "contract") || to === join(bricksDir, "contract.ts"))) continue;

@@ -1,0 +1,8 @@
+{
+  "id": "research-walkthrough",
+  "name": "Research walkthrough",
+  "does": "Read a research note, try a sample Canvas and return to your place.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": true
+}
