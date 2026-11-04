@@ -1,0 +1,9 @@
+{
+  "id": "showroom",
+  "name": "Showroom",
+  "does": "Walk through every feature, try it on the map, and choose what stays on.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": true,
+  "flag": "showroom"
+}

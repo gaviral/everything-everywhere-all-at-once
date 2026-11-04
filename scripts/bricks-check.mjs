@@ -247,6 +247,15 @@ function sourceProblems(dir, file, text) {
     };
     const part = exampleParts[dir.split("/").at(-1)];
     if (part && (spec === "../../" + part || spec.startsWith("../../" + part + "/")) && !spec.split("/").slice(2).includes("..")) continue;
+    // Self-heal is the host's recovery infrastructure as well as a discoverable log panel.
+    // Its four integration points are explicit; ordinary feature imports stay isolated.
+    const recoveryImports = {
+      "Boundary.tsx": ["../../plugins-core"],
+      "Notices.tsx": ["react-dom/client", "../../bricks-core"],
+      "RecoveryLog.tsx": ["../../bricks-core"],
+      "reload.ts": ["../../page-speech"],
+    };
+    if (dir === join(bricksDir, "self-heal") && recoveryImports[file]?.includes(spec)) continue;
     // Relative: inside the brick's own folder, or the contract beside it.
     const to = spec.startsWith(".") ? resolve(dir, dirname(file), spec) : "";
     if (to && (to.startsWith(`${dir}/`) || to === join(bricksDir, "contract") || to === join(bricksDir, "contract.ts"))) continue;

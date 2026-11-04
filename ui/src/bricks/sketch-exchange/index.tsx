@@ -16,9 +16,11 @@ function createExampleSessions(): HostAdapter[] {
 }
 export default function SketchExample({ actions }: BrickProps) {
   const [adapters] = useState(createExampleSessions);
-  return <section className="sketch-exchange-example" aria-label="Sketch exchange example" data-guide="sketch-exchange">
-    <div><strong>Sketch exchange · two local example sessions</strong><button onClick={() => actions.openCatalog("sketch-exchange")}>Features</button></div>
+  const [open, setOpen] = useState(true);
+return <>{!open && <button className="sketch-exchange-reopen" type="button" onClick={() => setOpen(true)}>Open Sketch exchange</button>}
+<section hidden={!open} className="sketch-exchange-example" aria-label="Sketch exchange example" data-guide="sketch-exchange">
+    <div><strong>Sketch exchange · two local example sessions</strong><span><button type="button" onClick={() => actions.openCatalog("sketch-exchange")}>Features</button> <button type="button" onClick={() => setOpen(false)}>Close</button></span></div>
     <p>Enable both sessions below. Draw on the tablet, select Main display, then send. The display can draw a reply. Both sessions are on this page.</p>
     <div className="sketch-exchange-example-grid">{adapters.map((adapter, index) => <SketchExchange key={adapter.self.id} adapter={adapter} role={index === 0 ? "capture" : "display"} />)}</div>
-  </section>;
+  </section></>;
 }

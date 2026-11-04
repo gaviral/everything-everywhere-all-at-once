@@ -9,6 +9,7 @@ import { useEffect, useRef } from "react";
 import type { BrickKind } from "./bricks/contract";
 import { useBrickRegistry, closeCatalog, KINDS, switchBrick, useBricksOn, useCatalogAt, useCatalogOpen, type Brick } from "./bricks-core";
 import "./bricks.css";
+import { RecoveryLog } from "./bricks/self-heal/RecoveryLog";
 import { AppParts, type AppPartsState } from "./AppParts";
 import type { MiniApp } from "./apps-core";
 
@@ -72,6 +73,7 @@ function CatalogSheet({ apps, state }: { apps: readonly MiniApp[]; state: AppPar
       </div>
       <button type="button" className="catalog-close" onClick={closeCatalog} aria-label="Close">×</button>
     </div>
+    <RecoveryLog />
     <section className="catalog-group" aria-label="Plugins"><ul><li className="catalog-row" data-row="plugins" data-built-in="plugins">
       <div><strong>{FEATURE_NAMES.plugins.name}</strong><p>{FEATURE_NAMES.plugins.does}</p></div>
       <button type="button" className="apps-switch" role="switch" aria-label="Plugins" aria-checked={builtIns.has("plugins")}
