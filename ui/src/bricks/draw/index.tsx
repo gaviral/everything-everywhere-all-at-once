@@ -1,7 +1,7 @@
 // Draw: the pen on the screen. Draw; say what each thing is; Spark reads it; Muse Image draws back; Flow builds it.
 // This file only orders those parts: ink.ts, InkSheet.tsx, labels.ts, lasso.ts, spoken.ts, reading.ts, marks.ts, Notes.tsx.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { switchBrick } from "../../bricks-core";
+import { isOn, switchBrick } from "../../bricks-core";
 import { useBrickEvent, type BrickProps } from "../contract";
 import { InkSheet, type Tool } from "./InkSheet";
 import type { Stroke } from "./ink";
@@ -17,6 +17,7 @@ const SAID_MAX = 1800;
 /** Keeps up: a pause this long in drawing is the moment to look, as a person beside you would. */
 const FOLLOW_PAUSE_MS = 1400;
 const FOLLOW_MIN_STROKES = 3;
+const THOUGHTS_FOR_BRIEF = 4;
 const FLOW_RETRY_MS = 150;
 const FLOW_TRIES = 30;
 const plainWords = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
@@ -131,8 +132,16 @@ export default function Draw({ on, actions, map }: BrickProps) {
 
   const build = useCallback(async () => {
     const known = now.current.reading?.value ?? await read();
-    if (known?.flow?.steps?.length) { openFlow(known, thoughtBefore.current); setOpen(false); }
-  }, [read]);
+    if (!known) return;
+    // With Crew on, the sketch becomes parts built side by side; otherwise boxes that run in order.
+    if (isOn("crew")) {
+      const names = now.current.labels.map(label => label.text).join(", ");
+      const recent = map.thoughts.slice(-THOUGHTS_FOR_BRIEF).map(thought => thought.text).join(" ");
+      const brief = [recent, names ? `The parts I drew: ${names}.` : known.said].join(" ");
+      dispatchEvent(new CustomEvent("e2a2o:crew-build", { detail: brief }));
+      setOpen(false);
+    } else if (known.flow?.steps?.length) { openFlow(known, thoughtBefore.current); setOpen(false); }
+  }, [map.thoughts, read]);
 
   const undo = useCallback(() => {
     const newest = now.current.strokes[now.current.strokes.length - 1];
