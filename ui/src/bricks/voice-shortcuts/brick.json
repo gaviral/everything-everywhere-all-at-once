@@ -1,0 +1,8 @@
+{
+  "id": "voice-shortcuts",
+  "name": "My voice shortcuts",
+  "does": "Teach an exact phrase for local topic navigation or recap. Taught by you.",
+  "kind": "card",
+  "defaultOn": false,
+  "demoSafe": false
+}

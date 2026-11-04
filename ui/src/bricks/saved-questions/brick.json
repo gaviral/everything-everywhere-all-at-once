@@ -1,0 +1,8 @@
+{
+  "id": "saved-questions",
+  "name": "Saved questions",
+  "does": "Keep a question, write your answer later, and find both after restarting.",
+  "kind": "card",
+  "defaultOn": false,
+  "demoSafe": false
+}

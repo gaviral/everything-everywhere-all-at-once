@@ -1,0 +1,15 @@
+.voice-shortcuts { font-size: 1rem; box-sizing: border-box; width: min(34rem, 100%); max-height: min(55dvh, 38rem); overflow: auto; overscroll-behavior: contain; padding: 1rem; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 1rem; overflow-wrap: anywhere; }
+.voice-shortcuts h2, .voice-shortcuts h3 { margin: 0 0 .5rem; font-size: 1.1em; }
+.voice-shortcuts p { margin: .5rem 0; }
+.voice-shortcuts ul { padding: 0; list-style: none; }
+.voice-shortcuts li { border-block-end: 1px solid var(--line); padding-block: .75rem; }
+.voice-shortcuts li > span, .voice-shortcuts small { display: block; }
+.voice-shortcuts label { display: grid; gap: .25rem; margin-block: .5rem; }
+.voice-shortcuts input, .voice-shortcuts select { box-sizing: border-box; width: 100%; min-width: 0; font: inherit; color: inherit; background: var(--card); border: 1px solid var(--line); border-radius: .35rem; padding: .5rem; }
+.voice-shortcuts button { color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: .4rem; min-height: 2.75rem; font: inherit; padding: .4rem .65rem; }
+.voice-shortcuts .voice-shortcuts-controls { display: flex; flex-wrap: wrap; gap: .4rem; margin-block: .5rem; }
+.voice-shortcuts :focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+@media (max-width: 480px) { .voice-shortcuts { max-height: 48dvh; padding: .75rem; } }
+@media (prefers-reduced-motion: reduce) { .voice-shortcuts * { animation: none; transition: none; scroll-behavior: auto; } }
+
+.voice-shortcuts button:disabled { opacity: .5; }

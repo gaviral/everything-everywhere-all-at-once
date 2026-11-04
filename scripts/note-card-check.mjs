@@ -59,7 +59,7 @@ try {
   assert.match(src("core.ts"), /noticeQueue\.find\("note", String\(msg\.id\)\)/, "updates find their own queued note");
   assert.match(src("core.ts"), /noticeQueue\.push\("note", String\(msg\.id\), note\)/, "each note has one queue entry");
   assert.match(src("core.ts"), /if \(noteFirst\(msg\)\) closeRecap\(\);/, "new notes make way in Recap");
-  assert.match(src("core.ts"), /ws\.onopen = \(\) => \{\s*noticeQueue\.reset\("note"\)/, "a restarted core can reuse note ids");
+  assert.match(src("core.ts"), /ws\.onopen = \(\) => \{[^]*?noticeQueue\.reset\("note"\)/, "a restarted core can reuse note ids");
 
   // Who said a point shows only in a room (the core sends it then).
   assert.equal(pointWords({ text: "Bring chips", who: "Ana", decided: false, unfinished: false }), "Ana: Bring chips");

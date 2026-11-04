@@ -55,14 +55,15 @@ export function keyWords(hosted: boolean, refused: boolean, what: "notice" | "mi
     if (what === "tour") return `${why}, so this map is for exploring. Type “where was I?”, “next one” or “pictures” and press Enter.`;
     return `${why}: you can browse the map, but new thoughts and listening are off until its owner fixes it.`;
   }
-  if (what === "mic") return refused ? "The AI key was refused: check MODEL_API_KEY in .env. You can still type." : "No AI key: listening needs MODEL_API_KEY in .env. You can still type.";
-  if (what === "tour") return "Without an AI key, this map is for exploring. Type “where was I?”, “next one” or “pictures” and press Enter. To talk and add thoughts, put MODEL_API_KEY in .env.";
-  return refused ? "The AI key was refused. Check MODEL_API_KEY in .env, then restart." : "No AI key: you can browse the map, but new thoughts and listening need MODEL_API_KEY in .env (see .env.example).";
+  const why = refused ? "This copy's AI key was refused." : "This copy has no AI key.";
+  if (what === "mic") return `${why} You can still save typed thoughts. Set up AI to listen.`;
+  if (what === "tour") return `${why} Explore the map: type “where was I?”, “next one” or “pictures” and press Enter. You can also save typed thoughts for later placement.`;
+  return `${why} You can explore sample maps and save typed thoughts. Set up AI for listening, automatic placement and Recap.`;
 }
 
 /** A core message about the key (it names MODEL_API_KEY, as core/src/model.rs says it), in this site's words. */
 export function siteText(text: string, hosted: boolean): string {
-  return hosted && text.includes("MODEL_API_KEY") ? keyWords(true, text.includes("refused"), "notice") : text;
+  return text.includes("MODEL_API_KEY") ? keyWords(hosted, text.includes("refused"), "notice") : text;
 }
 
 /** "muse-spark-1.2-contributor" → "Muse Spark 1.2": the public name (Contributor mode is how the key asks). */
@@ -132,3 +133,10 @@ export function downloadIcs(action: { id: string; title: string; when: string })
   saveFile(ics, "text/calendar;charset=utf-8", icsName(action.title));
   return true;
 }
+
+/** Shown only after the person chooses Set up AI. Never asks them to paste a key into the page. */
+export const AI_SETUP_STEPS = [
+  "Get a Meta Model API key from your provider account.",
+  "On the computer running this copy, copy .env.example to .env if needed, then set MODEL_API_KEY in .env to your key.",
+  "Restart the app, then return here to listen, place thoughts automatically and make a Recap.",
+];

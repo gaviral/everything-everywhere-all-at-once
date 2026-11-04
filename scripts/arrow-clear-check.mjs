@@ -7,8 +7,8 @@
 //    against the page itself, not the arrow's own rules: no point of its line or head is over a control (a hit test
 //    and the control's box) or over a line of text (each text node's own rectangles);
 //  - it is short, at the part (its tip clear of the part's ring), on screen, and the same on a second look;
-//  - where the corner has room, there is an arrow (Catalog at both sizes; in a call at a phone's width, where Find and the
-//    Talk pill box Catalog in, the ring alone), and it follows the part when the canvas moves.
+//  - where the corner has room, there is an arrow. At phone width the top thought card and neighboring controls box Catalog and Find in
+//    without a call, so each keeps its ring alone. In a call the shifted content leaves Find room for its arrow.
 // SHOTS=<folder> also saves a screenshot of each scene there (light and dark).
 import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -44,7 +44,7 @@ const call = { type: "call", started_ms: now - 50000, people: [person("you", fal
 const expected = {
   "1440 alone": { catalog: "arrow", search: "arrow", "thread:T2": "arrow", "point:b2": "arrow", unfinished: null },
   "1440 call": { catalog: "arrow", search: "arrow", "thread:T2": "arrow", "point:b2": "arrow", unfinished: null },
-  "390 alone": { catalog: "arrow", search: "arrow", "point:b2": null, unfinished: null },
+  "390 alone": { catalog: "ring", search: "ring", "point:b2": null, unfinished: null },
   "390 call": { catalog: "ring", search: "arrow", "point:b2": null, unfinished: null },
 };
 
@@ -145,7 +145,10 @@ try {
           const label = `${scene}, ${scheme}: ${target}`;
           assert.deepEqual(seen.crossings.slice(0, 3), [], `${label}: the arrow crosses ${seen.crossings.length} control(s) or line(s) of text`);
           if (want === "arrow") assert.equal(seen.arrow, true, `${label}: an arrow (the state is ${seen.state})`);
-          if (want === "ring") assert.deepEqual([seen.arrow, seen.state], [false, "near"], `${label}: the ring alone, boxed in`);
+          if (want === "ring") {
+            assert.deepEqual([seen.arrow, seen.state], [false, "near"], `${label}: the ring alone, boxed in`);
+            assert.ok(await evaluate(`(() => { const ring = document.querySelector(".guide-ring"); const box = ring?.getBoundingClientRect(); return !!ring?.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) && box.width > 0 && box.height > 0; })()`), `${label}: the ring remains visible`);
+          }
           if (seen.arrow) {
             const run = Math.hypot(seen.tail.x - seen.end.x, seen.tail.y - seen.end.y);
             assert.ok(run >= 30 && run <= 80, `${label}: a short arrow at the part (${run.toFixed(0)} px)`);

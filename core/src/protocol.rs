@@ -33,10 +33,25 @@ pub const FRAME_MAX: usize = 64 << 10;
 /// into infinity (positions.rs).
 pub const POSITION_MAX: f64 = 1_000_000.0;
 
+/// Live phone navigation. Relayed only: absent from World, catch-up and the journal.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RemoteSelection {
+    Hello, Left, Right, Up, Down, Open, Back,
+    Zoom { scale: f64 },
+    Pan { x: f64, y: f64 },
+    Selection { thread_id: Option<String>, thought_id: Option<String>, label: String, enabled: bool },
+}
+
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMsg {
     ActionEstimateResult { request_id: String, ok: bool, message: String, estimate: Option<crate::world::ActionEstimate>, #[serde(skip)] window: u64 },
+    QuestionResult { id: String, revision: u64, ok: bool, #[serde(skip_serializing_if = "Option::is_none")] error: Option<String> },
+    PointProposal { request_id: String, thought_id: String, text: String, failed: bool },
+    PointEditResult { request_id: String, thought_id: String, ok: bool, message: String },
+    AliasResult { window: u64, request_id: String, ok: bool, message: String },
+    RemoteSelection { message: RemoteSelection },
     Returned { request_id: Option<String>, anchor: Option<crate::world::ReturnAnchor>, message: String },
     CaptureSaved { capture: crate::world::CaptureReceipt, replay: bool },
     MapIdentity { id: String },
@@ -44,11 +59,14 @@ pub enum ServerMsg {
     RecoverableSpeech { id: String, text: String },
     /// A bounded spoken command answer; live only, with no journal or snapshot replay.
     CommandReply { text: String },
+    ReplyFormatState { #[serde(skip)] window: u64, preferences: crate::conversation::Format, revision: u64, request_id: Option<String>, accepted: bool, message: String },
+    PartnerReply { #[serde(skip)] window: u64, reply_id: String, #[serde(rename = "displayText")] display_text: String, #[serde(rename = "speakText")] speak_text: String, available_answer: Option<String> },
     PartnerState { state: String, message: String, #[serde(skip_serializing_if = "Option::is_none")] reply_id: Option<String> },
     /// The window owns which kinds of notices this person wants to see.
     NoticeControl { show: bool },
     TextReceived { id: String },
     RecapState { period: crate::recap::Period, loading: bool, message: String, recap: Option<crate::recap::Recap> },
+    RecipeResult { request_id: String, app_id: Option<String>, message: String },
     AppsBuild { build: crate::apps::Build },
     /// An app's tune: `playful` for loud voices, else the calm one; `why` is what set it off ("voices stayed loud
     /// for 3 s"), so the window can say which app played and why.
@@ -231,15 +249,26 @@ pub struct Outgoing {
 pub enum ClientMsg {
     ActionEstimates { on: bool },
     SetActionEstimate { #[serde(flatten)] request: crate::world::EstimateRequest },
+    SaveQuestion { id: String, text: String, thought_id: Option<String>, answer: String, status: String, expected_revision: u64 },
+    ReviewTextEdits { on: bool },
+    ShorterPoint { request_id: String, thought_id: String, observed: String },
+    EditPoint { request_id: String, thought_id: String, observed: String, replacement: String, #[serde(default)] undo_of: Option<String> },
+    VoiceShortcuts { on: bool },
+    AliasOperation { request_id: String, operation: String, id: String, revision: u64, phrase: String, target: crate::world::AliasTarget, enabled: bool },
+    RemoteSelection { message: RemoteSelection },
     Resume { pause_id: String, request_id: String },
     PauseChoice { pause_id: String, later: bool },
     RetryPlacement { id: String },
     Heartbeat { id: String },
     RecoverSpeech { id: String, keep: bool },
     Partner { on: bool },
+    ReplyFormat { on: bool },
+    ReplyFormatSet { request_id: String, observed_revision: u64, preferences: crate::conversation::Format },
     Email { on: bool },
     PartnerCancel,
     Recap { #[serde(default)] period: crate::recap::Period },
+    RecipesSwitch { on: bool },
+    SaveRecipe { save: crate::apps::RecipeSave },
     ComposeApp { request: String },
     DecideApp { build_id: String, keep: bool },
     ToggleApp { id: String, enabled: bool },
@@ -256,6 +285,9 @@ pub enum ClientMsg {
     Stay { thread_id: Option<String> },
     /// Explain a selected phrase in the context it appears in, within its thread when it has one.
     Explain {
+        /// Exact answer reuse is opt-in; older clients keep the counted model path.
+        #[serde(default)]
+        reuse: bool,
         id: String,
         text: String,
         context: String,

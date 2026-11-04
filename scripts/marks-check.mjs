@@ -39,7 +39,7 @@ try {
   stopAgain();
   end();
   assert.equal(lost, 1, "after our own stop, nothing is said");
-  assert.match(readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8"), /const ended = \(\) => \{\s*if \(stopped \|\| !mounted\.current\) return;\s*stopped = true;\s*if \(liveStop\.current === stop\) liveStop\.current = null;\s*setStopMic\(null\);\s*core\.listen\(false\);\s*core\.showNotice\("The mic stopped: [^]*?startMic\(core\.sendAudio, ended, attempt\.signal\)/);
+  assert.match(readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8"), /const ended = \(\) => \{\s*if \(stopped \|\| !mounted\.current\) return;\s*stopped = true;\s*if \(voicePolicy\.snapshot\(\)\.enabled\) voicePolicy\.end\(\);\s*if \(liveStop\.current === stop\) liveStop\.current = null;\s*setStopMic\(null\);\s*core\.listen\(false\);\s*core\.showNotice\("The mic stopped: [^]*?startMic\(core\.sendAudio, ended, attempt\.signal\)/);
 
   // Escape that hides a tip hides only the tip: heard before the document's listener (App.tsx folds the quiet threads
   // on Escape there), and stopped unless typed in a field (bug hunt 18).
@@ -97,7 +97,9 @@ try {
   assert.equal(new Set(states.map((s) => MIC_WORDS[s].label)).size, states.length, "every state's name differs");
   for (const s of ["off", "starting", "paused", "nokey", "refused", "resting", "blocked", "offline"]) assert.notEqual(composerHint(s), composerHint("listening"), s);
   assert.equal(composerHint("listening"), composerHint("hearing"), "words in the strip already say you're heard");
-  assert.match(MIC_WORDS.nokey.tip, /MODEL_API_KEY/);
+  assert.match(MIC_WORDS.nokey.tip, /no AI key/);
+  assert.match(MIC_WORDS.nokey.tip, /save typed thoughts/);
+  assert.match(MIC_WORDS.nokey.tip, /Set up AI/);
   // The ring: silent rooms leave it thin, the three measured voices fill most of it, a shout fills it.
   assert.equal(ringFill(0), 0);
   assert.equal(ringFill(0.01), 0);

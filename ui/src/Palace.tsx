@@ -2,7 +2,7 @@ import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type Ke
 import { capitalized, firstLetter, type Thread } from "./core";
 import { leftBy, useMe } from "./room";
 import { roomColors, roomStyle } from "./rooms";
-import { usePicture } from "./pictures";
+import { palaceCopy, usePicture } from "./pictures";
 import "./palace.css";
 import { Markdown } from "./md";
 
@@ -21,9 +21,6 @@ function PalacePicture({ picture }: { picture: string | null }) {
     {top && <img key={top.src} {...top} loading="lazy" />}
   </>;
 }
-
-// The core writes a 512 px copy beside the map's 128 px one, named alike, so tiles stay sharp at Palace size.
-const palaceCopy = (picture: string) => picture.replace(/-small\.webp$/, "-palace.webp");
 
 // The narrowest a picture gets and the space between two, as the grid had them (auto-fill, minmax(150px, 1fr), 18 px).
 const TILE_MIN = 150;

@@ -1,7 +1,13 @@
+import { ReplyFormat, FormattedReply } from "./ReplyFormat";
 import { createPortal } from "react-dom";
 import { FullContentProvider } from "./FullContent";
-import { cancelPageReply, usePlayback } from "./page-speech";
+import { cancelPageReply, usePlayback, watchPageSpeech, pageSpeaking } from "./page-speech";
+import { VoicePolicyComparison } from "./VoicePolicyComparison";
+import { SuggestPoint, useTextEditReview } from "./TextEditReview";
+import { TextEditReviewContext } from "./bricks/contract";
 import RecoveryPanel from "./RecoveryPanel";
+import { cancelPartner } from "./partner";
+import RecoveryComparison from "./RecoveryComparison";
 import { PartnerStatus } from "./PartnerStatus";
 import { CanvasToolsContext, type CanvasToolId, SpeechFixesContext, SemanticZoomContext, ShapesContext } from "./bricks/contract";
 import { useShapes } from "./shapes-core";
@@ -12,11 +18,11 @@ import { memo, useContext, useDeferredValue, useEffect, useLayoutEffect, useMemo
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
 import { capitalized, firstLetter, LOOKING, useCore, type Action, type ItemStatus, jumpTracker, landingToFollow, pendingLabel, statusLine, aboutKey, type Landing, type Placing, type Suggestion, type Thread, type Thought, type ViewAsk } from "./core";
 import { download, exportedNotice, mapMarkdown } from "./export-md";
-import { saveFile } from "./save-file";
-import { ImportChats } from "./Import";
+import { saveFile, saveRecipeFile } from "./save-file";
+import { ImportChats, ON_THIS_MACHINE } from "./Import";
 import { StayHere, StayProvider } from "./StayHere";
 import { Away, useAway } from "./Away";
-import { usePicture } from "./pictures";
+import { usePicture, useReadyPictures } from "./pictures";
 import { actionLine, dismissable } from "./action-line";
 
 type Handlers = {
@@ -32,7 +38,7 @@ import { Explain } from "./Explain";
 import { Palace } from "./Palace";
 import { Recap } from "./Recap";
 import { hasToured, Tour } from "./Tour";
-import { leftBy, RoomControl, useMe } from "./room";
+import { leftBy, RoomControl, useMe, sendToCore } from "./room";
 import { roomColors, roomStyle } from "./rooms";
 import { useFindJump, viewAfterJump } from "./find";
 import { landedNow } from "./landed";
@@ -66,7 +72,7 @@ import { cardAt, dismiss, dropKey, pauseOffer, lastWords as lastWordsOn, leftOff
 import { SendCard } from "./SendCard";
 import { PullsCard } from "./PullsCard";
 import { NoteCard } from "./NoteCard";
-import { BRICKS, closeCatalog, isCore, isOn, openCatalogAt, switchBrick, useBricksOn, useCatalogAt, useCatalogOpen } from "./bricks-core";
+import { BRICKS, brickChoice, closeCatalog, isCore, isOn, openCatalogAt, switchBrick, useBricksOn, useCatalogAt, useCatalogOpen } from "./bricks-core";
 import { BrickMount, BrickSlot, useBrickHost } from "./BrickSlot";
 import type { ViewDestination } from "./bricks/contract";
 import { Catalog } from "./Catalog";
@@ -76,20 +82,25 @@ import { showHint } from "./guide-core";
 import { Markdown } from "./md";
 import { CARDS_FLAG, DEMO, SAMPLE_FLAG, SHELL2 } from "./shell/flag";
 import { useShellCountdownPlacement } from "./shell/countdown";
+import { PhonePair } from "./remote/Host";
 import { BringHere } from "./BringHere";
-import { BUILT_INS, builtInOn, featureAvailable, switchBuiltIn, useBuiltInsOn } from "./shell/features";
+import { BUILT_INS, builtInChoice, builtInOn, featureAvailable, switchBuiltIn, useBuiltInsOn } from "./shell/features";
+import { CatalogPanel } from "./shell/catalog/CatalogPanel";
+import { ordinaryCatalogRoute, useOrganization } from "./shell/catalog/preference";
 import { useHistory, type Entry } from "./shell/history";
 import { FEATURE_NAMES, NAMES } from "./shell/names";
 import { Icon, Keycap, mod, modAria, type Mode } from "./shell/parts";
-import { ToolSlot, CatalogTab, CornerButton, Find, HistoryTab, HeldStack, Rail, RAIL_KEYS, SettingsTab, StatusLine, TalkTurns, TopLeft, TopRight, Welcome, type CatalogRow, type RailTab } from "./shell/Shell";
+import { AISetup } from "./shell/AISetup";
+import { ToolSlot, CornerButton, Find, HistoryTab, HeldStack, Rail, RAIL_KEYS, SettingsTab, StatusLine, TalkTurns, TopLeft, TopRight, Welcome, type CatalogRow, type RailTab } from "./shell/Shell";
 import { useHeld, dropHeld } from "./shell/held";
 import { usePhone } from "./shell/usePhone";
 import "./shell/shell.css";
 import { TalkRail } from "./talk/TalkRail";
-import { inCall as callOn, peopleHere, useCall } from "./talk/call-core";
+import { voicePolicy, useVoicePolicy, inCall as callOn, peopleHere, useCall } from "./talk/call-core";
 
 const spring = { type: "spring", stiffness: 220, damping: 28 } as const;
 const RECORDING = typeof location !== "undefined" && new URLSearchParams(location.search).has("recording");
+const ORGANIZABLE = typeof location !== "undefined" && ordinaryCatalogRoute(location.search, location.pathname);
 /** This tab loaded the sample map (the new shell stamps it SAMPLE). */
 const SAMPLE_KEY = "e2a2o.sampleMap";
 function readSession(key: string) { try { return sessionStorage.getItem(key) === "1"; } catch { return false; } }
@@ -130,6 +141,7 @@ export default function App() {
   const home = !SHELL2 && !CARDS_FLAG && isOn("spine") ? "spine" : "map";
   const [view, setView] = useState<string>(home);
   const [destination, setDestination] = useState<ViewDestination | null>(null);
+  const [openedThought, setOpenedThought] = useState<{ id: string; text: string } | null>(null);
   const reveal = useFindJump(core.found, world, { setView, setQuery, setFocusMode, setExpanded, setDestination }, home);
   // Find's answers and Away's rows show their own point: the move they make isn't followed to the newest one.
   const jumps = useRef(jumpTracker()).current;
@@ -170,6 +182,7 @@ export default function App() {
       document.querySelector<HTMLElement>('[data-guide="catalog"]')?.focus({ preventScroll: true });
     });
     setDestination(null);
+    setOpenedThought(null);
     if (view === "map") {
       mapScroll.current = window.scrollY;
       mapRoom.current = dockRoom.now();
@@ -230,6 +243,7 @@ export default function App() {
   const [startingMic, setStartingMic] = useState(false);
   const [micFailed, setMicFailed] = useState(false);
   const playback = usePlayback();
+  const policy = useVoicePolicy();
   // The browser ("site") or the computer ("mac") keeps the mic from this page: it looks blocked until that changes
   // (mic.ts `micFailure`, `watchMicPermission`); a tap still tries, and says how to allow it.
   const [micBlocked, setMicBlocked] = useState<"" | "site" | "mac">("");
@@ -245,6 +259,33 @@ export default function App() {
   const mapRef = useRef<HTMLElement>(null);
   const [announcement, setAnnouncement] = useState("");
   const [railTab, setRailTab] = useState<RailTab | null>(null);
+  // Native Features controls live in the shared rail. Closing it returns keyboard focus to its opener.
+  const railReturn = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    if (railTab) {
+      if (!railReturn.current && document.activeElement instanceof HTMLElement && !document.activeElement.closest(".shell-rail")) {
+        railReturn.current = document.activeElement;
+      }
+    } else {
+      if (document.activeElement === document.body && railReturn.current?.isConnected) railReturn.current.focus({ preventScroll: true });
+      railReturn.current = null;
+    }
+  }, [railTab]);
+  const catalogOrganization = useOrganization();
+  const inspectingCatalog = ORGANIZABLE && catalogOrganization && railTab === "catalog";
+  const catalogWasOpen = useRef(false);
+  const catalogSelection = useRef<[number, number, "forward" | "backward" | "none"] | null>(null);
+  useLayoutEffect(() => {
+    if (!ORGANIZABLE) return;
+    const input = composerRef.current;
+    if (railTab === "catalog" && !catalogWasOpen.current && input) {
+      catalogSelection.current = [input.selectionStart, input.selectionEnd, input.selectionDirection];
+    } else if (!railTab && catalogWasOpen.current && input?.value) {
+      input.focus({ preventScroll: true });
+      if (catalogSelection.current) input.setSelectionRange(...catalogSelection.current);
+    }
+    catalogWasOpen.current = railTab === "catalog";
+  }, [railTab]);
   const [noticeFocused, setNoticeFocused] = useState(false);
   // The pointer on the notice: on its way to Undo or ×, so the notice waits for it.
   const [noticeHeld, setNoticeHeld] = useState(false);
@@ -482,15 +523,35 @@ export default function App() {
     return !!stop;
   };
 
+  const endPolicyCapture = useRef(() => {});
+  endPolicyCapture.current = () => {
+    micStart.current?.abort();
+    micStart.current = null;
+    setStartingMic(false);
+    if (releaseMic()) core.listen(false);
+  };
+  useEffect(() => voicePolicy.onEnd(() => endPolicyCapture.current()), []);
+  useEffect(() => {
+    if (!policy.enabled) return;
+    const unwatch = watchPageSpeech((speaking) => {
+      const current = voicePolicy.snapshot();
+      if (!current.enabled || !speaking || voicePolicy.canResume(current.generation)) return;
+      // Explicit turns (including a mic tap without Start conversation) close capture, retaining the voice draft.
+      endPolicyCapture.current();
+      voicePolicy.capture("off", current.generation);
+    });
+    return unwatch;
+  }, [policy.enabled]);
+
   // A permission prompt can outlive a disconnect or pagehide (including the back/forward cache). Cancel it;
   // neither reconnect nor restoring a page may finish an old start. Only a new mic tap starts capture.
   useEffect(() => {
     if (!core.connected) micStart.current?.abort();
   }, [core.connected]);
   useEffect(() => {
-    const hide = () => { micStart.current?.abort(); if (releaseMic()) core.listen(false); };
+    const hide = () => { if (voicePolicy.snapshot().enabled) voicePolicy.end(); micStart.current?.abort(); if (releaseMic()) core.listen(false); };
     window.addEventListener("pagehide", hide);
-    return () => window.removeEventListener("pagehide", hide);
+    return () => { window.removeEventListener("pagehide", hide); if (voicePolicy.snapshot().enabled) voicePolicy.end(); };
   }, []);
 
   // "Stop listening": the mic closes, as its button does, and stays off until you tap it (starting it again by voice
@@ -499,6 +560,7 @@ export default function App() {
   const [paused, setPaused] = useState(false);
   useEffect(() => {
     if (core.viewAsk?.view !== "pause") return;
+    if (voicePolicy.snapshot().enabled) voicePolicy.end();
     if (!releaseMic()) { core.showNotice("The mic is already off.", core.viewAsk); return; }
     core.listen(false);
     setPaused(true);
@@ -518,6 +580,7 @@ export default function App() {
     const ends = micEnds({ connected: core.connected, listening: core.listening, failed: core.voiceErrorRevision > voiceErrorStartedAt.current,
       statusNew: core.voiceStatusRevision > voiceStartedAt.current, listenedNew: core.listenedRevision > voiceListenedAt.current });
     if (liveStop.current && ends) {
+      if (voicePolicy.snapshot().enabled) voicePolicy.end();
       releaseMic();
       setMicFailed(ends === "failed" || ends === "ended");
       core.listen(false);
@@ -526,7 +589,7 @@ export default function App() {
   }, [core.connected, core.listening, core.voiceStatusRevision, core.voiceErrorRevision, core.listenedRevision, stopMic]);
 
   useEffect(() => {
-    if (liveStop.current && aboutKey(core.notice)) { releaseMic(); core.listen(false); }
+    if (liveStop.current && aboutKey(core.notice)) { if (voicePolicy.snapshot().enabled) voicePolicy.end(); releaseMic(); core.listen(false); }
   }, [core.notice, stopMic]);
 
   // The site's mic permission, where the browser says it: "denied" looks blocked; allowed later (from the address
@@ -535,7 +598,7 @@ export default function App() {
   const showNotice = useRef(core.showNotice);
   showNotice.current = core.showNotice;
   useEffect(() => watchMicPermission(navigator.permissions, (state) => {
-    if (state === "denied") setMicBlocked("site");
+    if (state === "denied") { setMicBlocked("site"); if (voicePolicy.snapshot().enabled) voicePolicy.end(); }
     else if (micBlockedNow.current === "site") {
       setMicBlocked("");
       showNotice.current("Microphone allowed. Tap to talk.");
@@ -548,11 +611,12 @@ export default function App() {
   const [keyHelp, setKeyHelp] = useState(false);
   const toggleMic = async (event?: { isTrusted: boolean }) => {
     if (event && !event.isTrusted) return;
-    if (micStart.current) { micStart.current.abort(); core.listen(false); return; }
+    if (micStart.current) { micStart.current.abort(); if (voicePolicy.snapshot().enabled) voicePolicy.end(); core.listen(false); return; }
     if (!core.connected && !liveStop.current) return;
     if (!world.threads.length && !world.thoughts.length) startedEmpty.current = true;
     setPaused(false);
     if (liveStop.current) {
+      if (voicePolicy.snapshot().enabled) voicePolicy.end();
       releaseMic();
       core.listen(false);
       return;
@@ -563,6 +627,9 @@ export default function App() {
       core.showNotice(core.keyNotice);
       return;
     }
+    if (voicePolicy.snapshot().enabled) cancelPageReply();
+    const policyGeneration = voicePolicy.snapshot().generation;
+    voicePolicy.capture("starting", policyGeneration);
     const attempt = new AbortController();
     micStart.current = attempt;
     const sameConnection = core.micConnection();
@@ -576,6 +643,7 @@ export default function App() {
       const ended = () => {
         if (stopped || !mounted.current) return;
         stopped = true;
+        if (voicePolicy.snapshot().enabled) voicePolicy.end();
         if (liveStop.current === stop) liveStop.current = null;
         setStopMic(null);
         core.listen(false);
@@ -590,12 +658,15 @@ export default function App() {
       voiceListenedAt.current = voiceRevisions.current.listened;
       liveStop.current = stop;
       setStopMic(() => stop);
+      voicePolicy.capture(pageSpeaking() ? "paused" : "open", policyGeneration);
       if (!core.listen(true)) {
+        if (voicePolicy.snapshot().enabled) voicePolicy.end();
         releaseMic();
         core.showNotice("Connection lost. Reconnect to use the microphone; you can still type below.");
       }
     } catch (err) {
       if (!mounted.current || attempt.signal.aborted) return;
+      if (voicePolicy.snapshot().enabled) voicePolicy.end();
       core.listen(false);
       // The browser's own words go to the console; the window says where to fix it (mic.ts).
       console.warn("The mic didn't start:", err);
@@ -604,8 +675,10 @@ export default function App() {
       if (failed.blocked) setMicBlocked(failed.blocked);
       core.showNotice(failed.words);
     } finally {
-      if (micStart.current === attempt) micStart.current = null;
-      if (mounted.current) setStartingMic(false);
+      if (micStart.current === attempt) {
+        micStart.current = null;
+        if (mounted.current) setStartingMic(false);
+      }
     }
   };
 
@@ -1109,12 +1182,15 @@ export default function App() {
   }, [pullBack, hasAway]);
 
   const pausedSources = (world.pauses ?? []).filter(p=>p.speaker===me&&!p.resolved);
+  const returnQuote = core.returnResult?.anchor ? `: “${core.returnResult.anchor.excerpt}”` : "";
+  const returnMessage = returnQuote && core.returnResult?.message.endsWith(returnQuote)
+    ? core.returnResult.message.slice(0, -returnQuote.length) : core.returnResult?.message;
   const returnPanel = <>
     {pausedSources.length>0 && <details className="paused-sources"><summary>Paused sources ({pausedSources.length})</summary>
-      {pausedSources.map(pause=><section key={pause.id} data-paused-source={pause.id}><button type="button" aria-label={`Paused here: ${pause.excerpt} (interruption ${pause.revision})`} onClick={event=>finishPause(pause.id,event.detail===0)}>Paused here · {world.threads.find(t=>t.id===pause.thread_id)?.title??"Earlier topic"}</button><blockquote>{pause.excerpt}</blockquote></section>)}
+      {pausedSources.map(pause=><section key={pause.id} data-paused-source={pause.id}><button type="button" className="shell-btn" aria-label={`Paused here: ${pause.excerpt} (interruption ${pause.revision})`} onClick={event=>finishPause(pause.id,event.detail===0)}>Paused here · {world.threads.find(t=>t.id===pause.thread_id)?.title??"Earlier topic"}</button><blockquote>{pause.excerpt}</blockquote></section>)}
     </details>}
     {core.returnResult && <section className="return-receipt" role="status" data-returned-source={core.returnResult.anchor?.thought_id}>
-      <button type="button" onClick={core.clearReturn} aria-label="Close return details">×</button><p>{core.returnResult.message}</p>
+      <div className="return-receipt-head"><p>{returnMessage}</p><button type="button" onClick={core.clearReturn} aria-label="Close return details">×</button></div>
       {core.returnResult.anchor && <><blockquote>{core.returnResult.anchor.excerpt}</blockquote>
         {core.returnResult.anchor.current_text===null ? <p>Source deleted. These are the retained interruption-time words.</p>
         : core.returnResult.anchor.current_text!==core.returnResult.anchor.excerpt && <p>Current words: {core.returnResult.anchor.current_text}</p>}</>}
@@ -1126,9 +1202,15 @@ export default function App() {
   // and not while the button can't be pressed (starting, or offline with nothing to stop). annotate sends a margin note
   // (core annotate.rs), openCatalog is Apps' Catalog button, at a brick's row, and hint is the guide's arrow or corner
   // caption, here only (guide-core.ts `showHint`).
+  const review = useTextEditReview({ actor: me, edits: world.point_edits, thoughts: world.thoughts, connected: core.connected, result: core.textEditResult, send: core.sendTextEdit });
   const brickHost = useBrickHost(world, core.snapshotRevision, me, core.connected, rooms, core.partial, {
     setActionEstimate: (request) => isOn("action-estimates") ? core.setActionEstimate(request) : Promise.resolve({ request_id: request.request_id, ok: false, message: "Action estimates is off.", estimate: null }),
-    saveTextFile: (name, text, mime) => { saveFile(text, mime, name); return true; },
+    saveTextFile: (name, text, mime) => { if (mime === "application/json") saveRecipeFile(text); else saveFile(text, mime, name); return true; },
+    saveQuestion: core.saveQuestion,
+    reviewPoint: review.open,
+    voiceShortcut: core.voiceShortcut,
+    exportRecipe: core.exportRecipe,
+    saveRecipe: core.saveRecipe,
     addThought: core.sendText,
     resume: (id,keyboard) => finishPause(id,keyboard),
     openPoint: (threadId, thoughtId) => {
@@ -1139,18 +1221,29 @@ export default function App() {
       setDestination(was => ({ threadId, thoughtId, revision: (was?.revision ?? 0) + 1 }));
     },
     openThread: (id) => { const thread = threadById.get(resolveMerged(world, id)); if (thread) goBack(thread); },
-    openThought: (id) => {
+    openThought: (source) => {
+      const id = typeof source === "string" ? source : source.id;
       const live = worldNow.current;
       const thought = live.thoughts.find(thought => thought.id === id && thought.placed);
+      if (typeof source !== "string" && (!thought || thought.text !== source.text || thought.thread_id !== source.threadId || thought.at_ms !== source.at || thought.speaker !== source.speaker)) {
+        core.showNotice("That source changed or left the map. Check latest again.");
+        return false;
+      }
       const threadId = thought?.thread_id ? resolveMerged(live, thought.thread_id) : null;
-      if (!threadId || !live.threads.some(thread => thread.id === threadId)) {
+      if (!thought || !threadId || !live.threads.some(thread => thread.id === threadId)) {
         core.showNotice("Original thought is no longer on this map.");
         return false;
       }
+      setOpenedThought({ id, text: thought.text });
       jumps.jumped(live, threadId);
       reveal(threadId, id);
-      core.focus(threadId);
+      // A reviewed capture is a local source jump, not a new placement destination.
+      if (typeof source === "string") core.focus(threadId);
       return true;
+    },
+    closeView: () => {
+      showView("map");
+      requestAnimationFrame(() => document.querySelector<HTMLElement>(SHELL2 ? '[data-guide="catalog"]' : '[data-guide="view:focused-find"]')?.focus({ preventScroll: true }));
     },
     select: core.select,
     notify: (text) => core.showNotice(text),
@@ -1164,11 +1257,13 @@ export default function App() {
     annotate: core.annotate,
     openCatalog: (id) => openCatalogAt(id ?? null),
     hint: showHint,
-  }, destination, core.usage, core.noKey || core.keyRefused || core.resting);
+  }, destination, core.usage, core.noKey || core.keyRefused || core.resting, { mapKey: core.mapIdentity, captures: core.captures });
   const bricksOn = useBricksOn();
   const actionEstimatesOn = bricksOn.has("action-estimates");
   useEffect(() => { core.setActionEstimatesOn(actionEstimatesOn); }, [actionEstimatesOn]);
   const shapes = useShapes(bricksOn.has("shapes"));
+  const shortcutsOn = bricksOn.has("voice-shortcuts");
+  useEffect(() => { core.voiceShortcuts(shortcutsOn); }, [shortcutsOn, core.connected]);
   const builtIns = useBuiltInsOn();
   // Only an ID and a focus return address live here; World remains the source of the panel's words.
   const [inspection, setInspection] = useState<{ id: string; invoker: HTMLElement } | null>(null);
@@ -1190,6 +1285,7 @@ export default function App() {
   const focusTool = (id: CanvasToolId | null) => setToolRequest(was => ({ id, revision: was.revision + 1 }));
   const toolsWereOn = useRef(false);
 
+  useReadyPictures(builtIns.has("warm-pictures"), world.threads, world.active, core.partial || core.handoff || "", core.connected);
   // A brick that shows your live words itself (brick.json `showsLiveWords`: Tiny transcript) takes them from the dock.
   const wordsElsewhere = BRICKS.some((brick) => brick.info.showsLiveWords && bricksOn.has(brick.info.id));
   const viewBricks = BRICKS.filter((brick) => brick.info.kind === "view" && bricksOn.has(brick.info.id));
@@ -1197,7 +1293,30 @@ export default function App() {
   // A view that's gone while it's shown hands the window back to the map: a view brick switched off, or the shell's Cards
   // (the Features page's built-in view; the classic page has no such view, its map is the cards) switched off or never on.
   const viewGone = !talk && (view === "cards" ? !(SHELL2 && builtIns.has("cards")) : view !== "map" && view !== "palace" && !viewBrick);
-  useEffect(() => { if (viewGone) showView("map"); }, [viewGone]);
+  useEffect(() => { if (viewGone && !inspectingCatalog) showView("map"); }, [viewGone, inspectingCatalog]);
+  // An explicit Open original waits for the destination's words, then gives that exact source the existing focus
+  // ring. It also works after a lazy Canvas mount. Nothing watches until the action is used; navigation cancels it.
+  useEffect(() => {
+    if (!openedThought || !["map", "cards", "spine"].includes(view)) return;
+    const { id, text } = openedThought;
+    let timer = 0;
+    const observer = new MutationObserver(focusOriginal);
+    function focusOriginal() {
+      const source = [...document.querySelectorAll<HTMLElement>(`[data-thought="${CSS.escape(id)}"] .spine-words`)].find((node) => node.textContent === text);
+      const target = source?.closest<HTMLElement>(".spine-text") ?? document.getElementById(`point-${id}`);
+      if (!target) return;
+      observer.disconnect();
+      window.clearTimeout(timer);
+      if (!target.hasAttribute("tabindex")) target.tabIndex = -1;
+      target.focus({ preventScroll: true, focusVisible: true });
+      if (!source) look(target, text);
+    }
+    observer.observe(document.body, { childList: true, subtree: true });
+    timer = window.setTimeout(() => observer.disconnect(), 5000);
+    focusOriginal();
+    return () => { observer.disconnect(); window.clearTimeout(timer); };
+  }, [openedThought, view]);
+
 
   const recognizedDraft = core.voiceDraft && <details className="voice-draft">
     <summary>Draft · recognized words</summary>
@@ -1209,6 +1328,7 @@ export default function App() {
     }}>Copy to editor</button>
   </details>;
   const stopConversation = () => {
+    if (voicePolicy.snapshot().enabled) { voicePolicy.end(); cancelPartner(); sendToCore({ type: "partner_cancel" }); setPaused(true); composerRef.current?.focus({ preventScroll: true }); return; }
     cancelPageReply();
     micStart.current?.abort();
     releaseMic();
@@ -1216,14 +1336,26 @@ export default function App() {
     switchBuiltIn("partner", false);
     setPaused(true);
   };
-  const mic = micState({ playbackPaused: playback.phase === "queued" || playback.phase === "playing", failed: micFailed, connected: core.connected, capturing: !!stopMic, starting: startingMic, serviceOn: core.listening,
+  const comparison = policy.enabled && <VoicePolicyComparison policy={policy}
+    connected={core.connected} captureOpen={!!stopMic} starting={startingMic} playback={playback}
+    placement={pending.length ? `${pending.length} waiting for placement` : "No placement waiting"}
+    onStart={(event) => {
+      if (!event.isTrusted || navigator.userActivation?.isActive === false || !core.connected) return;
+      if (core.noKey) { setKeyHelp(true); core.showNotice(core.keyNotice); return; }
+      voicePolicy.startSession();
+      void toggleMic(event);
+    }} onStop={stopConversation} onStopReply={() => {
+      cancelPageReply(); cancelPartner(); sendToCore({ type: "partner_cancel" });
+      composerRef.current?.focus({ preventScroll: true });
+    }} />;
+  const mic = micState({ comparisonPaused: policy.enabled && policy.capture === "paused", comparisonStarting: policy.enabled && policy.capture === "starting", playbackPaused: playback.phase === "queued" || playback.phase === "playing", failed: micFailed, connected: core.connected, capturing: !!stopMic, starting: startingMic, serviceOn: core.listening,
     words: !!core.partial, paused, noKey: core.noKey, refused: core.keyRefused, resting: core.resting, blocked: !!micBlocked });
 
   const status = statusLine({ connected: core.connected, listening: !!stopMic, noKey: core.noKey, refused: core.keyRefused, resting: core.resting, paused });
 
   const noticeText = (text: string) => text && (
     // Hosted, the key is the site's own, so its words never send anyone to .env (site.ts).
-    (site.hosted || !core.keyRefused) && aboutKey(text) ? keyWords(site.hosted, core.keyRefused, "notice", core.resting)
+    aboutKey(text) ? keyWords(site.hosted, core.keyRefused, "notice", core.resting)
     : text.startsWith("Couldn't place a thought:") ? "Couldn't sort that thought yet. It's saved and will retry."
     : text
   );
@@ -1271,12 +1403,16 @@ export default function App() {
   // In a call, Talk is the call's own rail (lane L5's TalkRail, until this rail hosts it): this one leaves its tab out.
   useEffect(() => { if (SHELL2 && callOn(call)) setRailTab((was) => (was === "talk" ? null : was)); }, [callOn(call)]);
   useEffect(() => { if (SHELL2 && helpOpen) { setRailTab("settings"); setHelpOpen(false); } }, [helpOpen]);
+  const formatFocusReturn = () => {
+    if (builtIns.has("reply-format") && railTab === "catalog")
+      document.querySelector<HTMLButtonElement>('[data-guide="catalog"]')?.focus({ preventScroll: true });
+  };
   const toggleTab = (tab: RailTab) => setRailTab((was) => (was === tab ? null : tab));
   // The mic's time, from when it started listening.
   const [micSince, setMicSince] = useState<number | null>(null);
   useEffect(() => setMicSince(stopMic ? Date.now() : null), [stopMic]);
   // Listening switched off in the Catalog stops a mic that runs.
-  useEffect(() => { if (!listeningOn && releaseMic()) core.listen(false); }, [listeningOn]);
+  useEffect(() => { if (!listeningOn) { if (voicePolicy.snapshot().enabled) voicePolicy.end(); if (releaseMic()) core.listen(false); } }, [listeningOn]);
   // The sample map, loaded from the first screen (or ?sample): stamped SAMPLE until the map is emptied.
   const [sampleMap, setSampleMap] = useState(() => SAMPLE_FLAG || readSession(SAMPLE_KEY));
   const sawThreads = useRef(false);
@@ -1306,6 +1442,7 @@ export default function App() {
   // first), so a real Esc never closed the rail.
   const shellKey = useRef<(event: KeyboardEvent) => void>(() => {});
   shellKey.current = (event: KeyboardEvent) => {
+    if (event.defaultPrevented || event.isComposing) return;
     const target = event.target as HTMLElement;
     const field = target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName);
     if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "d") {
@@ -1316,7 +1453,7 @@ export default function App() {
     }
     if (event.metaKey || event.ctrlKey || event.altKey || field || event.repeat || document.querySelector("dialog[open]")) return;
     if (canvasTools && event.key === "Escape" && !railTab) { event.preventDefault(); focusTool(null); return; }
-    if (event.key === "Escape" && railTab) { event.preventDefault(); setRailTab(null); return; }
+    if (event.key === "Escape" && railTab) { event.preventDefault(); formatFocusReturn(); setRailTab(null); return; }
     if (talk) return;
     const key = event.key.toLowerCase();
     const tab = (Object.keys(RAIL_KEYS) as RailTab[]).find((t) => RAIL_KEYS[t].toLowerCase() === key);
@@ -1343,6 +1480,8 @@ export default function App() {
   // The classic page (`?shell=1`, kept for one release; `?cards` too), and the shell after it.
   if (!SHELL2) return (
     <MotionConfig reducedMotion="user">
+    <TextEditReviewContext.Provider value={review.context}>
+    {review.panel}
     <AttentionProvider value={attention.value}>
     <WhyContext.Provider value={whyAsk}>
     <SpeechFixesContext.Provider value={speechFixes}>
@@ -1456,7 +1595,7 @@ export default function App() {
       </div>
       </div>
 
-      <Explain explanations={core.explanations} explain={core.explain} mark={core.mark} />
+      <Explain explanations={core.explanations} explain={(id, text, context, threadId) => core.explain(id, text, context, threadId, builtIns.has("reuse-explanations"))} mark={core.mark} />
 
       {!talk && world.threads.length > 0 && <nav ref={toolsRef} className="map-tools" aria-label="Map navigation">
         <div className="map-tools-inner">
@@ -1476,7 +1615,7 @@ export default function App() {
       </nav>}
       {talk && spine ? <BrickMount brick={spine} host={brickHost} />
         : view === "palace" && world.threads.length > 0 ? <Palace threads={world.threads} active={world.active} onOpen={goBack} />
-        : viewBrick && (world.threads.length > 0 || view === "decisions" || (shapes.enabled && viewBrick.info.id === "spine")) ? <BrickMount brick={viewBrick} host={brickHost} /> : <main ref={mapRef} className={talking && world.active && !search ? "map talking" : "map"} aria-label="Cards" data-guide="map">
+        : viewBrick && (world.threads.length > 0 || view === "decisions" || viewBrick.info.id === "focused-find" || (shapes.enabled && viewBrick.info.id === "spine")) ? <BrickMount brick={viewBrick} host={brickHost} /> : <main ref={mapRef} className={talking && world.active && !search ? "map talking" : "map"} aria-label="Cards" data-guide="map">
         {/* Before the first snapshot the world is the empty one: nothing, not a welcome to a map that isn't empty. */}
         {world.threads.length === 0 ? (
           core.snapshotRevision === 0 ? null : <div className="empty">
@@ -1506,7 +1645,7 @@ export default function App() {
         )}
       </main>}
 
-      {sampleMap && <div className="sample-recovery-actions"><button type="button" onClick={() => core.sendText("Where was I?")}>Where was I?</button><button type="button" onClick={() => showView("palace")}>Pictures</button></div>}
+      {sampleMap && <div className="sample-recovery-actions"><button type="button" className="shell-btn" onClick={() => core.sendText("Where was I?")}>Where was I?</button><button type="button" className="shell-btn" onClick={() => showView("palace")}>Pictures</button></div>}
       <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{announcement}</div>
       <section ref={dockRef} className={view === "palace" ? "dock in-palace" : "dock"} aria-label="Your thoughts">
         {returnPanel}
@@ -1523,6 +1662,8 @@ export default function App() {
             away.dismiss();
           }} />
           </NotesContext.Provider>
+          <RecoveryComparison enabled={builtIns.has("compare-return-controls")} source={pullBack} quote={lastWords}
+            finish={finishThread} later={later} forget={forget} hold={pullBackHold}>
           <AnimatePresence>
             {pullBack && (
               <motion.div
@@ -1554,6 +1695,7 @@ export default function App() {
               </motion.div>
             )}
           </AnimatePresence>
+          </RecoveryComparison>
           {/* Under the unfinished card, both needing you: the app you just asked for sits nearest your words, and the
               unfinished card rising or going above it doesn't move its Keep (the dock grows upward). */}
           <DockBuild core={core} dismissed={buildGone} onLeave={() => composerRef.current?.focus({ preventScroll: true })} />
@@ -1572,7 +1714,8 @@ export default function App() {
             ))}
           </div>
           {recognizedDraft}
-          <PartnerStatus onStopConversation={stopConversation} captureActive={!!stopMic || startingMic} />
+          <FormattedReply />
+          {comparison || <PartnerStatus onStopConversation={stopConversation} captureActive={!!stopMic || startingMic} />}
           <div id="tour-composer" />
           <form className="composer" onSubmit={submit} data-guide="composer">
             <textarea
@@ -1616,6 +1759,7 @@ export default function App() {
     </SpeechFixesContext.Provider>
     </WhyContext.Provider>
     </AttentionProvider>
+    </TextEditReviewContext.Provider>
     </MotionConfig>
   );
 
@@ -1642,21 +1786,23 @@ export default function App() {
     resting: core.resting, callsCapped: !!core.usage && core.usage.calls.used >= core.usage.calls.limit, microphone: !!stopMic };
   const rows: CatalogRow[] = [
     { id: "preset-talk", kind: "panel" as const, name: "Talk", does: "Keep just what you need to talk. Turn off to bring your features back.",
-      on: talk, core: false, toggle: switchTalk },
+      on: talk, savedOn: talk, core: false, toggle: switchTalk },
     ...BRICKS.map(({ info }): CatalogRow => {
       const named = FEATURE_NAMES[info.id];
       return { id: info.id, kind: info.kind, name: named?.name ?? info.name, aka: named?.aka, does: named?.does ?? info.does, lives: named?.lives,
-        on: bricksOn.has(info.id), core: isCore(info.id), toggle: (value) => switchBrick(info.id, value),
+        on: bricksOn.has(info.id), savedOn: brickChoice(info.id), core: isCore(info.id), toggle: (value) => switchBrick(info.id, value),
       show: info.kind === "view" && info.id !== "spine" && bricksOn.has(info.id) ? () => openView(info.id) : undefined };
     }),
     ...BUILT_INS.filter((b) => featureAvailable(b.id) && (b.id !== "email" || site.email)).map((b): CatalogRow => {
       const named = FEATURE_NAMES[b.id];
       const shows = b.id === "cards" ? "cards" : b.id === "pictures" ? "palace" : null;
-      return { id: b.id, kind: b.kind, name: named.name, aka: named.aka, does: named.does ?? "", lives: named.lives, on: builtIns.has(b.id), core: false,
-        toggle: (value) => { switchBuiltIn(b.id, value); if (!value && shows === view) showView("map"); }, show: shows && builtIns.has(b.id) ? () => openView(shows) : undefined };
+      const available = b.id !== "import" || ON_THIS_MACHINE;
+      return { id: b.id, kind: b.kind, name: named.name, aka: named.aka, does: named.does ?? "", lives: named.lives, on: builtIns.has(b.id) && available, savedOn: builtInChoice(b.id), core: false, parts: b.id === "phone-remote" && builtIns.has(b.id) ? <PhonePair /> : undefined,
+        disabled: !available, disabledReason: !available ? "Available on the computer running E2A2O" : undefined,
+        toggle: (value) => { switchBuiltIn(b.id, value); if (!value && shows === view && !inspectingCatalog) showView("map"); }, show: shows && builtIns.has(b.id) ? () => openView(shows) : undefined };
     }),
-    ...world.apps.map((app): CatalogRow => ({ id: `app-${app.id}`, kind: "app", name: app.name, does: app.purpose, on: app.enabled, core: false,
-      toggle: (value) => core.toggleApp(app.id, value), disabled: !core.connected,
+    ...world.apps.map((app): CatalogRow => ({ id: `app-${app.id}`, kind: "app", name: app.name, does: app.purpose, on: app.enabled, savedOn: app.enabled, core: false,
+      toggle: (value) => core.toggleApp(app.id, value), disabled: !core.connected, disabledReason: !core.connected ? "Connect to change this app's saved choice." : undefined,
       parts: <AppParts app={app} apps={world.apps} state={partsState} /> })),
   ].sort((a, b) => Number(b.core) - Number(a.core) || a.name.localeCompare(b.name));
   const undoEntry = (entry: Entry) => {
@@ -1679,8 +1825,11 @@ export default function App() {
     ...(builtIns.has("recap") ? [["R", "Recap this session"] as [string, string]] : []), [mod("Z"), "Undo your last turn"], ["esc", "Close the panel"],
   ];
   const tabs: RailTab[] = callOn(call) ? ["history", "catalog", "settings"] : ["talk", "history", "catalog", "settings"];
+  const canvasVisible = canvasTools || talk || !(view === "palace" || view === "cards" || (viewBrick && viewBrick.info.id !== "spine"));
   return (
     <MotionConfig reducedMotion="user">
+    <TextEditReviewContext.Provider value={review.context}>
+    {review.panel}
     <AttentionProvider value={attention.value}>
     <WhyContext.Provider value={whyAsk}>
     <SpeechFixesContext.Provider value={speechFixes}>
@@ -1698,17 +1847,19 @@ export default function App() {
           {listeningOn && <MicButton state={mic} capturing={!!stopMic} disabled={!core.connected && !stopMic && !startingMic} onClick={toggleMic} shortcut={modAria("D")} />}
           {big && <span className="shell-composer-label">{NAMES.composer.firstTap}</span>}
           <textarea rows={1} id={COMPOSER_ID} ref={composerRef} value={draft} onKeyDown={submitOnEnter} enterKeyHint="send"
+            style={{ height: "1.466667em", maxHeight: "1.466667em", lineHeight: "1.466667em" }}
             onChange={(e) => { typedSinceSend.current = true; setDraft(e.target.value); }}
             placeholder={big ? NAMES.composer.firstType : inCall ? NAMES.composer.call : NAMES.composer.idle} aria-label="Type a thought" aria-keyshortcuts="Enter" />
           {listeningOn && <Keycap>{mod("D")}</Keycap>}
         </form>, toolSlots.composer)}
-      {createPortal(<HistoryTab entries={history.entries} undoId={core.latestUndoId} now={now} onUndo={undoEntry} onShow={show}
+      {createPortal(<HistoryTab setupText={keyWords(site.hosted, core.keyRefused, "notice")} onSetup={core.noKey && !core.resting ? () => setKeyHelp(true) : undefined} entries={history.entries} undoId={core.latestUndoId} now={now} onUndo={undoEntry} onShow={show}
           inspectAction={bringHereOn ? (id) => world.threads.some((thread) => thread.id === id) && <button type="button" className="shell-link"
             onPointerDown={(event) => event.preventDefault()} onClick={(event) => inspectHere(id, event.currentTarget)}>{NAMES.inspectHere}</button> : undefined}
           recap={builtIns.has("recap") && world.thoughts.length ? () => core.requestRecap() : null} />, toolSlots.history)}
-      {createPortal(<CatalogTab rows={rows} at={catalogAt?.id ?? null} />, toolSlots.features)}
+      {createPortal(<><CatalogPanel rows={rows} at={catalogAt?.id ?? null} currentView={view} active={railTab === "catalog" || canvasTools} eligible={ORGANIZABLE} /><ReplyFormat /></>, toolSlots.features)}
       {talkExit}
-      <TopLeft mapName={inCall ? NAMES.map.call : NAMES.map.alone} mode={mode} wordmark={!phone || empty} />
+      <TopLeft mapName={inCall ? NAMES.map.call : NAMES.map.alone} mode={mode} wordmark={!phone || empty}
+        sampleTools={sampleMap ? { returnResult: core.returnResult, onReturn: () => core.sendText("Where was I?"), onPictures: () => showView("palace") } : undefined} />
       <TopRight>
         {!empty && <Find inputRef={searchRef} query={query} setQuery={setQuery} results={findResults} go={goToMatch}
           inspect={bringHereOn ? inspectHere : undefined} inspecting={bringHereOn && !!inspection?.invoker.closest(".shell-find")} />}
@@ -1723,22 +1874,26 @@ export default function App() {
       {bringHereOn && inspection && <BringHere id={inspection.id} world={world} close={closeInspection}
         openOriginal={() => { setInspection(null); show(inspection.id); }} />}
 
-      {sampleMap && <div className="sample-recovery-actions"><button type="button" onClick={() => core.sendText("Where was I?")}>Where was I?</button><button type="button" onClick={() => showView("palace")}>Pictures</button></div>}
+
       <div className="sr-only" role="status">{friendlyNotice}</div>
       <div className="sr-only" role="status">{mapAnnouncement}</div>
-      <Explain explanations={core.explanations} explain={core.explain} mark={core.mark} />
+      <Explain explanations={core.explanations} explain={(id, text, context, threadId) => core.explain(id, text, context, threadId, builtIns.has("reuse-explanations"))} mark={core.mark} />
 
-      {canvasTools && spine ? <BrickMount brick={spine} host={brickHost} /> : !talk && view === "palace" && !empty ? <Palace threads={world.threads} active={world.active} onOpen={goBack} />
+      {/* Keep the ordinary Canvas mounted and dimensioned across Show; hiding cannot reset its camera effects. */}
+      {ORGANIZABLE && <div className="persistent-canvas" style={{ display: "contents", visibility: canvasVisible ? "visible" : "hidden" }} inert={!canvasVisible} aria-hidden={!canvasVisible}>
+        {spine && (!empty || shapes.enabled || canvasTools) && <BrickMount brick={spine} host={brickHost} />}
+      </div>}
+      {canvasTools && spine ? ORGANIZABLE ? null : <BrickMount brick={spine} host={brickHost} /> : !talk && view === "palace" && !empty ? <Palace threads={world.threads} active={world.active} onOpen={goBack} />
         : !talk && view === "cards" && !empty ? <main ref={mapRef} className="map" aria-label="Cards" data-guide="map">
           <NotesContext.Provider value={notes}><TidyProvider world={world} decide={core.tidy}><MovesProvider threads={world.threads} move={core.move} rename={core.rename} remove={core.remove}>
             <MapCards active={world.active} rooms={rooms} activePath={activePath} childrenByParent={children} thoughtsByThread={thoughtsByThread} ideasByThread={ideasByThread} actionsByThread={actionsByThread} held={held} expanded={expanded} setExpanded={setExpanded} keptOpen={keptOpen} on={on} />
           </MovesProvider></TidyProvider></NotesContext.Provider>
         </main>
-        : !talk && viewBrick && viewBrick.info.id !== "spine" && (!empty || view === "decisions") ? <BrickMount brick={viewBrick} host={brickHost} />
-        : (!empty || shapes.enabled) && spine ? <BrickMount brick={spine} host={brickHost} />
+        : !talk && viewBrick && viewBrick.info.id !== "spine" && (!empty || view === "decisions" || viewBrick.info.id === "focused-find") ? <BrickMount brick={viewBrick} host={brickHost} />
+        : (!empty || shapes.enabled) && spine ? ORGANIZABLE ? null : <BrickMount brick={spine} host={brickHost} />
         : <main ref={mapRef} className="shell-main" aria-label="Your map" data-guide="map">
           {/* Before the first snapshot the world is the empty one: nothing, not a welcome to a map that isn't empty. */}
-          {core.snapshotRevision > 0 && empty && <Welcome models={!core.noKey ? modelsLine(site.models) : ""} sample={site.sample && !core.listening
+          {core.snapshotRevision > 0 && empty && <Welcome onSetup={core.noKey && !core.resting ? () => setKeyHelp(true) : undefined} models={!core.noKey ? modelsLine(site.models) : ""} sample={site.sample && !core.listening
             ? <p className="shell-samples">
               <button type="button" className="shell-btn shell-sample" onClick={() => loadSample()} disabled={!core.connected || waitingCaptures.length > 0 || core.recovery.onlinePending} aria-keyshortcuts="E">See an example<Keycap>E</Keycap></button>
               <button type="button" className="shell-btn" onClick={() => loadSample("debug-break")} disabled={!core.connected || waitingCaptures.length > 0 || core.recovery.onlinePending} aria-keyshortcuts="Enter">Try an unfinished thought</button>
@@ -1748,7 +1903,16 @@ export default function App() {
           {!empty && !spine && <p className="shell-empty-line">{NAMES.findNone}</p>}
         </main>}
       {!canvasTools && view !== "map" && <div className="shell-corner shell-bl" data-slot="bottom-left">
-        <button type="button" className="shell-pill shell-button" onClick={() => showView("map")} aria-keyshortcuts="M">
+        <button type="button" className="shell-pill shell-button" onClick={() => {
+          showView("map");
+          if (ORGANIZABLE && view === "cards") requestAnimationFrame(() => {
+            const input = composerRef.current;
+            if (input?.value) {
+              input.focus({ preventScroll: true });
+              if (catalogSelection.current) input.setSelectionRange(...catalogSelection.current);
+            }
+          });
+        }} aria-keyshortcuts="M">
           <Icon name="back" /><span className="shell-label">{view === "decisions" ? "Close Decisions" : NAMES.backToMap}</span><Keycap>M</Keycap>
         </button>
       </div>}
@@ -1757,7 +1921,6 @@ export default function App() {
       <footer ref={dockRef} className="dock shell-dock">
       {/* Cards, notices and captions stay above the bottom bar's input row. */}
       <section className="shell-stage" data-slot="stage" aria-label="Your thoughts">
-        {keyHelp && core.noKey && <p className="keyless-help" role="status">Your words can be saved. Add a working AI key for automatic placement and listening.</p>}
         {returnPanel}
         <RecoveryPanel recovery={core.recovery} recover={core.recover} discardRecovery={core.discardRecovery} sendOnline={core.sendOnline}
           draft={draft} clearDraft={exact => setDraft(current => current === exact ? "" : current)} />
@@ -1781,6 +1944,8 @@ export default function App() {
             away.dismiss();
           }} />
           </NotesContext.Provider>
+          <RecoveryComparison enabled={builtIns.has("compare-return-controls")} source={pullBack} quote={lastWords}
+            finish={finishThread} later={later} forget={forget} hold={pullBackHold}>
           {pullBack && <div className="pullback" role="status" data-dock-card data-guide="unfinished" style={roomStyle(rooms.get(pullBack.id))} {...pullBackHold}>
             <ThreadPicture thread={pullBack} />
             <div className="pullback-text">
@@ -1795,6 +1960,7 @@ export default function App() {
               <button className="quiet" onClick={() => forget(pullBack)}>Forget it</button>
             </div>
           </div>}
+          </RecoveryComparison>
           <DockBuild core={core} dismissed={buildGone} onLeave={() => composerRef.current?.focus({ preventScroll: true })} />
           <DockTune core={core} />
           <AttentionNote onGo={attention.go} />
@@ -1824,12 +1990,13 @@ export default function App() {
           <button className="shell-rail-close" onClick={core.hideMapChange} aria-label="Dismiss map update" aria-keyshortcuts="Escape"><Icon name="close" /></button>
         </div>}
         {recognizedDraft}
-          <PartnerStatus onStopConversation={stopConversation} captureActive={!!stopMic || startingMic} />
+          <FormattedReply />
+          {comparison || <PartnerStatus onStopConversation={stopConversation} captureActive={!!stopMic || startingMic} />}
         <div className="shell-captions" id="shell-caption" />
       </section>
 
       <StatusLine openHistory={() => toggleTab("history")} state={{
-        mic, typingOnly: !listeningOn, hosted: site.hosted, since: micSince, now, call: inCall,
+        mic, comparison: policy.enabled, typingOnly: !listeningOn, hosted: site.hosted, since: micSince, now, call: inCall,
         first: !world.thoughts.length, waiting: pending.length,
         stalled: stalled ? pendingLabel(stalled, core.placing, now, core.noKey, core.keyRefused, core.resting) : "",
         queued: core.queuedCount, connected: core.connected, saved: !draft && !!captures.at(-1)?.saved, savedId: captures.at(-1)?.id,
@@ -1842,7 +2009,7 @@ export default function App() {
         <HeldStack phone={phone} answerFallback={() => composerRef.current?.focus()} />
       </div>
 
-      {!talk && railTab && (!canvasTools || (railTab !== "history" && railTab !== "catalog")) && <Rail tab={railTab} setTab={setRailTab} close={() => setRailTab(null)} tabs={tabs}>
+      {!talk && railTab && (!canvasTools || (railTab !== "history" && railTab !== "catalog")) && <Rail tab={railTab} setTab={setRailTab} close={() => { formatFocusReturn(); setRailTab(null); }} tabs={tabs}>
         {/* Talk: lane L5's call (people, turns, the read line, the level meter) takes this line's place. */}
         {railTab === "talk" && <TalkTurns thoughts={world.thoughts} me={me} ai={aiNames} />}
         {railTab === "history" && <ToolSlot host={toolSlots.history} />}
@@ -1856,7 +2023,8 @@ export default function App() {
         .map((brick) => <BrickMount key={brick.info.id} brick={brick} host={brickHost} />)}
       {!talk && <Tips />}
       <Guide world={world} view={view} query={query} focus={focusMode} />
-      <Recap view={talk ? null : core.recap.view} world={world} connected={core.connected} noKey={core.noKey} resting={core.resting} listening={core.listening} onRequest={core.requestRecap} onMark={core.mark} onClose={core.recap.close} onFocus={(id) => {
+      {keyHelp && <AISetup onClose={() => setKeyHelp(false)} />}
+      <Recap onSetup={core.noKey && !core.resting ? () => { core.recap.close(); setKeyHelp(true); } : undefined} view={talk ? null : core.recap.view} world={world} connected={core.connected} noKey={core.noKey} resting={core.resting} listening={core.listening} onRequest={core.requestRecap} onMark={core.mark} onClose={core.recap.close} onFocus={(id) => {
         const thread = world.threads.find((t) => t.id === id);
         if (thread) goBack(thread);
       }} />
@@ -1869,6 +2037,7 @@ export default function App() {
     </SpeechFixesContext.Provider>
     </WhyContext.Provider>
     </AttentionProvider>
+    </TextEditReviewContext.Provider>
     </MotionConfig>
   );
 }
@@ -2324,6 +2493,7 @@ const Point = memo(function Point({ thought, heads, on }: { thought: Thought; he
       <span><Markdown text={capitalized(thought.point)} /></span>
       {latest && <span className="sr-only">(your latest thought)</span>}
       {said && <button type="button" className="said-toggle" aria-expanded={open} aria-controls={`said-${thought.id}`} onClick={flip}>{differ ? "Words said" : "Why here"}</button>}
+      {thought.placed && <SuggestPoint ids={[...heads.map(h => h.id), thought.id]} />}
       <MovePoint thought={thought} />
       <PointNote thought={thought} heads={heads} unlink={on.unlink} />
       {/* Joined across a pause, each part keeps its own "Did you mean" and undo of a fix. */}

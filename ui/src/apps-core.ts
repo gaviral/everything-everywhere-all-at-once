@@ -26,6 +26,19 @@ export interface MiniApp {
   last_run_ms: number;
 }
 
+export interface AppRecipe {
+  version: 1;
+  name: string;
+  purpose: string;
+  watcher: Exclude<Watcher, { kind: "time" } | { kind: "app_request" }>;
+  prompt: MiniApp["prompt"];
+  publishers: MiniApp["publishers"];
+  cooldown_secs: number;
+}
+export interface RecipeSave { request_id: string; recipe: AppRecipe; source: MiniApp | null }
+export interface RecipeResult { request_id: string; app_id: string | null; message: string }
+export interface RecipeReceipt { fingerprint: string; app_id: string }
+
 export interface AppBuild {
   id: string;
   request: string;
@@ -46,7 +59,7 @@ export function volumeChoice(sound: boolean): { purpose: string; publishers: Pub
     : { purpose: "Offer a quiet pause when voices stay loud for a few seconds.", publishers: [VOLUME_CARD] };
 }
 
-export interface AppsWorld { apps: MiniApp[]; apps_seeded: boolean }
+export interface AppsWorld { apps: MiniApp[]; apps_seeded: boolean; recipe_saves?: Record<string, RecipeReceipt> }
 
 export type AppChange =
   | { type: "app_registered"; app: MiniApp }
@@ -54,14 +67,16 @@ export type AppChange =
   | { type: "app_removed"; id: string }
   | { type: "app_ran"; id: string; at_ms: number }
   | { type: "app_output"; id: string; sound: boolean }
-  | { type: "apps_seeded" };
+  | { type: "apps_seeded" }
+  | { type: "recipe_saved"; request_id: string; receipt: RecipeReceipt };
 
 export function isAppChange(c: { type: string }): c is AppChange {
-  return ["app_registered", "app_enabled", "app_removed", "app_ran", "app_output", "apps_seeded"].includes(c.type);
+  return ["app_registered", "app_enabled", "app_removed", "app_ran", "app_output", "apps_seeded", "recipe_saved"].includes(c.type);
 }
 
 export function applyAppChange<T extends AppsWorld>(world: T, c: AppChange): T {
   switch (c.type) {
+    case "recipe_saved": return world.recipe_saves?.[c.request_id] ? world : { ...world, recipe_saves: { ...world.recipe_saves, [c.request_id]: c.receipt } };
     case "app_registered":
       return world.apps.some((a) => a.id === c.app.id) ? world : { ...world, apps: [...world.apps, c.app] };
     case "app_removed": return { ...world, apps: world.apps.filter((a) => a.id !== c.id) };

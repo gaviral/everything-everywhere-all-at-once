@@ -1403,6 +1403,12 @@ try {
         await width(390, 844);
         await settle();
         await calm();
+        // Resize observers and React Flow can commit their narrow layout after the camera settles.
+        await until(`(${JSON.stringify(made)}).every(({ id, words }) => {
+          const node = document.querySelector('.react-flow__node[data-id="p:' + id + '"]');
+          const quote = [...(node?.querySelectorAll('.spine-quote') ?? [])].find(el => el.textContent === words);
+          return !!quote && !!node.querySelector('.spine-tuck[data-margin="' + quote.dataset.margin + '"]');
+        })`, 4000);
         for (const { id, words, text } of made) {
           const t = await evaluate(`(() => {
             const node = document.querySelector('.react-flow__node[data-id="p:${id}"]');
@@ -1766,7 +1772,7 @@ try {
   await until(`!!document.querySelector(".apps-catalog button")`, 3000);
   await evaluate(`document.querySelector(".apps-catalog button").click()`);
   if (!await until(`!!document.querySelector("dialog.catalog[open]")`, 3000)) fail("Catalog", "doesn't open from the Apps panel");
-  const listed = await evaluate(`[...document.querySelectorAll(".catalog-group:not([aria-label^=Built]) .catalog-row strong")].map((s) => s.textContent)`);
+  const listed = await evaluate(`[...document.querySelectorAll(".catalog-group:not([aria-label^=Built]) .catalog-row:not([data-built-in]) strong")].map((s) => s.textContent)`);
   for (const name of brickNames) if (!listed.includes(name)) fail("Catalog", `doesn't list ${name}`);
   if (listed.length !== brickNames.length) fail("Catalog", `lists ${listed.length} bricks, the folders hold ${brickNames.length}`);
   const switchFor = (name) => `[...document.querySelectorAll(".catalog-row")].find((r) => r.querySelector("strong").textContent === ${JSON.stringify(name)}).querySelector("[role=switch]")`;

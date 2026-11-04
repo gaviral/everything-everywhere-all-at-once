@@ -1,0 +1,614 @@
+[
+  {
+    "name": "desktop-conversation",
+    "width": 1440,
+    "height": 900,
+    "touch": false,
+    "reducedMotion": false,
+    "labels": [
+      {
+        "name": "Topic: Paint the room",
+        "text": "↗ Paint the room",
+        "rect": {
+          "x": 614,
+          "y": 382.5,
+          "width": 256,
+          "height": 44,
+          "top": 382.5,
+          "right": 870,
+          "bottom": 426.5,
+          "left": 614
+        },
+        "textRects": [
+          {
+            "x": 623,
+            "y": 396.5,
+            "width": 13.453125,
+            "height": 16,
+            "top": 396.5,
+            "right": 636.453125,
+            "bottom": 412.5,
+            "left": 623
+          },
+          {
+            "x": 636.453125,
+            "y": 396.5,
+            "width": 88.1875,
+            "height": 16,
+            "top": 396.5,
+            "right": 724.640625,
+            "bottom": 412.5,
+            "left": 636.453125
+          }
+        ],
+        "client": 42,
+        "scroll": 42,
+        "nodeBottom": 526.5,
+        "hit": true
+      },
+      {
+        "name": "Topic: Rent",
+        "text": "↗ Rent",
+        "rect": {
+          "x": 614,
+          "y": 432.5,
+          "width": 256,
+          "height": 44,
+          "top": 432.5,
+          "right": 870,
+          "bottom": 476.5,
+          "left": 614
+        },
+        "textRects": [
+          {
+            "x": 623,
+            "y": 446.5,
+            "width": 13.453125,
+            "height": 16,
+            "top": 446.5,
+            "right": 636.453125,
+            "bottom": 462.5,
+            "left": 623
+          },
+          {
+            "x": 636.453125,
+            "y": 446.5,
+            "width": 27.734375,
+            "height": 16,
+            "top": 446.5,
+            "right": 664.1875,
+            "bottom": 462.5,
+            "left": 636.453125
+          }
+        ],
+        "client": 42,
+        "scroll": 42,
+        "nodeBottom": 526.5,
+        "hit": true
+      },
+      {
+        "name": "Topic: Try blue by the window",
+        "text": "↗ Try blue by the window",
+        "rect": {
+          "x": 614,
+          "y": 482.5,
+          "width": 256,
+          "height": 44,
+          "top": 482.5,
+          "right": 870,
+          "bottom": 526.5,
+          "left": 614
+        },
+        "textRects": [
+          {
+            "x": 623,
+            "y": 496.5,
+            "width": 13.453125,
+            "height": 16,
+            "top": 496.5,
+            "right": 636.453125,
+            "bottom": 512.5,
+            "left": 623
+          },
+          {
+            "x": 636.453125,
+            "y": 496.5,
+            "width": 139.53125,
+            "height": 16,
+            "top": 496.5,
+            "right": 775.984375,
+            "bottom": 512.5,
+            "left": 636.453125
+          }
+        ],
+        "client": 42,
+        "scroll": 42,
+        "nodeBottom": 526.5,
+        "hit": true
+      }
+    ],
+    "draftRetained": true,
+    "originalThoughtIds": [
+      "next",
+      "part-blue",
+      "part-rent",
+      "part-room"
+    ],
+    "offGeometryIdentical": true,
+    "destinations": [
+      "room",
+      "rent",
+      "blue"
+    ],
+    "keyboardDestination": "rent"
+  },
+  {
+    "name": "phone-conversation",
+    "width": 390,
+    "height": 844,
+    "touch": true,
+    "reducedMotion": true,
+    "labels": [
+      {
+        "name": "Topic: Paint the room",
+        "text": "↗ Paint the room",
+        "rect": {
+          "x": 89,
+          "y": 351.5,
+          "width": 256,
+          "height": 44,
+          "top": 351.5,
+          "right": 345,
+          "bottom": 395.5,
+          "left": 89
+        },
+        "textRects": [
+          {
+            "x": 98,
+            "y": 365.5,
+            "width": 13.453125,
+            "height": 16,
+            "top": 365.5,
+            "right": 111.453125,
+            "bottom": 381.5,
+            "left": 98
+          },
+          {
+            "x": 111.453125,
+            "y": 365.5,
+            "width": 88.1875,
+            "height": 16,
+            "top": 365.5,
+            "right": 199.640625,
+            "bottom": 381.5,
+            "left": 111.453125
+          }
+        ],
+        "client": 42,
+        "scroll": 42,
+        "nodeBottom": 495.5,
+        "hit": true
+      },
+      {
+        "name": "Topic: Rent",
+        "text": "↗ Rent",
+        "rect": {
+          "x": 89,
+          "y": 401.5,
+          "width": 256,
+          "height": 44,
+          "top": 401.5,
+          "right": 345,
+          "bottom": 445.5,
+          "left": 89
+        },
+        "textRects": [
+          {
+            "x": 98,
+            "y": 415.5,
+            "width": 13.453125,
+            "height": 16,
+            "top": 415.5,
+            "right": 111.453125,
+            "bottom": 431.5,
+            "left": 98
+          },
+          {
+            "x": 111.453125,
+            "y": 415.5,
+            "width": 27.734375,
+            "height": 16,
+            "top": 415.5,
+            "right": 139.1875,
+            "bottom": 431.5,
+            "left": 111.453125
+          }
+        ],
+        "client": 42,
+        "scroll": 42,
+        "nodeBottom": 495.5,
+        "hit": true
+      },
+      {
+        "name": "Topic: Try blue by the window",
+        "text": "↗ Try blue by the window",
+        "rect": {
+          "x": 89,
+          "y": 451.5,
+          "width": 256,
+          "height": 44,
+          "top": 451.5,
+          "right": 345,
+          "bottom": 495.5,
+          "left": 89
+        },
+        "textRects": [
+          {
+            "x": 98,
+            "y": 465.5,
+            "width": 13.453125,
+            "height": 16,
+            "top": 465.5,
+            "right": 111.453125,
+            "bottom": 481.5,
+            "left": 98
+          },
+          {
+            "x": 111.453125,
+            "y": 465.5,
+            "width": 139.53125,
+            "height": 16,
+            "top": 465.5,
+            "right": 250.984375,
+            "bottom": 481.5,
+            "left": 111.453125
+          }
+        ],
+        "client": 42,
+        "scroll": 42,
+        "nodeBottom": 495.5,
+        "hit": true
+      }
+    ],
+    "draftRetained": true,
+    "originalThoughtIds": [
+      "next",
+      "part-blue",
+      "part-rent",
+      "part-room"
+    ],
+    "offGeometryIdentical": true,
+    "destinations": [
+      "room",
+      "rent",
+      "blue"
+    ],
+    "keyboardDestination": "rent"
+  },
+  {
+    "name": "desktop-long-conversation",
+    "width": 1440,
+    "height": 900,
+    "touch": false,
+    "reducedMotion": false,
+    "labels": [
+      {
+        "name": "Topic: Paint the room",
+        "text": "↗ Paint the room",
+        "rect": {
+          "x": 614,
+          "y": 359.5,
+          "width": 256,
+          "height": 44,
+          "top": 359.5,
+          "right": 870,
+          "bottom": 403.5,
+          "left": 614
+        },
+        "textRects": [
+          {
+            "x": 623,
+            "y": 373.5,
+            "width": 13.453125,
+            "height": 16,
+            "top": 373.5,
+            "right": 636.453125,
+            "bottom": 389.5,
+            "left": 623
+          },
+          {
+            "x": 636.453125,
+            "y": 373.5,
+            "width": 88.1875,
+            "height": 16,
+            "top": 373.5,
+            "right": 724.640625,
+            "bottom": 389.5,
+            "left": 636.453125
+          }
+        ],
+        "client": 42,
+        "scroll": 42,
+        "nodeBottom": 549.5,
+        "hit": true
+      },
+      {
+        "name": "Topic: Rent",
+        "text": "↗ Rent",
+        "rect": {
+          "x": 614,
+          "y": 409.5,
+          "width": 256,
+          "height": 44,
+          "top": 409.5,
+          "right": 870,
+          "bottom": 453.5,
+          "left": 614
+        },
+        "textRects": [
+          {
+            "x": 623,
+            "y": 423.5,
+            "width": 13.453125,
+            "height": 16,
+            "top": 423.5,
+            "right": 636.453125,
+            "bottom": 439.5,
+            "left": 623
+          },
+          {
+            "x": 636.453125,
+            "y": 423.5,
+            "width": 27.734375,
+            "height": 16,
+            "top": 423.5,
+            "right": 664.1875,
+            "bottom": 439.5,
+            "left": 636.453125
+          }
+        ],
+        "client": 42,
+        "scroll": 42,
+        "nodeBottom": 549.5,
+        "hit": true
+      },
+      {
+        "name": "Topic: Try blue by the window before choosing the paint for the shared room — daylight and sunset comparison",
+        "text": "↗ Try blue by the window before choosing the paint for the shared room — daylight and sunset comparison",
+        "rect": {
+          "x": 614,
+          "y": 459.5,
+          "width": 256,
+          "height": 90,
+          "top": 459.5,
+          "right": 870,
+          "bottom": 549.5,
+          "left": 614
+        },
+        "textRects": [
+          {
+            "x": 623,
+            "y": 478.5,
+            "width": 13.453125,
+            "height": 16,
+            "top": 478.5,
+            "right": 636.453125,
+            "bottom": 494.5,
+            "left": 623
+          },
+          {
+            "x": 636.453125,
+            "y": 478.5,
+            "width": 182.359375,
+            "height": 16,
+            "top": 478.5,
+            "right": 818.8125,
+            "bottom": 494.5,
+            "left": 636.453125
+          },
+          {
+            "x": 623,
+            "y": 496.5,
+            "width": 235.359375,
+            "height": 16,
+            "top": 496.5,
+            "right": 858.359375,
+            "bottom": 512.5,
+            "left": 623
+          },
+          {
+            "x": 623,
+            "y": 514.5,
+            "width": 207.59375,
+            "height": 16,
+            "top": 514.5,
+            "right": 830.59375,
+            "bottom": 530.5,
+            "left": 623
+          }
+        ],
+        "client": 88,
+        "scroll": 88,
+        "nodeBottom": 549.5,
+        "hit": true
+      }
+    ],
+    "draftRetained": true,
+    "originalThoughtIds": [
+      "next",
+      "part-blue",
+      "part-rent",
+      "part-room"
+    ],
+    "offGeometryIdentical": true,
+    "destinations": [
+      "room",
+      "rent",
+      "blue"
+    ],
+    "keyboardDestination": "rent"
+  },
+  {
+    "name": "phone-long-conversation",
+    "width": 390,
+    "height": 844,
+    "touch": true,
+    "reducedMotion": true,
+    "labels": [
+      {
+        "name": "Topic: Paint the room",
+        "text": "↗ Paint the room",
+        "rect": {
+          "x": 89,
+          "y": 328.5,
+          "width": 256,
+          "height": 44,
+          "top": 328.5,
+          "right": 345,
+          "bottom": 372.5,
+          "left": 89
+        },
+        "textRects": [
+          {
+            "x": 98,
+            "y": 342.5,
+            "width": 13.453125,
+            "height": 16,
+            "top": 342.5,
+            "right": 111.453125,
+            "bottom": 358.5,
+            "left": 98
+          },
+          {
+            "x": 111.453125,
+            "y": 342.5,
+            "width": 88.1875,
+            "height": 16,
+            "top": 342.5,
+            "right": 199.640625,
+            "bottom": 358.5,
+            "left": 111.453125
+          }
+        ],
+        "client": 42,
+        "scroll": 42,
+        "nodeBottom": 518.5,
+        "hit": true
+      },
+      {
+        "name": "Topic: Rent",
+        "text": "↗ Rent",
+        "rect": {
+          "x": 89,
+          "y": 378.5,
+          "width": 256,
+          "height": 44,
+          "top": 378.5,
+          "right": 345,
+          "bottom": 422.5,
+          "left": 89
+        },
+        "textRects": [
+          {
+            "x": 98,
+            "y": 392.5,
+            "width": 13.453125,
+            "height": 16,
+            "top": 392.5,
+            "right": 111.453125,
+            "bottom": 408.5,
+            "left": 98
+          },
+          {
+            "x": 111.453125,
+            "y": 392.5,
+            "width": 27.734375,
+            "height": 16,
+            "top": 392.5,
+            "right": 139.1875,
+            "bottom": 408.5,
+            "left": 111.453125
+          }
+        ],
+        "client": 42,
+        "scroll": 42,
+        "nodeBottom": 518.5,
+        "hit": true
+      },
+      {
+        "name": "Topic: Try blue by the window before choosing the paint for the shared room — daylight and sunset comparison",
+        "text": "↗ Try blue by the window before choosing the paint for the shared room — daylight and sunset comparison",
+        "rect": {
+          "x": 89,
+          "y": 428.5,
+          "width": 256,
+          "height": 90,
+          "top": 428.5,
+          "right": 345,
+          "bottom": 518.5,
+          "left": 89
+        },
+        "textRects": [
+          {
+            "x": 98,
+            "y": 447.5,
+            "width": 13.453125,
+            "height": 16,
+            "top": 447.5,
+            "right": 111.453125,
+            "bottom": 463.5,
+            "left": 98
+          },
+          {
+            "x": 111.453125,
+            "y": 447.5,
+            "width": 182.359375,
+            "height": 16,
+            "top": 447.5,
+            "right": 293.8125,
+            "bottom": 463.5,
+            "left": 111.453125
+          },
+          {
+            "x": 98,
+            "y": 465.5,
+            "width": 235.359375,
+            "height": 16,
+            "top": 465.5,
+            "right": 333.359375,
+            "bottom": 481.5,
+            "left": 98
+          },
+          {
+            "x": 98,
+            "y": 483.5,
+            "width": 207.59375,
+            "height": 16,
+            "top": 483.5,
+            "right": 305.59375,
+            "bottom": 499.5,
+            "left": 98
+          }
+        ],
+        "client": 88,
+        "scroll": 88,
+        "nodeBottom": 518.5,
+        "hit": true
+      }
+    ],
+    "draftRetained": true,
+    "originalThoughtIds": [
+      "next",
+      "part-blue",
+      "part-rent",
+      "part-room"
+    ],
+    "offGeometryIdentical": true,
+    "destinations": [
+      "room",
+      "rent",
+      "blue"
+    ],
+    "keyboardDestination": "rent"
+  }
+]

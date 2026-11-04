@@ -1,5 +1,8 @@
 import { FullContentProvider } from "../FullContent";
 import { switchBuiltIn, useBuiltInsOn } from "../shell/features";
+import { useTextEditReview } from "../TextEditReview";
+import { TextEditReviewContext } from "./contract";
+import type { TextEditResult } from "../core";
 // The playground (bricks.html, docs/bricks.md): one brick on its own against a sample map from samples/, so a builder
 // needs neither the core, a key nor the whole app. `?brick=<id>` picks the brick (the template too) and `&sample=`
 // the map ("empty" for none). It's mounted as the app mounts it (BrickSlot.tsx), and what it asks for is answered
@@ -11,10 +14,11 @@ import { StrictMode, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef
 import { createRoot } from "react-dom/client";
 import { noteChanges, type AnchorContext } from "../annotate-core";
 import { received } from "../apps-audio";
-import { saveFile } from "../save-file";
+import { saveFile, saveRecipeFile } from "../save-file";
+import { parseRecipe, recipeOf } from "./app-recipes/rules";
 import { BrickMount, useBrickHost } from "../BrickSlot";
 import { discover, type BrickModule } from "../bricks-core";
-import { apply, type Thought, type World } from "../core";
+import { apply, type Capture, type Thought, type World } from "../core";
 import { receiveRoute, type RouteMsg } from "../route";
 import { roomColors } from "../rooms";
 import { moveChange, renameChange } from "../topics-core";
@@ -50,7 +54,7 @@ const JOBS: [number, string, JobMsg["status"], string, { result?: string; parent
 const VOLUME_APP: World["apps"][number] = { id: "app-volume", name: "Volume watcher", purpose: "Offer a quiet pause when voices stay loud for a few seconds.",
   watcher: { kind: "volume", level: 0.087, seconds: 3 }, prompt: null, publishers: [{ kind: "card", text: "Voices have been loud for a little while." }],
   enabled: true, request: "", cooldown_secs: 60, created_ms: 0, last_run_ms: 0 };
-const EMPTY: World = { recaps: [], threads: [], thoughts: [], active: null, active_by: {}, suggestions: [], actions: [], merged: {}, proposals: [], notes: {}, apps: [VOLUME_APP], apps_seeded: true };
+const EMPTY: World = { questions: [], recaps: [], threads: [], thoughts: [], active: null, active_by: {}, suggestions: [], actions: [], merged: {}, proposals: [], notes: {}, apps: [VOLUME_APP], apps_seeded: true };
 
 /** A sample map, replayed through the window's own reducer (core.ts `apply`), as the core plays it into an empty map. */
 function sampleWorld(name: string): World {
@@ -86,6 +90,7 @@ function Playground() {
   // Bumped with each map picked, as the core's snapshot count is: a new map's thoughts aren't landings.
   const compareOn = builtIns.has("compare-phone-reading");
   const [revision, setRevision] = useState(1);
+  const [captures, setCaptures] = useState<Capture[]>([]);
   const [connected, setConnected] = useState(true);
   const [destination, setDestination] = useState<ViewDestination | null>(null);
   // Your words as they're heard (`map.partial`), while "Say a thought" talks.
@@ -97,6 +102,10 @@ function Playground() {
   const heardCount = useRef(0);
   const jobRuns = useRef(0);
   const [notice, setNotice] = useState("");
+  const [openedId, setOpenedId] = useState<string | null>(null);
+  const originalRef = useRef<HTMLQuoteElement>(null);
+  const openedSource = world.thoughts.find((thought) => thought.id === openedId);
+  useEffect(() => { originalRef.current?.scrollIntoView({ block: "nearest" }); originalRef.current?.focus(); }, [openedId]);
   const [errors, setErrors] = useState(0);
   const brick = found.bricks.find((b) => b.info.id === id);
   const shapes = useShapes(id === "shapes");
@@ -111,7 +120,7 @@ function Playground() {
     const next = new URLSearchParams({ brick: id, sample });
     history.replaceState(null, "", `?${next}`);
   }, [id, sample]);
-  useEffect(() => { setWorld(sampleWorld(sample)); setRevision((n) => n + 1); }, [sample]);
+  useEffect(() => { setWorld(sampleWorld(sample)); setRevision((n) => n + 1); setOpenedId(null); }, [sample]);
   // An error the brick throws outside a render (an effect, a click) is counted and logged; one in a render shows its
   // own "stopped working" line (BrickSlot.tsx). scripts/bricks-check.mjs reads the count.
   useEffect(() => {
@@ -138,6 +147,7 @@ function Playground() {
     const newest = world.thoughts.reduce((at, t) => Math.max(at, t.at_ms + 1), Date.now());
     const thought: Thought = { id: `pg-${++count.current}`, speaker, text: words, point: words, thread_id: null, placed: false, unclear: "",
       complete: true, at_ms: newest, place_ms: null };
+    setCaptures((was) => [...was, { id: thought.id, text: words, thought_ids: [thought.id], saved: true, local: true, replay: false, mapped: true, at: newest }]);
     setWorld((w) => apply(w, { type: "thought_added", thought }));
     const route = (msg: RouteMsg) => receiveRoute(msg);
     route({ type: "route", route: { stage: "weighing", thought_id: thought.id, candidates: [], lanes: 1 } });
@@ -182,7 +192,21 @@ function Playground() {
   // The guide's arrow at the first thread, and off again: as another participant's point is heard.
   const [pointed, setPointed] = useState(false);
 
+  const [textEditResult, setTextEditResult] = useState<TextEditResult | null>(null);
+  const reviewEnabled = useBuiltInsOn().has("review-text-edits");
+  const review = useTextEditReview({ actor: "you", edits: world.point_edits, thoughts: world.thoughts, connected, result: textEditResult, send: message => {
+    if (!reviewEnabled || !connected) return false;
+    if (message.type === "shorter_point") {
+      setTextEditResult({ type: "point_proposal", request_id: message.request_id, thought_id: message.thought_id, text: "The playground uses typed proposals; no model is called.", failed: true });
+    } else {
+      const ok = world.thoughts.some(t => t.id === message.thought_id && t.placed && t.point === message.observed) && !!message.replacement.trim() && [...message.replacement].length <= 1200;
+      if (ok) setWorld(w => apply(w, { type: "point_edited", request_id: message.request_id, thought_id: message.thought_id, old_point: message.observed, new_point: message.replacement, actor: "you", ...(message.undo_of ? { undo_of: message.undo_of } : {}) }));
+      setTextEditResult({ type: "point_edit_result", request_id: message.request_id, thought_id: message.thought_id, ok, message: ok ? "Playground point changed; this is not a server save." : "That point changed. Keep the proposal for manual copy." });
+    }
+    return true;
+  } });
   const rooms = useMemo(() => roomColors(world.threads), [world.threads]);
+  const recipeCopies = useRef(new Map<string, { fingerprint: string; id: string }>());
   const host = useBrickHost(world, revision, "you", connected, rooms, partial, {
     setActionEstimate: async request => {
       const w = estimateWorld.current;
@@ -202,25 +226,76 @@ function Playground() {
       said(`estimate ${request.action_id}: simulated playground acknowledgement`);
       return { request_id: request.request_id, ok: true, message: "Playground estimate updated; no server save.", estimate };
     },
-    saveTextFile: (name, text, mime) => { saveFile(text, mime, name); said(`File handed to browser: ${name}`); return true; },
+    saveTextFile: (name, text, mime) => { if (mime === "application/json") saveRecipeFile(text); else saveFile(text, mime, name); said(`File handed to browser: ${name}`); return true; },
+    saveQuestion: (input, receive) => {
+      if (!connected) return false;
+      const old = world.questions?.find(q => q.id === input.id);
+      const ok = (old?.revision ?? 0) === input.expected_revision;
+      const question = { id: input.id, owner: "you", question: input.text, thought_id: input.thought_id, answer: input.answer, status: input.status, revision: input.expected_revision + 1, updated_ms: Date.now() };
+      if (ok) setWorld(w => apply(w, { type: "question_saved", question }));
+      queueMicrotask(() => receive({ id: input.id, revision: question.revision, ok, error: ok ? undefined : "Question changed. Review before saving again." }));
+      said(`saveQuestion → ${ok ? "recorded in this playground" : "refused"}`);
+      return true;
+    },
+    reviewPoint: review.open,
+    voiceShortcut: async request => {
+      // Isolated in-memory fixture only; no socket, model or disk-save claim.
+      const alias = world.aliases?.find(a => a.id === request.id);
+      if ((alias?.revision ?? 0) !== request.revision) return {request_id:request.request_id,ok:false,message:"Shortcut changed. Preview again."};
+      if (request.operation === "preview") return {request_id:request.request_id,ok:true,message:`Preview only: ${request.target.kind}`};
+      if (request.operation === "try") {
+        if (!alias?.enabled || alias.deleted || alias.unavailable) return {request_id:request.request_id,ok:false,message:"Save and enable first."};
+        const target = request.target;
+        if (target.kind === "show_recap") said("Show recap → playground fixture, no model call");
+        else {
+          const at = world.threads.findIndex(t => t.id === world.active);
+          const thread = target.kind === "open_topic" ? world.threads.find(t => t.id === target.topic_id) : world.threads[(at + (target.kind === "next_topic" ? 1 : -1) + world.threads.length) % world.threads.length];
+          if (thread) setWorld(w => apply(w,{type:"active_changed",thread_id:thread.id,speaker:"you"}));
+        }
+      } else {
+        setWorld(w => apply(w,{type:"alias_changed",alias:{id:request.id,owner:"you",phrase:request.phrase,target:request.target,revision:request.revision+1,enabled:request.operation !== "delete" && request.enabled,deleted:request.operation === "delete",unavailable:false},request_id:request.request_id,signature:"playground"}));
+      }
+      return {request_id:request.request_id,ok:true,message:"Playground fixture applied in memory; no server save."};
+    },
+    recipesEnabled: () => true,
+    exportRecipe: (app) => JSON.stringify(recipeOf(app), null, 2),
+    saveRecipe: async (save) => {
+      const recipe = parseRecipe(JSON.stringify(save.recipe));
+      const fingerprint = JSON.stringify(save);
+      const existing = recipeCopies.current.get(save.request_id);
+      if (existing) return { request_id: save.request_id, app_id: existing.fingerprint === fingerprint ? existing.id : null, message: existing.fingerprint === fingerprint ? "Synthetic saved disabled app." : "Request ID already used." };
+      if (save.source && !world.apps.some(a => JSON.stringify(a) === JSON.stringify(save.source))) return { request_id: save.request_id, app_id: null, message: "Original app changed or was removed." };
+      const id = crypto.randomUUID();
+      recipeCopies.current.set(save.request_id, { fingerprint, id });
+      setWorld(w => ({ ...w, apps: [...w.apps, { ...recipe, id, enabled: false, request: "", created_ms: 0, last_run_ms: 0 }], recipe_saves: { ...w.recipe_saves, [save.request_id]: { app_id: id, fingerprint: JSON.stringify(recipe) } } }));
+      said("Synthetic recipe save; no core journal.");
+      return { request_id: save.request_id, app_id: id, message: "Synthetic saved disabled app." };
+    },
     addThought: (text) => { const ok = add(text); said(`addThought “${text}”${ok ? " → lands on the topic you're on in 1.2 s" : " → refused"}`); return ok; },
     openPoint: (threadId, thoughtId) => { if (compareOn) setDestination(was => ({ threadId, thoughtId, revision: (was?.revision ?? 0) + 1 })); },
     openThread: (thread) => {
       said(`openThread ${title(thread)} → in the app: back to the map, that topic open and highlighted`);
       setWorld((w) => apply(w, { type: "active_changed", thread_id: thread, speaker: "you" }));
     },
-    openThought: (id) => {
+    openThought: (source) => {
+      const id = typeof source === "string" ? source : source.id;
       const thought = world.thoughts.find(thought => thought.id === id && thought.placed);
+      if (typeof source !== "string" && (!thought || thought.text !== source.text || thought.thread_id !== source.threadId || thought.at_ms !== source.at || thought.speaker !== source.speaker)) {
+        showNotice("That source changed or left the map. Check latest again.");
+        return false;
+      }
       const threadId = thought?.thread_id ? resolveMerged(world, thought.thread_id) : null;
       if (!threadId || !world.threads.some(thread => thread.id === threadId)) {
         showNotice("Original thought is no longer on this map.");
         return false;
       }
+      setOpenedId(id);
       setDestination(was => ({ threadId, thoughtId: id, revision: (was?.revision ?? 0) + 1 }));
-      setWorld(w => apply(w, { type: "active_changed", thread_id: threadId, speaker: "you" }));
+      if (typeof source === "string") setWorld(w => apply(w, { type: "active_changed", thread_id: threadId, speaker: "you" }));
       said(`openThought ${id} → in the app: back to the map, that exact thought open and highlighted`);
       return true;
     },
+    closeView: () => { setOpenedId(null); said("closeView → in the app: back to the map, focus on Features"); document.querySelector<HTMLSelectElement>(".playground-bar select")?.focus(); },
     select: (thread) => said(`select ${title(thread)} → in the app: “this” for what's said next`),
     notify: (text) => { said(`notify “${text}”`); showNotice(text); },
     // Placed as the core places it: the change comes back through the window's own reducer, with `by` you. A drag's
@@ -253,7 +328,7 @@ function Playground() {
       if (ok) showNotice(`${by}: ${text.trim()}`);
       return ok;
     },
-  }, destination);
+  }, destination, null, false, { mapKey: `playground:${revision}`, captures });
   // What the brick hears, listed as it passes.
   useEffect(() => {
     const names: (keyof BrickEvents)[] = ["landed", "words", "notice", "pointing", "asked", "speaking"];
@@ -282,10 +357,11 @@ function Playground() {
     }
   };
 
-  return <div className="playground" data-errors={errors} data-brick-shown={brick ? id : ""} data-brick-ready={brickReady === id ? id : ""}>
+  return <TextEditReviewContext.Provider value={review.context}>{review.panel}<div className="playground" data-errors={errors} data-brick-shown={brick ? id : ""} data-brick-ready={brickReady === id ? id : ""}>
     <div className="playground-bar" role="toolbar" aria-label="Playground">
       <strong>Features playground</strong>
       <button type="button" role="switch" aria-checked={compareOn} onClick={() => switchBuiltIn("compare-phone-reading", !compareOn)}>Compare phone reading</button>
+      <button type="button" role="switch" aria-label="Review text edits" aria-checked={reviewEnabled} onClick={() => switchBuiltIn("review-text-edits", !reviewEnabled)}>Review text edits</button>
       <label>Feature <select value={id} onChange={(event) => { setBrickReady(""); setId(event.target.value); }}>
         {!brick && <option value={id}>{id || "none"}</option>}
         {found.bricks.map(({ info }) => <option key={info.id} value={info.id}>{info.name} ({info.id})</option>)}
@@ -327,6 +403,10 @@ function Playground() {
     </FullContentProvider>
     </ShapesContext.Provider>
     <aside className="playground-log" aria-label="What the feature asked for">
+      {openedSource && <section aria-label="Opened original thought" data-original-thought={openedSource.id}>
+        <strong>{title(openedSource.thread_id)} · {openedSource.speaker}</strong>
+        <blockquote ref={originalRef} tabIndex={-1} data-look="on" style={{ outline: "2px solid var(--accent)", outlineOffset: 4 }}>{openedSource.text}</blockquote>
+      </section>}
       <strong>What it asked for</strong>
       {log.length ? <ol>{log.map((line, i) => <li key={log.length - i}>{line}</li>)}</ol> : <p>Nothing yet. Its actions show here.</p>}
       <p className="playground-map">Map: {world.threads.length} topics · {world.thoughts.filter((t) => t.placed).length} placed · {Object.keys(world.anchors ?? {}).length} notes · on {title(world.active_by.you ?? world.active)}{world.ai?.length ? ` · AI: ${world.ai.join(", ")}` : ""}</p>
@@ -334,7 +414,7 @@ function Playground() {
       {heard.length ? <ol className="playground-heard">{heard.map((event) => <li key={event.n} data-event={event.name}>{event.name}: {event.value}</li>)}</ol> : <p>Nothing yet. Its events show here.</p>}
     </aside>
     {notice && <div className="playground-notice" role="status">{notice}</div>}
-  </div>;
+  </div></TextEditReviewContext.Provider>;
 }
 
 /** Optional synthetic slot fixture: no mic, network, accounts or extra app mutation owners. */

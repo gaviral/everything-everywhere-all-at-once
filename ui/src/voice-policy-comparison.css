@@ -1,0 +1,14 @@
+.voice-policy-comparison { padding: .5rem .75rem; border: 1px solid var(--line, #8888); border-radius: .75rem; background: var(--card); color: var(--ink, CanvasText); max-height: 45dvh; overflow-y: auto; }
+.voice-policy-comparison fieldset { margin: 0; padding: 0; border: 0; display: flex; flex-wrap: wrap; gap: .25rem .75rem; }
+.voice-policy-comparison legend { font-weight: 600; padding: 0; }
+.voice-policy-comparison label { display: flex; align-items: center; gap: .35rem; min-height: 2.75rem; cursor: pointer; }
+.voice-policy-facts, .voice-policy-actions { display: flex; flex-wrap: wrap; gap: .25rem .75rem; }
+.voice-policy-facts { font-size: .875rem; margin-bottom: .35rem; }
+.voice-policy-comparison button { min-height: 2.75rem; padding: .4rem .65rem; border: 1px solid currentColor; border-radius: .4rem; font: inherit; background: transparent; color: inherit; cursor: pointer; }
+.voice-policy-comparison button:disabled { opacity: .5; cursor: default; }
+.voice-policy-comparison :focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.voice-policy-comparison p { margin: .3rem 0 0; font-size: .875rem; }
+@media (prefers-reduced-motion: reduce) { .voice-policy-comparison * { animation: none; transition: none; } }
+
+.voice-policy-comparison summary { min-height: 2.75rem; display: flex; align-items: center; cursor: pointer; }
+.voice-policy-comparison details p { white-space: pre-wrap; overflow-wrap: anywhere; }

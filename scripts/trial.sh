@@ -3,12 +3,14 @@
 # behind an HTTPS link, so their browser allows the mic and they install nothing.
 #   sh scripts/trial.sh NAME     prints the link to send NAME; Ctrl-C ends the trial (their map stays on disk)
 # The link is a Cloudflare quick tunnel: no account, a new random name each run (brew install cloudflared).
-# Each run starts a new folder, data/trials/NAME-<time>: it never opens an existing map. The core listens on
+# Each run selects an external trial-NAME-<time> map unless E2A2O_DATA explicitly selects a complete map. The core listens on
 # 127.0.0.1 only and lets in just the tunnel, with the room code; no one is the host, so nothing reaches this
 # laptop's Reminders, Calendar or chat imports, and this laptop's own localhost is refused as well.
 # Watch along by opening the same link and joining under another name.
 # PORT picks the port (default: the first free one from 4410).
 set -eu
+E2A2O_CALLER_CWD="$(pwd -P)"
+export E2A2O_CALLER_CWD
 cd "$(dirname "$0")/.."
 root=$(pwd)
 
@@ -26,6 +28,13 @@ command -v cloudflared >/dev/null 2>&1 || { echo "cloudflared is needed for the 
 command -v cargo >/dev/null 2>&1 || { echo "Rust is needed: https://rustup.rs" >&2; exit 1; }
 command -v node >/dev/null 2>&1 || { echo "Node.js 22.12 or newer is needed: https://nodejs.org" >&2; exit 1; }
 
+case "${PORT:-}" in 4360|4399) echo "This port is reserved; choose another PORT." >&2; exit 1 ;; esac
+# Resolve before keys or runtime writes; E2A2O_DATA remains a complete-map override.
+data="$(node scripts/start.mjs --data-path "" "trial-$name-$(date +%Y%m%d-%H%M%S)-$$")" || exit 1
+export E2A2O_DATA="$data"
+# An atomic claim prevents two launchers from writing logs into the same explicit map.
+node -e 'const fs=require("node:fs"), p=process.env.E2A2O_DATA; fs.mkdirSync(p,{recursive:true}); fs.mkdirSync(p+"/.trial-claim"); fs.writeFileSync(p+"/.trial-claim/launcher",String(process.ppid));' || exit 1
+
 # The friend's words go through this laptop's key: the same sources as run.sh (the core reads .env itself).
 # --no-key means no key at all: an empty MODEL_API_KEY also stops the core from loading one from .env.
 if [ -n "$keyless" ]; then
@@ -41,9 +50,6 @@ if [ -z "${MODEL_API_KEY:-}" ] && ! grep -q '^MODEL_API_KEY=.' .env 2>/dev/null 
   exit 1
 fi
 
-data="$root/data/trials/$name-$(date +%Y%m%d-%H%M%S)"
-mkdir -p "$root/data/trials"
-mkdir "$data" || { echo "$data already exists; try again in a second" >&2; exit 1; }
 # 12 letters and digits without look-alikes: the link travels the internet, so far more than a room's 8.
 code=$(LC_ALL=C tr -dc 'abcdefghjkmnpqrstuvwxyz23456789' </dev/urandom | head -c 12)
 
@@ -56,13 +62,13 @@ bin="${CARGO_TARGET_DIR:-$root/core/target}/release/e2a2o-core"
 # A port nothing listens on and no other trial has claimed: two launched together would otherwise pick the same
 # one before either core is up. A claim (a link naming its launcher) is made in one step; a dead launcher's is free again.
 free() {
-  claim="$root/data/trials/.port-$1"
+  claim="$data/.port-$1"
   ! nc -z 127.0.0.1 "$1" 2>/dev/null || return 1
-  ln -s "$$" "$claim" 2>/dev/null && return 0
-  holder=$(readlink "$claim")
-  [ "$holder" = "$$" ] && return 0
-  ! kill -0 "$holder" 2>/dev/null || return 1
-  ln -sfn "$$" "$claim" && [ "$(readlink "$claim")" = "$$" ]
+  if mkdir "$claim" 2>/dev/null; then
+    printf '%s\n' "$$" >"$claim/launcher"
+    return 0
+  fi
+  return 1
 }
 if [ -n "${PORT:-}" ]; then
   port=$PORT
@@ -78,7 +84,7 @@ stop() {
   set +e
   if [ -n "$core_pid" ]; then kill "$core_pid" 2>/dev/null; fi
   # cloudflared waits up to 30 s for open requests after one TERM; a second ends it now.
-  if [ -n "$tunnel_pid" ]; then kill "$tunnel_pid" 2>/dev/null; sleep 1; kill "$tunnel_pid" 2>/dev/null; fi
+  if [ -n "$tunnel_pid" ]; then kill "$tunnel_pid" 2>/dev/null; fi
   wait 2>/dev/null
   echo "Trial ended. $name's map: $data"
 }

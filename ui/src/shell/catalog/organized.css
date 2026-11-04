@@ -1,0 +1,18 @@
+/* Scoped to the opt-in renderer, using the shell's existing colors and controls. */
+.organized-catalog { color: var(--ink); font-size: 13px; line-height: 1.45; min-width: 0; overflow-wrap: anywhere; }
+.organized-catalog h2 { font-size: 20px; margin: 12px 0 8px; }
+.organized-catalog :is(button, input) { font: inherit; max-width: 100%; }
+.organized-catalog button { white-space: normal; text-align: left; min-height: 32px; }
+.organized-search { display: grid; gap: 6px; margin: 8px 0 18px; }
+.organized-search input { min-width: 0; width: 100%; box-sizing: border-box; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); }
+.organized-context, .organized-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.organized-tasks, .organized-rows { padding: 0; list-style: none; margin: 8px 0; }
+.organized-tasks li { margin: 6px 0; }
+.organized-tasks button { width: 100%; }
+.organized-rows li { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.organized-rows strong, .organized-rows .shell-aka { display: block; }
+.organized-rows p { margin: 5px 0; color: var(--muted); }
+.organized-detail dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; }
+.organized-detail dd { margin: 0; }
+.organized-detail .organized-actions { margin: 16px 0; }
+.organized-catalog :focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }

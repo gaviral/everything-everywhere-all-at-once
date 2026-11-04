@@ -9,7 +9,8 @@ import { hearPartner, ignorePartner, resetPartner } from "./partner";
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import "./room.css";
 import { useOnScreen } from "./onscreen";
-import { REMOTE, REMOTE_NAME, remoteLink } from "./remote/flag";
+import { hearRemote } from "./remote/channel";
+import { REMOTE, REMOTE_NAME, remoteLink, returningRemote } from "./remote/flag";
 import { savedWhere, siteFrom, SiteContext, useSite, type SiteDoor } from "./site";
 import { TIPS } from "./Tips";
 import { cancelPageReply, hearPageSpeech } from "./page-speech";
@@ -143,7 +144,7 @@ export function openSocket(url: string, extra: Record<string, string> = {}): Web
   if (seat.code) params.set("room", seat.code);
   if (seat !== ALONE) params.set("name", seat.me);
   // A phone's Remote says so, so the call lists it as a device and not as another person (core/src/call.rs).
-  if (REMOTE) params.set("remote", "1");
+  if (REMOTE || returningRemote()) params.set("remote", "1");
   const query = params.toString();
   const ws = new WebSocket(query ? `${url}?${query}` : url);
   socketNow = ws;
@@ -168,7 +169,7 @@ export function openSocket(url: string, extra: Record<string, string> = {}): Web
   ws.addEventListener("open", () => { if (socketNow !== ws) return; callOpened(); partner(); email(); recheck(); });
   ws.addEventListener("close", () => { unwatchPartner(); unwatchEmail(); if (socketNow === ws) { socketNow = null; cancelPageReply(); resetPartner(); callClosed(); recheck(); } });
   // The call's own messages, and the world that ends a catch-up (talk/call-core.ts looks at the start only).
-  ws.addEventListener("message", (event) => { if (socketNow !== ws || ignorePartner(event.data)) return; callHeard(event.data); hearPartner(event.data); hearPageSpeech(event.data); });
+  ws.addEventListener("message", (event) => { if (socketNow !== ws || ignorePartner(event.data)) return; callHeard(event.data); hearPartner(event.data); hearPageSpeech(event.data); hearRemote(event.data); });
   return ws;
 }
 
@@ -207,6 +208,7 @@ async function knock(code: string, name = ""): Promise<Door> {
 
 export function Room({ children }: { children: ReactNode }) {
   const [door, setDoor] = useState<Door | null>(null);
+  const [initialFailed, setInitialFailed] = useState(false);
   const [current, setCurrent] = useState<Seat | null>(null);
   // A Remote's link carries the name it should join under (remote/flag.ts), so a phone isn't asked for one.
   const [name, setName] = useState(() => REMOTE_NAME || read(NAME));
@@ -218,19 +220,28 @@ export function Room({ children }: { children: ReactNode }) {
   useEffect(() => {
     let stop = false;
     let timer: number | undefined;
-    const joined = read(JOINED, "sessionStorage");
+    const joined = new URLSearchParams(location.search).has("touchpad") && REMOTE_NAME ? REMOTE_NAME : read(JOINED, "sessionStorage");
     const look = () =>
       knock(code, joined)
         .then((d) => {
           if (stop) return;
+          setInitialFailed(false);
           setDoor(d);
           if (!d.room) setCurrent(ALONE);
           else if (d.member && joined && d.taken) setNote(TAKEN);
-          else if (d.member && joined) setCurrent({ me: joined, code });
+          else if (d.member && joined) {
+            if (REMOTE && new URLSearchParams(location.search).has("touchpad")) {
+              write("e2a2o.phone-pair", location.href); write(CODE, code); write(NAME, joined); write(JOINED, joined, "sessionStorage");
+            }
+            setCurrent({ me: joined, code });
+          }
           else if (!d.member && code) setNote("That code doesn't match. Ask for the right one.");
         })
         .catch(() => {
-          if (!stop) timer = window.setTimeout(look, 1500);
+          if (!stop) {
+            setInitialFailed(true);
+            timer = window.setTimeout(look, 1500);
+          }
         });
     void look();
     return () => {
@@ -313,7 +324,7 @@ export function Room({ children }: { children: ReactNode }) {
       </SiteContext.Provider>
     );
   }
-  if (!door) return <div className="join"><div className="join-loading" role="status">Loading…</div></div>;
+  if (!door) return <div className="join"><div className="join-loading" role="status">{initialFailed ? "Connection unavailable. Retrying…" : "Loading…"}</div></div>;
   return (
     <main className="join">
       <div className="join-brand">E2A2O <span>topics</span></div>

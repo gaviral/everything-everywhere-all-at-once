@@ -116,10 +116,12 @@ export function useCamera(flow: Flow, area: () => Area, reduced: boolean, pane: 
   }, [flow, area, angle, contain]);
 
   /** Puts `box` where you'd look for it, at once (the opening frame) or as a move. */
-  const aim = useCallback((box: Box, options: { zoom?: number; ring?: string; instant?: boolean } = {}) => {
+  const aim = useCallback((box: Box, options: { zoom?: number; ring?: string; instant?: boolean; alignTop?: boolean } = {}) => {
     if (!enabled.current || filmHeld()) return;
     window.clearTimeout(waiting.current);
     const next = viewFor(box, options.zoom);
+    // The phone opening leaves only the Stay here control above the first topic.
+    if (options.alignTop) next.y = area().y0 + 64 - box.y * next.zoom;
     if (options.instant) { last.current = Date.now(); void flow.setViewport(next, { duration: 0 }); return; }
     move(next, options.ring);
   }, [viewFor, move, flow]);

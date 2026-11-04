@@ -834,3 +834,94 @@ async fn volume_cooldown_suppresses_publication_but_resets_the_due_streak() {
     tokio::task::yield_now().await;
     assert!(fixture.core.snapshot().suggestions.is_empty(), "the reset streak needs a new sustained stretch");
 }
+
+fn c10_recipe() -> Recipe {
+    Recipe { version: 1, name: "Phrase card".into(), purpose: "Show a phrase card.".into(),
+        watcher: Watcher::Phrase { phrase: "blue cover".into() }, prompt: None,
+        publishers: vec![Publisher::Card { text: "Review the cover.".into() }], cooldown_secs: 30 }
+}
+
+#[test]
+fn c10_recipes_disabled_copy_dedupes_after_restart_and_preserves_original() {
+    let fixture = Fixture::new();
+    let original = app();
+    fixture.core.commit(vec![Change::AppRegistered { app: original.clone() }]);
+    let before = serde_json::to_vec(&fixture.core.snapshot().apps[0]).unwrap();
+    let save = RecipeSave { request_id: "recipe-copy-1".into(), recipe: c10_recipe(), source: Some(original) };
+    assert!(save_recipe(&fixture.core, &save, || false).is_err());
+    let id = save_recipe(&fixture.core, &save, || true).unwrap();
+    assert_eq!(save_recipe(&fixture.core, &save, || true).unwrap(), id);
+    let (_, loaded) = Journal::open(&fixture.path).unwrap();
+    assert_eq!(loaded.apps.len(), 2);
+    assert_eq!(serde_json::to_vec(&loaded.apps[0]).unwrap(), before);
+    assert!(!loaded.apps[1].enabled);
+    assert_eq!(loaded.apps[1].last_run_ms, 0);
+    *fixture.core.world.lock().unwrap() = loaded.into();
+    assert_eq!(save_recipe(&fixture.core, &save, || true).unwrap(), id);
+    let mut changed = save.clone(); changed.recipe.name = "Different".into();
+    assert!(save_recipe(&fixture.core, &changed, || true).unwrap_err().to_string().contains("Request ID"));
+    assert!(fixture.core.apps.asked.lock().unwrap().is_empty());
+}
+
+#[test]
+fn c10_recipes_refuse_stale_source_closed_schema_and_unsafe_content() {
+    let fixture = Fixture::new();
+    let original = app();
+    fixture.core.commit(vec![Change::AppRegistered { app: original.clone() }]);
+    let save = RecipeSave { request_id: "recipe-stale".into(), recipe: c10_recipe(), source: Some(original) };
+    fixture.core.commit(vec![Change::AppEnabled { id: "test-app".into(), enabled: false }]);
+    assert!(save_recipe(&fixture.core, &save, || true).unwrap_err().to_string().contains("changed"));
+    assert_eq!(fixture.core.snapshot().apps.len(), 1);
+    for watcher in [Watcher::Time { at_ms: 1, every_secs: 0 }, Watcher::AppRequest {}] {
+        let mut r = c10_recipe(); r.watcher = watcher;
+        assert!(r.validate().unwrap_err().to_string().contains("Not portable yet"));
+    }
+    let mut raw = serde_json::to_value(c10_recipe()).unwrap();
+    raw["publishers"] = json!([{"kind":"external","url":"https://example.invalid"}]);
+    assert!(serde_json::from_value::<Recipe>(raw).is_err());
+    let mut raw = serde_json::to_value(c10_recipe()).unwrap(); raw["owner_id"] = json!("private");
+    assert!(serde_json::from_value::<Recipe>(raw).is_err());
+    for content in ["https://example.invalid", "<script>alert(1)</script>", concat!("Bea", "rer synthetic-credential")] {
+        let mut r = c10_recipe(); r.name = content.into(); assert!(r.validate().is_err());
+    }
+    let mut r = c10_recipe(); r.name = "x".repeat(33 * 1024); assert!(r.validate().is_err());
+    assert!(fixture.core.snapshot().recipe_saves.is_empty());
+}
+
+#[test]
+fn c10_recipes_gate_rechecked_under_commit_lock_has_no_copy() {
+    let fixture = Fixture::new();
+    let save = RecipeSave { request_id: "recipe-gate".into(), recipe: c10_recipe(), source: None };
+    let calls = std::cell::Cell::new(0);
+    assert!(save_recipe(&fixture.core, &save, || { calls.set(calls.get() + 1); calls.get() == 1 }).is_err());
+    assert!(fixture.core.snapshot().apps.is_empty());
+}
+
+#[test]
+fn c10_recipes_failed_journal_write_never_acknowledges_or_keeps_copy() {
+    let fixture = Fixture::new();
+    *fixture.core.journal.lock().unwrap() = Journal::read_only(&fixture.path).unwrap();
+    let save = RecipeSave { request_id: "recipe-write-failure".into(), recipe: c10_recipe(), source: None };
+    assert!(save_recipe(&fixture.core, &save, || true).is_err());
+    assert!(fixture.core.snapshot().apps.is_empty());
+    assert!(fixture.core.snapshot().recipe_saves.is_empty());
+    assert!(Journal::open(&fixture.path).unwrap().1.apps.is_empty());
+}
+
+#[tokio::test]
+async fn c10_recipes_prompt_is_quoted_and_only_runs_after_separate_enable() {
+    let fixture = Fixture::new();
+    let mut recipe = c10_recipe();
+    recipe.prompt = Some(Prompt { system: "Describe the cover".into(), template: "{thought}".into() });
+    let save = RecipeSave { request_id: "recipe-prompt".into(), recipe, source: None };
+    let id = save_recipe(&fixture.core, &save, || true).unwrap();
+    assert!(fixture.core.apps.asked.lock().unwrap().is_empty());
+    assert!(!fixture.core.snapshot().apps[0].enabled);
+    toggle(&fixture.core, id.clone(), true);
+    fixture.core.apps.answers.lock().unwrap().push_back(json!({"publish":false,"text":"","when":""}));
+    let app = fixture.core.snapshot().apps.iter().find(|a| a.id == id).unwrap().clone();
+    execute(&fixture.core, &app, None).await.unwrap();
+    let asked = fixture.core.apps.asked.lock().unwrap();
+    assert_eq!(asked.len(), 1);
+    assert!(asked[0].contains("quoted_prompt"));
+}

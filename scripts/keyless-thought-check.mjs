@@ -38,7 +38,11 @@ for (const [width, height] of [[1440,900],[390,844]]) for (const scheme of ['lig
     assert.ok(await until('document.querySelector(".mic")?.dataset.state === "nokey"'), 'key status restored after reload');
     const mic = await evaluate('(()=>{const r=document.querySelector(".mic").getBoundingClientRect();return{x:r.left+r.width/2,y:r.top+r.height/2}})()');
     for(const type of ['mousePressed','mouseReleased']) await page('Input.dispatchMouseEvent',{type,...mic,button:'left',clickCount:1});
-    assert.ok(await until('document.querySelector(".keyless-help")?.textContent.includes("working AI key")'), 'mic failure explains how to recover');
+    assert.ok(await until('document.querySelector(".ai-setup[open]")?.textContent.includes("Set up AI")'), 'mic failure opens explicit AI setup');
+    assert.ok(await evaluate('document.querySelector(".ai-setup").textContent.includes("saving typed thoughts")'), 'setup explains typed thoughts remain available');
+    await evaluate('document.querySelector(".ai-setup button").click()');
+    assert.ok(await until('!document.querySelector(".ai-setup")'), 'setup closes back to the map');
+    assert.equal(await evaluate('document.querySelector(".capture-item").dataset.capture'), id, 'setup preserves the pending source');
     for(let i=0;i<6;i++) await typeCapture(browser,`Additional saved thought ${i}`);
     assert.ok(await until('document.querySelectorAll(".capture-item").length===7'), 'every capture remains reachable, including beyond the old five-item limit');
     assert.equal(core.state.world.thoughts.filter(t=>!t.placed).length,7);

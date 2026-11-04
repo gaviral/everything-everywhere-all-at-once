@@ -121,8 +121,16 @@ try {
         const pastLeft = cut.box.left < cut.frame.left, pastRight = cut.box.right > cut.frame.right;
         const by = pastLeft ? cut.frame.left - cut.box.left + 40 : pastRight ? cut.frame.right - cut.box.right - 40 : 0;
         const drag = async (dx) => {
-          const y = height * 0.25;
-          const from = width / 2;
+          // The camera drag must start on the pane, not on a newly expanded card.
+          const origin = await evaluate(`(() => {
+            for (const y of [innerHeight * .25, innerHeight * .4, innerHeight * .55, innerHeight * .7])
+              for (const x of [innerWidth * .5, innerWidth * .2, innerWidth * .8])
+                if (document.elementFromPoint(x, y)?.classList.contains("react-flow__pane")) return { x, y };
+            return null;
+          })()`);
+          assert.ok(origin, `${label}: an uncovered pane point for camera drag`);
+          const y = origin.y;
+          const from = origin.x;
           await page("Input.dispatchMouseEvent", { type: "mouseMoved", x: from, y });
           await page("Input.dispatchMouseEvent", { type: "mousePressed", x: from, y, button: "left", buttons: 1, clickCount: 1 });
           for (let step = 1; step <= 8; step++) await page("Input.dispatchMouseEvent", { type: "mouseMoved", x: from + (dx * step) / 8, y, button: "left", buttons: 1 });

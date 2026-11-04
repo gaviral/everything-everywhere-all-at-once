@@ -1,0 +1,17 @@
+.saved-questions { color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: .65rem; min-width: 0; font-size: .875rem; }
+.saved-questions-body { max-height: min(55dvh, 36rem); overflow: auto; overscroll-behavior: contain; padding: .35rem; overflow-wrap: anywhere; }
+.saved-questions p { margin: .5rem 0; white-space: pre-wrap; }
+.saved-questions form { display: grid; gap: .45rem; margin-block: .65rem; }
+.saved-questions label { display: grid; gap: .3rem; }
+.saved-questions textarea { box-sizing: border-box; width: 100%; min-width: 0; resize: vertical; padding: .45rem; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); font: inherit; }
+.saved-questions button { font: inherit; white-space: normal; height: auto; min-height: 2.2rem; padding: .35rem .6rem; border: 1px solid var(--line); border-radius: 6px; color: var(--ink); background: var(--bg); }
+.saved-questions :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.saved-questions small { color: var(--muted); display: block; }
+.saved-questions-link { display: flex !important; align-items: center; gap: .4rem; }
+.saved-questions-tools { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.saved-questions-list { list-style: none; padding: 0; margin: 0; }
+.saved-questions-row { border-block-start: 1px solid var(--line); padding-block: .7rem; }
+.saved-questions-answer { border-inline-start: 2px solid var(--accent); padding-inline-start: .6rem; }
+.saved-questions summary { cursor: pointer; padding-block: .5rem; }
+.saved-questions button[aria-pressed="true"] { border-color: var(--accent); font-weight: 600; }
+.saved-questions button:disabled { opacity: .55; }

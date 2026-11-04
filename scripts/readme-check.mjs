@@ -1,6 +1,6 @@
 // No extra dependencies: run with `node scripts/readme-check.mjs`.
 // What a judge reads first: the README's first screen says what the app does (the pitch), shows it (an image that
-// exists), names each Meta model with its job, and links to a real trace that proves each one; every model it names
+// exists), names each Meta model with its job, and links to a scoped historical aggregate; every model it names
 // is one the core's code calls. Also: every source file is in docs/ARCHITECTURE.md's parts list, and the trace
 // summary script reads a trace right.
 import assert from "node:assert/strict";
@@ -16,10 +16,42 @@ const MARKER = "<!-- end of the first screen -->";
 assert.ok(readme.includes(MARKER), `README.md has no "${MARKER}"`);
 const first = readme.slice(0, readme.indexOf(MARKER));
 
-// A pending hosted route must not displace the runnable no-key fallback or read as verified entry.
-assert.match(first, /\.\/run\.sh sample[^\n]*\/\?sample[^\n]*no key or mic/);
-assert.ok(first.indexOf("./run.sh sample") < first.indexOf("https://e2a2o.aviralgarg.com"));
-assert.match(first, /Hosted preview, verification pending/);
+// The keyless sample stays first. Hosting is either explicitly pending, or backed by a dated
+// guest-entry/served-build record. A URL (or the word "verified") alone is not evidence.
+const visible = readme.replace(/<!--[\s\S]*?-->/g, "");
+const sample = first.split("\n").find((line) => line.includes("./run.sh sample"));
+assert.ok(sample && /\bsample\b/i.test(sample.replace(/`[^`]*`/g, "")) && /\/\?sample/.test(sample) && /no key or mic|keyless/i.test(sample),
+  "the first screen needs a labelled keyless ./run.sh sample path and its /?sample URL");
+const hosted = first.split("\n").find((line) => /hosted preview/i.test(line));
+assert.ok(hosted && /https:\/\/[^\s)]+/.test(hosted), "the first screen needs a hosted preview state and URL");
+assert.ok(first.indexOf(sample) < first.indexOf(hosted), "the keyless sample must precede hosting");
+if (/verification pending/i.test(hosted)) {
+  // Pending warnings elsewhere may describe the checks still needed; affirmative claims may not.
+  const claims = visible.replace(/\bnot(?: yet)?(?: a)? verified\b/gi, "");
+  assert.doesNotMatch(claims, /\b(?:fresh(?:ly)?\s+)?verified\b|\bverification\s+(?:passed|complete[ds]?)\b/i,
+    "pending hosting cannot claim fresh verification");
+} else {
+  assert.match(hosted, /\bverified\b/i, "hosting must say verification pending or verified with evidence");
+  const date = hosted.match(/\b\d{4}-\d{2}-\d{2}\b/)?.[0];
+  const build = hosted.match(/\bbuild\s+`?([a-f0-9]{7,40})\b/i)?.[1];
+  const proof = hosted.match(/\[[^\]]+\]\((docs\/[^)\s]+\.md)(#[a-z0-9-]+)?\)/);
+  assert.ok(date && build && proof, "verified hosting needs a date, build SHA and local evidence link");
+  assert.ok(Number.isFinite(Date.parse(date)) && new Date(date).toISOString().slice(0, 10) === date,
+    "hosted verification date must be a real calendar date");
+  let evidence = read(proof[1]);
+  if (proof[2]) {
+    const anchor = proof[2].slice(1);
+    evidence = evidence.split(/^(?=#{1,6} )/m).find((part) =>
+      part.split("\n")[0].replace(/^#+ /, "").toLowerCase().replace(/[^a-z0-9 -]/g, "").replace(/ /g, "-") === anchor) ?? "";
+  }
+  assert.ok(evidence.includes(date) && evidence.includes(build) && evidence.includes(hosted.match(/https:\/\/[^\s)]+/)[0]),
+    "hosted evidence must identify the same date, build and URL");
+  assert.match(evidence, /(?:fresh guest|logged.out)[^\n]*(?:passed|verified|succeeded)/i,
+    "hosted evidence needs a successful fresh guest check");
+  assert.match(evidence, new RegExp(`served build[^\\n]*(?:matches|matched)[^\\n]*\\b${build}\\b`, "i"),
+    "hosted evidence needs a matching served build");
+  assert.doesNotMatch(evidence, /\b(?:pending|unverified|not verified)\b/i, "pending evidence cannot verify hosting");
+}
 assert.doesNotMatch(first, /Create an account/);
 assert.match(readme, /http:\/\/localhost:4400\/\?sample/);
 assert.match(readme, /labelled SAMPLE/);
@@ -33,15 +65,58 @@ const words = first.replace(/<!--[\s\S]*?-->/g, "").replace(/!\[[^\]]*\]\([^)]*\
   .replace(/\]\([^)]*\)/g, "]").split(/\s+/).filter((w) => /[A-Za-z0-9]/.test(w));
 assert.ok(words.length <= MAX_WORDS, `the first screen has ${words.length} words; at most ${MAX_WORDS}`);
 
-// What it does, for a person: the pitch, word for word as approved, as one whole paragraph.
-// When the pitch changes, change it here too: a cut that only this check sees is the point.
-const PITCH = "**Think out loud. Keep your place.** You start a sentence, a better thought cuts in, and the first is gone. E2A2O files each thought you say under its topic on a live map, about 3 to 4 seconds after you stop. Jump to something new mid-sentence, and at the next pause it quotes your half-sentence back. Say “where was I?” and you're there.";
-assert.ok(first.split("\n").includes(PITCH), "the pitch on the first screen isn't the approved one, word for word (whole paragraph)");
+// Require a concise, concrete outcome, not approved wording or a performance promise.
+const outcome = first.replace(/<!--[\s\S]*?-->/g, "").split(/\n\s*\n/)
+  .map((part) => part.trim()).find((part) => part && !part.startsWith("#"));
+assert.ok(outcome && outcome.split(/\s+/).length <= 90 && /\bE2A2O\b/.test(outcome)
+  && /\b(?:files?|groups?|organizes?|places?|maps?|keeps?|saves?|captures?|returns?|finds?|turns?)\b/i.test(outcome)
+  && /\b(?:thoughts?|topics?|ideas?|notes?|conversation|map)\b/i.test(outcome),
+"the opening needs a concise concrete outcome for thoughts, topics or the map");
+assert.doesNotMatch(outcome, /\b\d+(?:\.\d+)?\s*(?:to\s*\d+\s*)?(?:ms|s|seconds?|minutes?)\b/i,
+  "put measured latency with its historical provenance, not in the outcome");
+
+// Historical measurements and scripted/simulated surfaces must not read as current human results.
+const firstVisible = first.replace(/<!--[\s\S]*?-->/g, "");
+const modelContext = firstVisible.slice(Math.max(0, firstVisible.lastIndexOf("\n## ", firstVisible.indexOf("|"))));
+assert.match(modelContext, /historical[^\n]*synthe(?:tic|sized)|synthe(?:tic|sized)[^\n]*historical/i,
+  "the first screen must label the linked evidence as historical and synthetic");
+const measured = visible.match(/^## Measured\s*\n([\s\S]*?)(?=^## |(?![\s\S]))/m)?.[1];
+if (/\b\d+(?:\.\d+)?\s*(?:ms|s|seconds?)\b/i.test(firstVisible))
+  assert.ok(measured, "first-screen timings need the historical Measured provenance section");
+if (measured && /\d/.test(measured)) {
+  assert.match(measured, /historical/i, "measured numbers need a historical label");
+  assert.match(measured, /synthe(?:tic|sized)/i, "measured numbers need their input type");
+  assert.match(measured, /\b\d{4}-\d{2}-\d{2}\b/, "measured numbers need a date");
+  assert.match(measured, /\b(?:n\s*=\s*\d+|\d+\s+(?:lines|thoughts|calls|requests|rounds|takes))\b/i,
+    "measured numbers need a sample count");
+  for (const row of measured.split("\n").filter((line) => /^\|/.test(line))) {
+    const [, , result, source] = row.split("|").map((cell) => cell.trim());
+    if (!/\d/.test(result ?? "")) continue;
+    assert.match((source ?? "").replace(/\d{4}-\d{2}-\d{2}/g, ""), /\b[1-9]\d*\b/,
+      "each historical result needs n in its source column");
+    assert.match(source, /\d{4}-\d{2}-\d{2}|\bsame\b|\btake\b|\btraced run\b/i,
+      "each historical result needs a date or explicit reference to the dated take");
+  }
+}
+for (const paragraph of visible.split(/\n\s*\n/)) {
+  if (/[Ww]ork spine|\bRemote\b|demo-jobs\.mjs/.test(paragraph)) {
+    assert.match(paragraph, /simulat(?:ed|ion)/i, "Work spine/Remote helper work must be labelled simulated");
+    assert.doesNotMatch(paragraph, /\b(?:real|live)\s+(?:helper|agent)\s+work\b/i,
+      "simulated helper work cannot be described as live work");
+  }
+}
+assert.doesNotMatch(visible, /\b(?:all|every|each)\s+(?:\w+\s+){0,3}(?:changes?|merges?|commits?)\s+(?:\w+\s+){0,8}(?:passed|only when|only after)|\b(?:changes?|merges?|commits?)\s+(?:all|always)\s+passed/i,
+  "do not assert universal merge success; report bounded, evidenced checks instead");
 
 // Shows it: every image there exists.
 const images = [...first.matchAll(/!\[[^\]]*\]\(([^)\s]+)\)|<img[^>]*src="([^"]+)"/g)].map((m) => m[1] ?? m[2]);
 assert.ok(images.some((src) => /screens\//.test(src)), "no screenshot or GIF of the app on the first screen");
 for (const src of images) assert.ok(existsSync(root + src), `the first screen shows ${src}, which isn't in the repo`);
+for (const match of first.matchAll(/!\[[^\]]*\]\([^)]+\)|<img[^>]*>/g)) {
+  const caption = first.slice(match.index, first.indexOf("\n## ", match.index) < 0 ? first.length : first.indexOf("\n## ", match.index));
+  assert.match(caption, /synthe(?:tic|sized)|simulated|scripted/i, "first-screen media needs its input type");
+  assert.match(caption, /historical|earlier|recorded/i, "first-screen media needs its recorded/historical label");
+}
 // Below it too (the 16-second run right after the marker): every image exists and loads quickly on a judge's
 // connection; 3 MB is about 1 s at 25 Mbit/s, and the run is 1 MB today.
 for (const [, a, b] of readme.matchAll(/!\[[^\]]*\]\(([^)\s]+)\)|<img[^>]*src="([^"]+)"/g)) {
@@ -71,32 +146,21 @@ for (const m of spelled.matchAll(/Muse (?:Voice Transcribe|Spark|Image)(?: [\d.]
   assert.ok([...called].some((c) => c.startsWith(id)), `the first screen names ${m[0]}, which the core never calls`);
 }
 // Which Meta model does what, row by row: each role's row names its model (or "no model") and links to the
-// trace.md section that proves it; that section shows the feature's own traced call by that model (or, for rules,
-// none at all). Removing a row, its link or its evidence fails here.
+// trace.md section describing its historical aggregate. These links validate documentation coverage, not
+// the original run or current behavior. Removing a role, its link or its aggregate fails here.
 const ROLES = [
-  { anchor: "heard", model: "Muse Voice Transcribe 1.0", proof: /"kind":"heard"/ },
-  // Placing races Spark 1.3 and 1.2 (core/src/placer.rs `MODELS`): each needs its own placing call in the trace, or the
-  // row saying that one's proof is pending ("1.3 pending"). Contributor mode is opt-in; a trace taken with it on still
-  // proves its model places.
-  {
-    anchor: "placer",
-    model: "Muse Spark 1.3 + 1.2",
-    each: [
-      ["1.3", /"feature":"placer","model":"muse-spark-1\.3(-contributor)?"/],
-      ["1.2", /"feature":"placer","model":"muse-spark-1\.2(-contributor)?"/],
-    ],
-  },
-  { anchor: "refiner", model: "Muse Spark 1.3", proof: /"feature":"refiner","model":"muse-spark-1\.3"/ },
-  // The core traces building an app as "app" (core/src/apps.rs `feature`), and a Recap kept current before you ask as
-  // "recap draft" (core/src/recap.rs): asking shows that draft, so either call proves the Recap's model.
-  { anchor: "composer", model: "Muse Spark 1.3", proof: /"feature":"app","model":"muse-spark-1\.3"/ },
-  { anchor: "recap", model: "Muse Spark 1.3", proof: /"feature":"recap( draft)?","model":"muse-spark-1\.3"/ },
-  { anchor: "pictures", model: "Muse Image 1.0", proof: /"feature":"picture","model":"muse-image-1\.0"/ },
-  { anchor: "rules", model: "no model", when: /where was I\?/i, proof: /"kind":"heard","raw":"[Ww]ait, where was I\?"/, none: /"model":/ },
+  { anchor: "heard", model: "Muse Voice Transcribe 1.0", proof: /`muse-voice-transcribe-1\.0`/ },
+  { anchor: "placer", model: "Muse Spark 1.3 + 1.2",
+    each: [["1.3", /`muse-spark-1\.3`/], ["1.2", /`muse-spark-1\.2`/]] },
+  { anchor: "refiner", model: "Muse Spark 1.3", proof: /`muse-spark-1\.3`/ },
+  { anchor: "composer", model: "Muse Spark 1.3", proof: /`muse-spark-1\.3`/ },
+  { anchor: "recap", model: "Muse Spark 1.3", proof: /`muse-spark-1\.3`/ },
+  { anchor: "pictures", model: "Muse Image 1.0", proof: /`muse-image-1\.0`/ },
+  { anchor: "rules", model: "no model", when: /where was I\?/i, proof: /without a model call/ },
 ];
 assert.ok(/\(docs\/trace\.md(#[a-z0-9-]+)?\)/.test(first), "the first screen doesn't link to docs/trace.md");
 const trace = read("docs/trace.md");
-assert.match(trace, /Historical synthetic evidence, not final-build validation/);
+assert.match(trace, /Historical synthetic report, not final-build validation/);
 const slug = (h) => h.toLowerCase().replace(/[^a-z0-9 -]/g, "").replace(/ /g, "-");
 const sections = new Map(trace.split(/^(?=## )/m).map((part) => [slug(part.split("\n")[0].replace(/^## /, "")), part]));
 const rows = first.split("\n").filter((l) => /^\|.*\(docs\/trace\.md#[a-z0-9-]+\)/.test(l));
@@ -119,10 +183,40 @@ for (const { anchor, model, when, proof, each, none } of ROLES) {
   if (none) assert.doesNotMatch(section, none, `docs/trace.md#${anchor} says no model, but shows a model call`);
 }
 for (const id of ["muse-spark-1.2", "muse-spark-1.3", "muse-image-1.0"]) {
-  assert.ok(trace.includes(`"model":"${id}`), `docs/trace.md shows no call by ${id}`);
+  assert.ok(trace.includes("`" + id + "`"), `docs/trace.md has no aggregate for ${id}`);
 }
 assert.ok(/"kind":"heard"|Voice turns heard: [1-9]/.test(trace), "docs/trace.md shows no turn heard by Voice Transcribe");
 assert.ok(!/MODEL_API_KEY=\S|Bearer |\/Users\/|\/home\//.test(trace), "docs/trace.md carries a key or a home path");
+
+// Keep the public proof to reviewed aggregates; raw request/answer excerpts belong outside submission docs.
+assert.doesNotMatch(trace, /```(?:json|jsonl)\b|"(?:sent|answer|raw|kept)"\s*:/,
+  "the public model report must omit raw transcripts, prompts and answers");
+assert.match(trace, /not an ancestor of verified main/);
+assert.match(trace, /not independently revalidated/);
+assert.match(trace, /Reported configuration:/);
+assert.match(trace, /Voice turns heard: 12/);
+assert.match(trace, /Placements: 8/);
+assert.match(trace, /Pictures saved: 4/);
+const evidenceScope = read("docs/release-evidence.md");
+assert.match(evidenceScope, /Hosted entry stays explicitly pending/);
+assert.match(evidenceScope, /Final selected build.*remain pending/);
+
+// Catch the stale claims that a source-list/link check alone used to accept.
+function boundedClaims(text) {
+  assert.doesNotMatch(text, /(?:12|twelve) words or fewer|at most (?:12|twelve) words/i,
+    "the placer preserves meaning instead of imposing the old word cap");
+  assert.doesNotMatch(text, /browser talks only to it|loads nothing from elsewhere|Nothing else at runtime/i,
+    "network scope must include optional speech, connectors and tunnels");
+}
+for (const text of [readme, read("docs/FEATURES.md")]) boundedClaims(text);
+for (const stale of ["a point of 12 words or fewer", "The browser talks only to it", "Nothing else at runtime"])
+  assert.throws(() => boundedClaims(stale), "stale claims must be rejected");
+assert.match(readme, /commitments.*conditions.*negations.*uncertainty/);
+assert.match(readme, /does not enforce `localService`/);
+assert.match(readme, /no GPT runtime dependency/);
+const story = readme.slice(readme.indexOf("## One minute of talk"), readme.indexOf("## How it works"));
+assert.doesNotMatch(story, /tune plays|plays a silly tune|loudly/i,
+  "the audible tune beat stays omitted until supported by a recording receipt");
 
 // Every source file is in ARCHITECTURE.md's parts list (tests, the page's entry and Vite's types excepted).
 const arch = read("docs/ARCHITECTURE.md");

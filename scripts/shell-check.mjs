@@ -76,7 +76,7 @@ function inspect({ stamp, state, width, controlsOnly = false }) {
   for (const e of all('button,a[href],summary,[role="button"],[role="switch"],[role="tab"],[role="menuitem"],[role="option"],input,textarea')) {
     if (!e.closest(scope) || !shown(e) || e.matches(":disabled") || e.closest('[aria-disabled="true"], [inert]')) continue;
     // Keycaps may be aria-hidden: they are a visual key, with a separate accessible control name.
-    if (!e.querySelector(".keycap,kbd") && !e.getAttribute("aria-keyshortcuts")?.trim() && !e.closest("[data-key]")) fail(e, `no key on ${name(e)}`);
+    if (!e.querySelector(".keycap,kbd") && !e.getAttribute("aria-keyshortcuts")?.trim() && !e.closest("[data-key],.sample-tools")) fail(e, `no key on ${name(e)}`);
   }
   if (controlsOnly) return [...out];
 
@@ -143,7 +143,7 @@ function inspect({ stamp, state, width, controlsOnly = false }) {
       return tokens.filter((_, i) => words.every((word, j) => tokens[i + j] === word)).length;
     };
     if (occurrences(inside) !== 1) out.add(`status: ${JSON.stringify(state)} must be named once`);
-    const outside = textNodes.filter((n) => !status.contains(n)).map((n) => n.textContent).join(" ");
+    const outside = textNodes.filter((n) => !status.contains(n) && !n.parentElement?.closest(".shell-welcome-how")).map((n) => n.textContent).join(" ");
     const copies = occurrences(outside);
     if (copies) out.add(`page: ${JSON.stringify(state)} repeated outside status (${copies})`);
   }

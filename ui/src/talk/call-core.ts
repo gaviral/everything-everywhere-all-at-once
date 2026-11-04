@@ -118,6 +118,7 @@ export function opened() {
 
 /** The connection dropped: who has the floor isn't known any more (the rest stays shown until the core says again). */
 export function closed() {
+  if (voicePolicy.snapshot().enabled) voicePolicy.end();
   if (call?.people.some((p) => p.speaking)) set({ ...call, people: call.people.map((p) => ({ ...p, speaking: false })) });
 }
 
@@ -225,3 +226,49 @@ export function shownCode(code: string): string {
   const size = plain.length === 6 || plain.length === 9 ? 3 : 4;
   return plain.match(new RegExp(`.{1,${size}}`, "g"))?.join(" ") ?? "";
 }
+
+
+// Visit-local capture authority. Nothing in a server message can create a session.
+export type VoiceMode = "explicit" | "session";
+export type VoiceCapture = "off" | "starting" | "open" | "paused";
+export class VoicePolicy {
+  private state = { enabled: false, mode: "explicit" as VoiceMode, generation: 0,
+    session: null as number | null, capture: "off" as VoiceCapture };
+  private listeners = new Set<() => void>();
+  private endings = new Set<() => void>();
+  snapshot = () => this.state;
+  subscribe = (fn: () => void) => { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; };
+  onEnd = (fn: () => void) => { this.endings.add(fn); return () => { this.endings.delete(fn); }; };
+  private put(change: Partial<typeof this.state>) {
+    this.state = { ...this.state, ...change };
+    this.listeners.forEach(fn => fn());
+  }
+  configure(enabled: boolean) {
+    if (enabled === this.state.enabled) return;
+    this.end();
+    this.put({ enabled, mode: "explicit" });
+  }
+  select(mode: VoiceMode) {
+    if (!this.state.enabled || mode === this.state.mode) return;
+    this.end();
+    this.put({ mode });
+  }
+  // Called only by the trusted local Start conversation control in App.
+  startSession() {
+    if (!this.state.enabled || this.state.mode !== "session") return;
+    this.end();
+    this.put({ session: this.state.generation });
+  }
+  end() {
+    this.put({ generation: this.state.generation + 1, session: null, capture: "off" });
+    this.endings.forEach(fn => fn());
+  }
+  canResume(generation: number) {
+    return this.state.enabled && this.state.mode === "session" && this.state.session === generation && this.state.generation === generation;
+  }
+  capture(capture: VoiceCapture, generation: number) {
+    if (this.state.enabled && this.state.generation === generation) this.put({ capture });
+  }
+}
+export const voicePolicy = new VoicePolicy();
+export const useVoicePolicy = () => useSyncExternalStore(voicePolicy.subscribe, voicePolicy.snapshot, voicePolicy.snapshot);

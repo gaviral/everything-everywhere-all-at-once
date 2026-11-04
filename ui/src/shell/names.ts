@@ -31,15 +31,17 @@ export const NAMES = {
     undone: "Undone",
   },
   catalogTab: {
+    // names-ok: independent presentation preference, as specified on the Features footer.
+    organization: "Catalog organization",
     lead: (on: number, all: number) => `Features you can switch on · ${on} of ${all} on`,
     core: "Built in",
     missing: "Missing one? Say “make an app that…” and it's made for you to keep or not.",
   },
   /** The status line's one line of help after a state that needs something (the AI key, the mic's permission). */
   stateHelp: {
-    nokey: "Listening and placing need MODEL_API_KEY in .env; you can still type.",
+    nokey: "You can explore the map and save typed thoughts.",
     nokeyHosted: "You can still type; what you type is placed once it's back.",
-    refused: "Check MODEL_API_KEY in .env, then restart; you can still type.",
+    refused: "Set up a working AI key; you can still save typed thoughts.",
     refusedHosted: "You can still type.",
     resting: "Placed after midnight Pacific; you can still type.",
     blocked: "Allow the microphone for this page in the address bar, or type.",
@@ -60,19 +62,27 @@ export type FeatureName = { name: string; aka?: string; does?: string; lives?: s
 /** The app's features by id (a feature's folder name, or a built-in's own id): what the shell calls each. A feature
  *  missing here shows its brick.json name and line. */
 export const FEATURE_NAMES: Record<string, FeatureName> = {
+  "reply-format": { name: "Reply format", does: "Check new Conversation partner replies against word, line and preamble rules; repair once if needed.", lives: "Features · for this conversation" },
   terse: { name: "Terse", does: "Read short nested lines; tap any line for its complete original.", lives: "The Canvas" },
   "bring-here": { name: "Bring here", does: "Inspect a live topic beside Find or History without moving the Canvas. Open original goes to its place.", lives: "Find and History" },
   "full-content": { name: "Full content", does: "Inspect complete topic titles, recognized words and displayed points on a separate canvas, with optional wrapping.", lives: "Canvas actions" },
+  "compare-return-controls": { name: "Compare return controls", does: "Compare Card and Compact for the same unfinished words. Card starts each visit; choose the feeling yourself.", lives: "Above the input box" },
   // Built in: switched here, as the features are.
   email: { name: "Email", does: "Email an allowed contact from this laptop after a countdown you can stop. Say ‘Email Mia that the cut is ready’.", lives: "Above your words" },
   helpers: { name: "Thinking helpers", does: "Say ‘put five helpers on the pitch’. Stop during the countdown; read their answers in Work spine.", lives: "Work spine and the topic" },
   "canvas-tools": { name: "Canvas tools", does: "Move Type a thought, Features and History onto the Canvas. Focus a tool to read it; Exit restores the ordinary shell.", lives: "The Canvas" },
-  partner: { name: "Conversation partner", does: "E2A2O answers explicit questions with short spoken replies using Meta. Say ‘Partner, …’ for a follow-up. Cancel a reply at any time.", lives: "Beside your words and in Talk" },
+  "reuse-explanations": { name: "Reuse explanations", does: "Reopen the same Explain answer immediately while its source context is unchanged, for up to five minutes. Off? clears that answer." },
+  "voice-policy-comparison": { name: "Compare voice turns", does: "Compare Explicit turns with a deliberately Started session. Mode selection leaves the mic off; stop reply and conversation separately.", lives: "Above the input box" },
+  "review-text-edits": { name: "Review text edits", does: "Review a shorter point, type a proposal, then accept or reject it. Original words stay unchanged.", lives: "An individual point" },
+  partner: { name: "Conversation partner", does: "E2A2O answers explicit questions with short replies using Meta. Reads them aloud when Built-in speech is on. Say ‘Partner, …’ for a follow-up. Cancel a reply at any time.", lives: "Beside your words and in Talk" },
   cards: { name: "Cards", aka: "List view", does: "Every topic as a card of its points, in a list you scroll and search.", lives: "A view" },
   pictures: { name: "Pictures", aka: "Gallery", does: "Every topic as its picture, side by side.", lives: "A view" },
   "compare-phone-reading": { name: "Compare phone reading", does: "Compare Spatial and Inline reading on a phone. Spatial stays the default; tangents without a source point are labelled.", lives: "The Canvas on a phone" },
+  "warm-pictures": { name: "Ready pictures", does: "After a quiet second, keeps existing pictures for your current topic and two nearby topics ready to open. Holds an estimated 16 MiB at most; pauses while you speak, away or saving data.", lives: "Pictures and topics" },
+  "phone-remote": { name: "Phone remote", does: "Swipe on your phone to explore the Canvas without looking down.", lives: "Same Wi-Fi" },
   "semantic-zoom": { name: "Semantic zoom", aka: "Readable overview", does: "Zoom out to topic titles and thought counts; zoom in to read the thoughts.", lives: "The Canvas" },
   "rotate-canvas": { name: "Rotate canvas", does: "Turn your view with Angle and Reset, or a rotation gesture in browsers that expose one. Thoughts keep their world positions.", lives: "The Canvas" },
+  "built-in-speech": { name: "Built-in speech", does: "Read replies aloud with this browser’s voice when one is available. Replies remain visible as text.", lives: "This browser" },
   listening: { name: "Listening", aka: "Voice input", does: "The mic: tap it or press ⌘D, and your words land as you talk.", lives: "The input box" },
   recap: { name: "Recap", aka: "Summary", does: "A short summary of this session, on R or “recap”.", lives: "Top right" },
   import: { name: "Import chats", aka: "Import", does: "Brings an exported chat in as thoughts on your map.", lives: "Top right" },
@@ -88,7 +98,7 @@ export const FEATURE_NAMES: Record<string, FeatureName> = {
   "read-progress": { name: "Mark replies as read", does: "Remembers replies you view or tap. A dot means unread; a line shows where you left off.", lives: "Canvas and Talk" },
   keys: { name: "Keyboard shortcuts", aka: "Keyboard controls", does: "Arrows or h j k l move between topics and points.", lives: "Everywhere" },
   level: { name: "Level meter", aka: "Loudness meter", does: "Every loudness reading, to set a volume feature's level.", lives: "Bottom left" },
-  "brick-chip": { name: "Source attribution", aka: "Source tag, added by", does: "Marks each point a feature added, on hover or tap.", lives: "The Canvas" },
+  "brick-chip": { name: "Source attribution", aka: "Shows who added a point", does: "Marks each point a feature added, on hover or tap.", lives: "The Canvas" },
   "work-spine": { name: "Work spine", aka: "Agent activity", does: "What your AI helpers are doing: running, done, failed, or waiting on you.", lives: "Beside the Canvas" },
 };
 

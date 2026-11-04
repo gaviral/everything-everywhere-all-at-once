@@ -1,0 +1,24 @@
+.app-recipes { max-width: min(36rem, 100%); font-size: .875rem; color: var(--ink); }
+.app-recipes summary { cursor: pointer; padding: .4rem; }
+.app-recipes details[open] { max-height: 30vh; overflow: auto; padding: .5rem; }
+.app-recipes-apps { list-style: none; padding: 0; }
+.app-recipes-apps li { border-top: 1px solid var(--line, #8886); padding: .5rem 0; display: flex; flex-wrap: wrap; gap: .5rem; }
+.app-recipes-buttons { display: flex; flex-wrap: wrap; gap: .4rem; width: 100%; }
+.app-recipes-file { display: block; }
+.app-recipes-file input { display: block; max-width: 100%; }
+.app-recipes-dialog { color: var(--ink, CanvasText); background: var(--card, Canvas); border: 1px solid var(--line, #888); border-radius: .8rem; padding: 0; width: min(38rem, calc(100vw - 1.5rem)); max-height: min(78dvh, 56rem); overflow: hidden; }
+.app-recipes-dialog[open] { display: flex; flex-direction: column; }
+.app-recipes-dialog::backdrop { background: #0008; }
+.app-recipes-dialog-body { overflow: auto; padding: 1rem; min-height: 0; overscroll-behavior: contain; }
+.app-recipes-dialog h2 { font-size: 1.2rem; margin: 0 0 .7rem; }
+.app-recipes-dialog fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.app-recipes-dialog label { display: block; margin-bottom: .65rem; }
+.app-recipes-dialog input:not([type=checkbox]), .app-recipes-dialog textarea, .app-recipes-dialog select { display: block; width: 100%; box-sizing: border-box; font: inherit; color: inherit; background: var(--card, Canvas); border: 1px solid #888; border-radius: .25rem; padding: .45rem; }
+.app-recipes-dialog textarea { min-height: 4rem; resize: vertical; }
+.app-recipes-dialog button, .app-recipes button { font: inherit; min-height: 2.75rem; white-space: normal; }
+.app-recipes-dialog button:focus-visible, .app-recipes :focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.app-recipes-publisher { border-top: 1px solid #8886; padding-top: .5rem; }
+.app-recipes-preview p { overflow-wrap: anywhere; }
+.app-recipes-dialog pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .8em; }
+.app-recipes-footer { flex-shrink: 0; display: flex; gap: .5rem; flex-wrap: wrap; padding: .6rem 1rem; border-top: 1px solid #8886; background: inherit; }
+@media (max-height: 500px) { .app-recipes-dialog { max-height: 92dvh; } }

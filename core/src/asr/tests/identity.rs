@@ -135,6 +135,7 @@ async fn chrome_fixture_core() {
                 Message::Binary(frame) => {
                     assert_eq!(frame.len(), FRAME_BYTES);
                     frames += 1;
+                    socket.send(Message::Text(json!({"type":"audioProgress","audioProcessedMs":frames*80}).to_string().into())).await.unwrap();
                     if frames > 60 {
                         times.push(clock.elapsed().as_millis() as u64);
                         pcm.extend_from_slice(&frame);
@@ -169,4 +170,27 @@ async fn chrome_fixture_core() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     std::fs::write(data.join("ready.json"), json!({"port":listener.local_addr().unwrap().port()}).to_string()).unwrap();
     axum::serve(listener, routes.into_make_service_with_connect_info::<crate::Link>()).await.unwrap();
+}
+
+#[test]
+fn live_partial_survives_process_restart_before_service_close() {
+    let path = std::env::temp_dir().join(format!("voice-checkpoint-{}.jsonl", uuid::Uuid::new_v4()));
+    let (journal, _) = Journal::open(&path).unwrap();
+    let core = Arc::new(Core::test(journal, World::default()));
+    let mut updates = core.updates.subscribe();
+    let mut state = Primer::default();
+    handle(&core, "you", &mut state, &json!({"type":"transcript","transcript":"Before booking the workshop I need to", "audioProcessedMs":PRIMER_MS+800}).to_string(), None);
+    // Neither a final nor recover() runs before reopening the journal.
+    let (journal, restored) = Journal::open(&path).unwrap();
+    assert_eq!(restored.speech_drafts.len(), 1);
+    let id = restored.speech_drafts.values().next().unwrap().id.clone();
+    assert_eq!(restored.speech_drafts[&id].text, "Before booking the workshop I need to");
+    assert!(restored.thoughts.is_empty());
+    assert!(!std::iter::from_fn(|| updates.try_recv().ok()).any(|out| matches!(out.message, ServerMsg::RecoverableSpeech { .. })), "no recovery card during live speech");
+    let reopened = Arc::new(Core::test(journal, restored));
+    reopened.recover_speech("you", &id, true);
+    reopened.recover_speech("you", &id, true);
+    assert_eq!(reopened.snapshot().thoughts.len(), 1);
+    assert!(!reopened.snapshot().thoughts[0].complete);
+    assert!(reopened.snapshot().speech_drafts.is_empty());
 }

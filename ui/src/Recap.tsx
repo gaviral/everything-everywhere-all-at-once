@@ -7,6 +7,8 @@ import { TIPS } from "./Tips";
 import { runningModel, useSteps } from "./model-line";
 import { capitalized } from "./core";
 import { Markdown } from "./md";
+import { actionLine, dated } from "./action-line";
+import { useSite } from "./site";
 
 export type RecapPeriod = "today" | "session";
 export interface RecapItem { thread_id: string; text: string }
@@ -77,7 +79,8 @@ export function useRecap() {
   return { view, receive, open, close, disconnected };
 }
 
-export function Recap({ view, world, connected, noKey, resting = false, listening, onRequest, onMark, onClose, onFocus }: {
+export function Recap({ onSetup, view, world, connected, noKey, resting = false, listening, onRequest, onMark, onClose, onFocus }: {
+  onSetup?: () => void;
   view: View | null;
   world: World;
   connected: boolean;
@@ -93,6 +96,7 @@ export function Recap({ view, world, connected, noKey, resting = false, listenin
   onFocus: (id: string) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const { calendarFile } = useSite();
   // Recaps marked off in this window, by period and when each was made.
   const [off, setOff] = useState<ReadonlySet<string>>(new Set());
   // The wait named: the model the core is asking for this recap, from its own call (model-line.ts); a draft being made
@@ -120,7 +124,7 @@ export function Recap({ view, world, connected, noKey, resting = false, listenin
     };
   }, [open]);
   if (!view) return null;
-  const recap = noKey ? null : view.recap;
+  const recap = view.recap;
   const recapId = recap ? `${recap.period}-${recap.generated_ms}` : "";
   const resolve = (id: string) => resolveMerged(world, id);
   const title = (id: string) => world.threads.find((t) => t.id === resolve(id))?.title ?? "Open topic";
@@ -135,11 +139,15 @@ export function Recap({ view, world, connected, noKey, resting = false, listenin
     <span className="recap-source">{title(item.thread_id)} ↗</span>
   </li>)}</ul>;
   const actions = (recap?.actions ?? []).map((a) => world.actions.find((current) => current.id === a.id) ?? a).filter((a) => a.status !== "dismissed");
-  const pending = actions.filter((a) => a.status !== "done");
+  const pending = actions.filter((a) => a.status === "new");
+  const adding = actions.filter((a) => a.status === "kept");
   const added = actions.filter((a) => a.status === "done");
+  const hasFile = calendarFile && added.some((a) => a.done_ms == null);
   const actionRows = (items: Action[]) => <ul className="recap-actions">{items.map((action) => <li key={action.id}>
     {link(action.thread_id, action.title, "recap-item-link")}
-    <span className="recap-source">{title(action.thread_id)}{action.when ? ` · ${action.when}` : ""} · {action.kind === "event" && action.when ? "Calendar" : "Reminders"}</span>
+    <span className="recap-source">{title(action.thread_id)}{action.when ? ` · ${action.when}` : ""} · {action.status === "new"
+      ? action.kind === "event" && action.when ? "Calendar" : "Reminders"
+      : actionLine(action, action.kind === "event" && dated(action.when) ? "Calendar" : "Reminders", action.status === "done" && calendarFile).status}</span>
   </li>)}</ul>;
   const plans = recap?.plans ?? [];
   // Only thoughts that arrived since, not ones dated ahead of this clock (the samples are dated Nov 3, 2026).
@@ -161,7 +169,7 @@ export function Recap({ view, world, connected, noKey, resting = false, listenin
           <button aria-pressed={view.period === "session"} disabled={view.loading} onClick={() => onRequest("session")}>This session</button>
           <button aria-pressed={view.period === "today"} disabled={view.loading} onClick={() => onRequest("today")}>Today</button>
         </div>
-        {recap && <span className="recap-meta">{counted} {counted === 1 ? "thought" : "thoughts"} · {recap.thread_count} {recap.thread_count === 1 ? "topic" : "topics"} · {new Date(recap.through_ms).toLocaleDateString(undefined, { month: "short", day: "numeric" })} · through {time(recap.through_ms)}</span>}
+        {recap && <span className="recap-meta">{counted} {counted === 1 ? "thought" : "thoughts"} · {recap.thread_count} {recap.thread_count === 1 ? "topic" : "topics"} · {new Date(recap.through_ms).toLocaleDateString(undefined, { month: "short", day: "numeric" })} · {noKey ? "last saved through" : "through"} {time(recap.through_ms)}</span>}
       </div>
       {!noKey && view.fallbackSince !== undefined && <p className="recap-limit">Nothing yet today, so here's your last session, from {new Date(view.fallbackSince).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}, {time(view.fallbackSince)}.</p>}
       <div className="recap-feedback" role="status" aria-live="polite">
@@ -198,14 +206,16 @@ export function Recap({ view, world, connected, noKey, resting = false, listenin
         <h2 id="recap-actions-title">Actions <span>On these topics</span></h2>
         <div className="recap-columns">
           {pending.length > 0 && <div><h3><span className="recap-pending-dot" aria-hidden="true" />Pending approval <span>{pending.length}</span></h3>{actionRows(pending)}</div>}
-          {added.length > 0 && <div><h3><span className="recap-added-mark" aria-hidden="true">✓</span> Added <span>{added.length}</span></h3>{actionRows(added)}</div>}
+          {adding.length > 0 && <div><h3><span className="recap-pending-dot" aria-hidden="true" />Adding <span>{adding.length}</span></h3>{actionRows(adding)}</div>}
+          {added.length > 0 && <div><h3><span className="recap-added-mark" aria-hidden="true">✓</span> {hasFile ? "Completed" : "Added"} <span>{added.length}</span></h3>{actionRows(added)}</div>}
         </div>
       </section>}
     </div>}
     <footer className="recap-footer">
       {/* Saying "map" works only while the mic listens: the composer sits behind the sheet. */}
-      <span>{listening ? "Say “map” to close, or press Esc" : "Press Esc to close"}</span>
-      {recapId && !view.loading && <button className="recap-off" aria-pressed={off.has(recapId)} disabled={!connected}
+      <span className="recap-keyboard-hint">{listening ? "Say “map” to close, or press Esc" : "Press Esc to close"}</span>
+      {noKey && !resting && <span className="recap-setup">Add an AI key, then return to make your Recap.</span>}
+      {!noKey && recapId && !view.loading && <button className="recap-off" aria-pressed={off.has(recapId)} disabled={!connected}
         onClick={() => {
           const next = !off.has(recapId);
           if (onMark("recap", recapId, next)) setOff((marked) => { const copy = new Set(marked); if (next) copy.add(recapId); else copy.delete(recapId); return copy; });
@@ -213,7 +223,8 @@ export function Recap({ view, world, connected, noKey, resting = false, listenin
         title={off.has(recapId) ? "Marked off. Click to take it back." : "Off the mark? Note it, so recaps improve."}>
         {off.has(recapId) ? "Marked off" : "Off?"}
       </button>}
-      <button className="recap-refresh" disabled={view.loading || !connected || noKey} onClick={() => onRequest(view.period)}>{view.message ? "Try again" : "Update recap"}</button>
+      {noKey && onSetup ? <button type="button" className="recap-refresh" onClick={onSetup}>Set up AI</button>
+        : <button className="recap-refresh" disabled={view.loading || !connected || noKey} onClick={() => onRequest(view.period)}>{view.message ? "Try again" : "Update recap"}</button>}
     </footer>
   </dialog>;
 }

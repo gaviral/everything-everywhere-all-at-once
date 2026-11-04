@@ -1,0 +1,8 @@
+{
+  "id": "thinking-starters",
+  "name": "Thinking starters",
+  "does": "Choose a short scaffold, write in your own words, preview and send one thought.",
+  "kind": "card",
+  "defaultOn": false,
+  "demoSafe": false
+}

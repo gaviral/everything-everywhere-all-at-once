@@ -121,6 +121,9 @@ html.shell2 .shell-stage {
 html.shell2 .shell-stage > * { pointer-events: auto; }
 html.shell2 .shell-cards { display: flex; flex-direction: column; gap: 8px; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 html.shell2 .shell-cards:empty, html.shell2 .shell-captions:empty { display: none; }
+/* Enlarged return controls use the existing card scroller, leaving the composer outside it. */
+html.shell2 .shell-cards:has(> .recovery-comparison) { scroll-padding-block: 6px; }
+html.shell2 .shell-dock:has(.recovery-comparison) { max-height: calc(100dvh - 180px); }
 html.shell2 .shell-captions { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
 
 /* The one notice, above the composer: solid, ink buttons, its Undo and × at the end. */
@@ -264,11 +267,12 @@ html.shell2 .shell-catalog-group h3 { margin: 12px 0 2px; }
 html.shell2 .shell-catalog-group ul { margin: 0; padding: 0; list-style: none; }
 html.shell2 .shell-catalog-row { display: flex; align-items: center; gap: 8px; min-height: 32px; border-radius: 8px; }
 html.shell2 .shell-catalog-row.shell-at { margin: 0 -8px; padding: 0 8px; background: var(--blue-soft); }
-html.shell2 .shell-catalog-name { display: flex; flex: 1; flex-wrap: wrap; align-items: baseline; column-gap: 6px; min-width: 0; overflow: hidden; color: var(--ink); font-size: 13px; font-weight: 500; white-space: nowrap; }
+html.shell2 .shell-catalog-name { display: flex; flex: 1; flex-wrap: wrap; align-items: baseline; column-gap: 6px; min-width: 0; color: var(--ink); font-size: 13px; font-weight: 500; white-space: normal; overflow-wrap: anywhere; line-height: 1.35; }
 /* Keep the read action's full label visible on a phone, including with enlarged text. */
 html.shell2 .shell-catalog-row[data-row="read-progress"] .shell-catalog-name { white-space: normal; line-height: 1.3; }
 html.shell2 .shell-aka { min-width: 0; max-width: 100%; overflow: hidden; color: var(--muted); font-size: 11px; font-weight: 400; text-overflow: ellipsis; }
-html.shell2 .shell-catalog-lives { flex: none; color: var(--muted); font-size: 11px; }
+html.shell2 .shell-catalog-lives { flex: none; color: var(--muted); font-size: 11px; white-space: normal; line-height: 1.35; }
+html.shell2 .shell-catalog-row > .shell-catalog-lives { max-width: 40%; text-align: right; }
 html.shell2 .shell-catalog-core { flex: none; width: 36px; color: var(--muted); font-size: 11px; text-align: right; }
 html.shell2 .shell-switch {
   position: relative; flex: none; width: 36px; height: 22px; padding: 0; border: 0; border-radius: 11px; background: var(--surface-3);
@@ -307,7 +311,16 @@ html.shell2 .brick-view { max-width: none; margin: 0; padding: 0; }
    the rail are fixed to the window, so they stay where they are. */
 html.shell2 .app.shell { margin-right: var(--room-right, 0px); }
 /* The Palace and other pages that scroll: clear of the corners at the top and the stage at the bottom. */
-html.shell2 .palace { padding-top: 76px; padding-bottom: 180px; }
+/* Pictures scroll above the measured dock AND Back, which sits one corner gap above it. The 40px pill
+   is the taller desktop Back (36px on phones); keep an edge of breathing room and the bottom safe area.
+   Use the same clearance for the page's end and native scrollIntoView/keyboard navigation. */
+html.shell2[data-view="palace"] {
+  --palace-clearance: calc(var(--dock-height, 120px) + var(--shell-corner-gap) + 40px + var(--shell-edge) + env(safe-area-inset-bottom, 0px));
+  scroll-padding-top: 96px;
+  scroll-padding-bottom: var(--palace-clearance);
+}
+html.shell2 .palace { padding-top: 76px; padding-bottom: max(180px, var(--palace-clearance)); }
+html.shell2 .palace-tile { scroll-margin: var(--shell-corner-gap) 0; }
 html.shell2 .palace-intro h1 { font-family: inherit; font-size: 24px; font-weight: 600; letter-spacing: -.01em; }
 html.shell2 .palace-eyebrow { font-size: 11px; }
 
@@ -379,7 +392,23 @@ html.shell2 .capture-item button { margin-left: 8px; min-height: 44px; }
 html.shell2 .capture-placed { padding: 6px 10px; border-radius: 8px; background: var(--card); font-size: 12px; }
 html.shell2 .capture-placed p { white-space: pre-wrap; overflow-wrap: anywhere; }
 html.shell2 .sample-recovery-actions { position: fixed; top: 68px; left: 16px; z-index: 12; display: flex; gap: 8px; }
-html.shell2 .keyless-help { margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); font-size: 13px; }
+html.shell2 .sample-recovery-actions .shell-btn { min-height: 40px; border-radius: 20px; }
+html.shell2 .return-receipt { padding: 12px 16px; border-radius: 14px; font-size: 14px; line-height: 1.45; }
+.return-receipt-head { display: flex; align-items: center; gap: 12px; }
+.return-receipt-head p { flex: 1; min-width: 0; font-weight: 600; }
+.return-receipt-head button { flex: none; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: inherit; font: inherit; font-size: 22px; cursor: pointer; }
+.return-receipt-head button:hover { background: var(--surface-3); }
+.return-receipt-head button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+html.shell2 .return-receipt blockquote { margin: 4px 0; color: var(--ink-2); }
+
+@media (max-width: 560px) {
+  html.shell2 .shell-catalog-row { min-height: 44px; }
+  html.shell2 .shell-switch { width: 44px; height: 44px; border-radius: 12px; background: transparent; box-shadow: none; }
+  html.shell2 .shell-switch::before { content: ""; position: absolute; inset: 11px 4px; border-radius: 11px; background: var(--surface-3); box-shadow: inset 0 0 0 1px var(--line-2); }
+  html.shell2 .shell-switch.shell-on { background: transparent; box-shadow: none; }
+  html.shell2 .shell-switch.shell-on::before { background: var(--blue); box-shadow: none; }
+  html.shell2 .shell-switch i { top: 14px; left: 7px; }
+}
 
 /* Phone reading comparison is contained above the measured stage; it never moves the composer. */
 html.shell2 .spine-phone-compare .phone-controls { top: 68px; }
@@ -389,3 +418,26 @@ html.shell2 .spine-phone-compare .inline-phone { touch-action: pan-y; }
 html.shell2 .canvas-tool .shell-composer { margin: 12px; width: auto; max-width: calc(100% - 24px); }
 html.shell2 .canvas-tool .shell-composer textarea { min-width: 0; width: 100%; }
 html.shell2 .canvas-tool .shell-composer-big { flex-wrap: wrap; }
+
+/* The lower controls have their own band. The conversation lens keeps its existing layout. */
+html.shell2 .spine-frame:not([data-lens]) .spine-flow {
+  clip-path: inset(0 0 var(--shell-content-bottom, var(--dock-height, 120px)) 0);
+  mask-image: linear-gradient(to bottom, transparent, #000 18px, #000 calc(100% - var(--shell-content-bottom, 120px) - 20px), transparent calc(100% - var(--shell-content-bottom, 120px)));
+}
+/* The gallery scrolls above Back to the Canvas, its captions clear of the control. */
+html.shell2[data-view="palace"], html.shell2[data-view="palace"] body { overflow: hidden; }
+html.shell2 .palace {
+  position: fixed; top: 76px; bottom: var(--shell-content-bottom, 220px); left: 50%; translate: -50% 0;
+  width: 100%; padding-top: 8px; padding-bottom: 28px; overflow-y: auto; overscroll-behavior: contain;
+}
+html.shell2 .shell-tabpanel:has(.shell-settings) {
+  margin-bottom: 12px; padding-bottom: 32px;
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent);
+}
+html.shell2 .ai-setup { width: min(480px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); padding: 24px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+html.shell2 .ai-setup::backdrop { background: #0007; }
+html.shell2 .ai-setup h2 { margin: 0 0 16px; font-size: 24px; }
+html.shell2 .ai-setup :is(p, li) { font-size: 15px; line-height: 1.5; }
+html.shell2 .ai-setup ol { padding-left: 22px; }
+html.shell2 .ai-setup li + li { margin-top: 12px; }
+html.shell2 .ai-setup .shell-btn { min-height: 44px; }

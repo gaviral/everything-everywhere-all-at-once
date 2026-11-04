@@ -1,11 +1,19 @@
 // A browser-only projection: routing and the journal stay untouched. Classification changes links, never the turns'
-// order or positions. In particular, an unplaced turn already has its place before its topics are known.
+// order. Shortcut rows reserve their full label height before later turns are placed.
 import { turnsOf } from "../contract";
 import { G, SPINE_LOOK, whoIs, type Item, type Layout, type LayoutInput } from "./layout";
 import { wrap } from "./measure";
 
 export const CONVERSATION = "conversation:all";
 export const C = { speaker: 22, status: 22, links: 44, gap: 16, topicX: 348, topicW: 256, member: 60, pad: 12 } as const;
+
+/** Full-width shortcuts share the browser's 13 px font and 18 px line; include border and padding.
+ *  Reserve the same space in the canvas that the buttons occupy, including a reply shortcut. */
+export const topicShortcutHeight = (label: string) => Math.max(C.links, wrap(label, "small", G.textW - 18, Infinity).length * 18 + 18);
+export function turnTopicsHeight(memberships: readonly { title: string }[], replyTo?: string): number {
+  const labels = [...(replyTo ? ["↖ Reply to"] : []), ...memberships.map(topic => `↗ ${topic.title}`)];
+  return labels.length ? labels.reduce((height, label) => height + topicShortcutHeight(label), 0) + (labels.length - 1) * 6 : C.links;
+}
 
 export function conversationLayout(input: LayoutInput): Layout {
   const turns = turnsOf(input.thoughts, input.threads);
@@ -29,7 +37,8 @@ export function conversationLayout(input: LayoutInput): Layout {
     const memberships = [...new Set(parts.filter((part) => part.placed).map((part) => part.thread_id))]
       .flatMap((id) => { const thread = id && threadById.get(id); return thread ? [{ thread: thread.id, title: thread.title }] : []; });
     const pauseHeight = parts.reduce((height, part) => height + (input.paused?.get(part.id) ?? 0), 0) * 44;
-    const h = C.speaker + lines.length * G.pointLine + C.status + C.links + pauseHeight;
+    const replyTo = turn.note ? pointForThought.get(turn.note.thoughtId) : undefined;
+    const h = C.speaker + lines.length * G.pointLine + C.status + turnTopicsHeight(memberships, replyTo) + pauseHeight;
     let offset = 0;
     const fixes = parts.flatMap((thought) => {
       const at = thought.unclear ? thought.text.trim().toLocaleLowerCase().indexOf(thought.unclear.toLocaleLowerCase()) : -1;
@@ -41,7 +50,7 @@ export function conversationLayout(input: LayoutInput): Layout {
       topic: CONVERSATION, box: { x: 0, y, w: G.colW, h }, pinned: false, depth: 0, text, shown: text, lines, look: SPINE_LOOK,
       thoughts: parts.map((part) => part.id), at: turn.at, who: whoIs(turn.speaker, input.me ?? "you", input.speakers), fixes,
       decided: parts.some((part) => part.decided), left: parts.at(-1)!.placed && !parts.at(-1)!.complete, memberships,
-      replyTo: turn.note ? pointForThought.get(turn.note.thoughtId) : undefined };
+      replyTo };
     items.push(item);
     links.push({ key: `chronology:${turn.key}`, kind: "spine", from: previous,
       to: { key: item.key, dx: G.lineX, dy: C.speaker + G.dotY }, topic: CONVERSATION });

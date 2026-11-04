@@ -1,5 +1,8 @@
+import { connectReplyFormat, receiveReplyFormat, resetReplyFormat, stopReplyFormat } from "./ReplyFormat";
 import { builtInOn, watchBuiltIns, setHelpersAvailable, featureAvailable } from "./shell/features";
-import { switchBrick } from "./bricks-core";
+import { switchBrick, useBricksOn, isOn } from "./bricks-core";
+import { voicePolicy } from "./talk/call-core";
+import type { VoiceAlias, AliasRequest, AliasResult } from "./bricks/contract";
 import { ignorePartner } from "./partner";
 import { noticeCommand, useNoticeQueue } from "./notice-queue";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -13,6 +16,8 @@ import { receiveRoute, resetRoute, routePlacing } from "./route";
 import { receiveGuide } from "./guide-core";
 import { receiveJob, resetJobs, type JobMsg } from "./work-jobs";
 import { applyAppChange, isAppChange, useApps, type AppChange, type AppsServerMsg, type AppsWorld } from "./apps-core";
+import { recipeOf } from "./bricks/app-recipes/rules";
+import type { RecipeSave, RecipeResult } from "./apps-core";
 import { received, volumeReporter } from "./apps-audio";
 import { isDefaultRecap, recapFallback, useRecap, type RecapData, type RecapPeriod, type RecapServerMsg } from "./Recap";
 import { coreBack } from "./pictures";
@@ -167,8 +172,14 @@ export interface ImportStatus {
   note: string;
 }
 
+export type Question = { id: string; owner: string; question: string; thought_id: string | null; answer: string; status: "open" | "answered" | "archived"; revision: number; updated_ms: number };
+export type QuestionInput = { id: string; text: string; thought_id: string | null; answer: string; status: Question["status"]; expected_revision: number };
+export type QuestionResult = { id: string; revision: number; ok: boolean; error?: string };
 export interface World extends AppsWorld {
   action_estimates?: ActionEstimate[];
+  questions?: Question[];
+  point_edits?: readonly PointEdit[];
+  aliases?: VoiceAlias[];
   pauses?: Pause[];
   recaps: RecapData[];
   threads: Thread[];
@@ -198,6 +209,8 @@ export interface World extends AppsWorld {
 
 type Change =
   | { type: "action_estimate_set"; estimate: ActionEstimate }
+  | { type: "question_saved"; question: Question }
+  | { type: "alias_changed"; alias: VoiceAlias; request_id: string; signature: string }
   | { type: "caption_added"; caption: import("./talk/call-core").Caption }
   | {type:"paused";pause:Pause}
   | {type:"pause_resolved";id:string;by_thought:string}
@@ -227,6 +240,7 @@ type Change =
   | { type: "put_back"; id: string; before: string }
   | { type: "thought_decided"; thought_id: string; decided: boolean }
   | { type: "thought_noted"; thought_id: string; note: Note }
+  | { type: "point_edited"; request_id: string; thought_id: string; old_point: string; new_point: string; actor: string; undo_of?: string }
   | { type: "thought_repointed"; thought_id: string; point: string }
   | { type: "thread_removed"; thread_id: string }
   | { type: "thread_touched"; thread_id: string; last_point: string; at_ms: number }
@@ -266,6 +280,8 @@ export type Capture = { id: string; text: string; thought_ids: string[]; saved: 
 
 type ServerMsg =
   | ({ type: "action_estimate_result" } & EstimateResult)
+  | ({ type: "question_result" } & QuestionResult)
+  | ({ type: "alias_result"; window: number } & AliasResult)
   | { type: "returned"; request_id: string | null; anchor: ReturnAnchor | null; message: string }
   | { type: "capture_saved"; capture: { id: string; text: string; thought_ids: string[] }; replay: boolean }
   | { type: "helpers_available" }
@@ -273,6 +289,7 @@ type ServerMsg =
   | { type: "heartbeat"; id: string }
   | { type: "recoverable_speech"; id: string; text: string }
   | { type: "command_reply"; text: string; speak?: boolean }
+  | TextEditResult
   | { type: "partner_state"; state: string; message: string }
   | { type: "text_received"; id: string }
   | JobMsg
@@ -403,7 +420,7 @@ export function jumpTracker() {
   };
 }
 
-const EMPTY: World = { captions: [], recaps: [], threads: [], thoughts: [], active: null, active_by: {}, suggestions: [], actions: [], merged: {}, proposals: [], apps: [], apps_seeded: false };
+const EMPTY: World = { questions: [], captions: [], recaps: [], threads: [], thoughts: [], active: null, active_by: {}, suggestions: [], actions: [], merged: {}, proposals: [], apps: [], apps_seeded: false };
 
 // Replaces the first whole-word match of `from` in `text` with `to`, as the core does. Ignores case only
 // when lowercasing keeps the length, so the cut lines up.
@@ -431,10 +448,19 @@ export function apply(world: World, raw: Change): World {
   if (raw.type === "anchored") return applyAnchored(world, raw);
   // By the ids as given, as the core's: a topic names a thread on the map, never one merged away.
   if (isTopicChange(raw)) return applyTopic(world, raw);
-  return keepPlaced(applyChange(world, raw));
+  const next = keepPlaced(applyChange(world, raw));
+  if (!next.aliases) return next;
+  const missing = (alias: VoiceAlias) => alias.target.kind === "open_topic" && !alias.unavailable && !next.threads.some(t => t.id === (alias.target as {topic_id: string}).topic_id);
+  if (!next.aliases.some(missing)) return next;
+  return { ...next, aliases: next.aliases.map(alias => missing(alias) ? { ...alias, enabled: false, unavailable: true, revision: alias.revision + 1 } : alias) };
 }
 
 function applyChange(world: World, raw: Exclude<Change, PositionChange | AnchoredChange | TopicChange>): World {
+  if (raw.type === "alias_changed") {
+    const old = world.aliases?.find(a => a.id === raw.alias.id && a.owner === raw.alias.owner);
+    if (old && old.revision >= raw.alias.revision) return world;
+    return { ...world, aliases: old ? world.aliases!.map(a => a === old ? raw.alias : a) : [...(world.aliases ?? []), raw.alias] };
+  }
   if (isAppChange(raw)) return applyAppChange(world, raw);
   if (raw.type === "thread_retitled" || raw.type === "title_chosen" || raw.type === "thread_unmerged" || raw.type === "tidy_proposed") return applyTidy(world, raw) ?? world;
   if (raw.type === "thought_moved") return applyMove(world, raw);
@@ -461,6 +487,10 @@ function applyChange(world: World, raw: Exclude<Change, PositionChange | Anchore
     threads: world.threads.map((t) => (t.id === id ? edit({ ...t, tags: t.tags ?? [] }) : t)),
   });
   switch (c.type) {
+    case "question_saved": {
+      const questions = world.questions ?? [];
+      return { ...world, questions: questions.some(q => q.id === c.question.id) ? questions.map(q => q.id === c.question.id ? c.question : q) : [...questions, c.question] };
+    }
     case "caption_added":
       return world.captions?.some((old) => old.id === c.caption.id && old.by === c.caption.by) ? world
         : { ...world, captions: [...(world.captions ?? []), c.caption] };
@@ -565,6 +595,14 @@ function applyChange(world: World, raw: Exclude<Change, PositionChange | Anchore
       if (!c.note.continues && !c.note.assumed && !c.note.why) delete notes[c.thought_id];
       else if (world.thoughts.some((t) => t.id === c.thought_id)) notes[c.thought_id] = c.note;
       return { ...world, notes };
+    }
+    case "point_edited": {
+      const thought = world.thoughts.find(t => t.id === c.thought_id && t.placed && t.point === c.old_point);
+      if (!thought) return world;
+      const latest = world.thoughts.filter(t => t.placed && t.thread_id === thought.thread_id).reduce<Thought | undefined>((last, t) => !last || t.at_ms >= last.at_ms ? t : last, undefined);
+      const { type: _type, ...receipt } = c;
+      return { ...world, point_edits: world.point_edits?.some(e => e.actor === c.actor && e.request_id === c.request_id) ? world.point_edits : [...(world.point_edits ?? []), receipt], thoughts: world.thoughts.map(t => t.id === c.thought_id ? { ...t, point: c.new_point } : t),
+        threads: world.threads.map(t => t.id === thought.thread_id && latest?.id === thought.id ? { ...t, last_point: c.new_point } : t) };
     }
     case "thought_repointed":
       return repoint(world, c.thought_id, () => c.point);
@@ -732,6 +770,14 @@ export function movesAsked(speaker?: string) {
 /** The stream a tab stops still ends within this (asr.rs waits at most 3.8 s for the voice service). */
 const MIC_TAIL_MS = 4_000;
 
+export type PointEdit = { request_id: string; thought_id: string; old_point: string; new_point: string; actor: string; undo_of?: string };
+export type TextEditResult =
+  | { type: "point_proposal"; request_id: string; thought_id: string; text: string; failed: boolean }
+  | { type: "point_edit_result"; request_id: string; thought_id: string; ok: boolean; message: string };
+export type TextEditRequest =
+  | { type: "shorter_point"; request_id: string; thought_id: string; observed: string }
+  | { type: "edit_point"; request_id: string; thought_id: string; observed: string; replacement: string; undo_of?: string };
+
 export function useCore(speaker?: string) {
   const estimatesOn = useRef(false);
   const estimateWaits = useRef(new Map<string, { resolve: (result: EstimateResult) => void; timer: ReturnType<typeof setTimeout> }>());
@@ -739,6 +785,9 @@ export function useCore(speaker?: string) {
     for (const [request_id, wait] of estimateWaits.current) { clearTimeout(wait.timer); wait.resolve({ request_id, ok: false, message, estimate: null }); }
     estimateWaits.current.clear();
   };
+  const aliasesOn = useRef(false);
+  const aliasWaiting = useRef(new Map<string, (answer: AliasResult) => void>());
+  const aliasFail = (message: string) => { for (const [request_id, resolve] of aliasWaiting.current) resolve({request_id, ok:false, message}); aliasWaiting.current.clear(); };
   const recap = useRecap();
   const receiveRecap = recap.receive;
   const recapDisconnected = recap.disconnected;
@@ -747,6 +796,7 @@ export function useCore(speaker?: string) {
   const receiveApps = apps.receive;
   const resetApps = apps.reset;
   const [world, setWorld] = useState<World>(EMPTY);
+  const questionWaiters = useRef(new Map<string, { revision: number; create: boolean; input: QuestionInput; receive: (result: QuestionResult) => void }>());
   const [snapshotRevision, setSnapshotRevision] = useState(0);
   const [usage, setUsage] = useState<UsageSnapshot | null>(null);
   const { queue: noticeQueue, current: currentNotice } = useNoticeQueue();
@@ -810,6 +860,7 @@ export function useCore(speaker?: string) {
   // What "this" means here, as last told; told again on every connection, since the core forgets it (this-card.ts).
   const attention = useRef(attentionTeller());
   const [found, setFound] = useState<Found | null>(null);
+  const [textEditResult, setTextEditResult] = useState<TextEditResult | null>(null);
   const [returnResult, setReturnResult] = useState<ReturnResult | null>(null);
   const exactFound = useRef<{thread: string; thought: string} | null>(null);
   const [viewAsk, setViewAsk] = useState<ViewAsk | null>(null);
@@ -864,6 +915,23 @@ export function useCore(speaker?: string) {
   // The note card: what "save this thread as a note" wrote, or would have (note-card.ts).
   const noteCard = currentNotice?.kind === "note" ? currentNotice.value : null;
   const socket = useRef<WebSocket | null>(null);
+  const recipeOptedSocket = useRef<WebSocket | null>(null);
+  const recipesOn = useBricksOn().has("app-recipes");
+  const recipePending = useRef(new Map<string, { resolve: (r: RecipeResult) => void; timer: number }>());
+  const endRecipes = useCallback((message: string) => {
+    for (const [request_id, pending] of recipePending.current) { window.clearTimeout(pending.timer); pending.resolve({ request_id, app_id: null, message }); }
+    recipePending.current.clear();
+  }, []);
+  useEffect(() => {
+    const ws = socket.current;
+    if (ws?.readyState === WebSocket.OPEN && recipesOn && recipeOptedSocket.current !== ws) {
+      ws.send(JSON.stringify({ type: "recipes_switch", on: true })); recipeOptedSocket.current = ws;
+    } else if (!recipesOn && ws && recipeOptedSocket.current === ws) {
+      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "recipes_switch", on: false }));
+      recipeOptedSocket.current = null;
+    }
+    if (!recipesOn) endRecipes("App recipes is off. Draft kept.");
+  }, [recipesOn, connected, endRecipes]);
   // A message card's Stop pressed while the connection was down: the next connection carries it (`open`).
   const stopWaiting = useRef<number | null>(null);
 
@@ -883,6 +951,16 @@ export function useCore(speaker?: string) {
       if (featureAvailable("helpers") && socket.current?.readyState === WebSocket.OPEN) socket.current.send(JSON.stringify({ type: "helpers_switch", on: builtInOn("helpers") }));
     };
     const unwatchHelpers = watchBuiltIns(helpersPreference);
+    let formatOn: boolean | undefined;
+    const formatPreference = () => {
+      const next = builtInOn("reply-format") && builtInOn("partner");
+      if (!next && formatOn) stopReplyFormat();
+      if (socket.current?.readyState !== WebSocket.OPEN || next === formatOn) return;
+      formatOn = next;
+      socket.current.send(JSON.stringify({ type: "reply_format", on: next }));
+    };
+    // Room's existing partner handler runs first; this operation never enables partner on its own.
+    const unwatchFormat = watchBuiltIns(() => { if (formatOn && (!builtInOn("reply-format") || !builtInOn("partner"))) stopReplyFormat(); queueMicrotask(formatPreference); });
     const shownSwarms = new Set<string>();
     const asked = movesAsked(speaker);
 
@@ -898,6 +976,11 @@ export function useCore(speaker?: string) {
       const heartbeatId = thoughtId();
       let lastReply = Date.now();
       ws.onopen = () => {
+        ws.send(JSON.stringify({type:"voice_shortcuts",on:aliasesOn.current}));
+        if (isOn("app-recipes")) { ws.send(JSON.stringify({ type: "recipes_switch", on: true })); recipeOptedSocket.current = ws; }
+        formatOn = undefined;
+        connectReplyFormat(message => { if (ws.readyState !== WebSocket.OPEN || ended) return false; ws.send(JSON.stringify(message)); return true; });
+        formatPreference();
         noticeQueue.reset("note");
         if (estimatesOn.current) ws.send(JSON.stringify({ type: "action_estimates", on: true }));
         resetApps();
@@ -905,6 +988,7 @@ export function useCore(speaker?: string) {
         resetRoute();
         setHelpersAvailable(false);
         setConnected(true);
+        if (builtInOn("review-text-edits")) ws.send(JSON.stringify({ type: "review_text_edits", on: true }));
         retry = 500;
         cardTold = null;
         // One pressed while this connection was still opening goes now, ahead of everything else.
@@ -930,7 +1014,25 @@ export function useCore(speaker?: string) {
       ws.onmessage = (event) => {
         if (socket.current !== ws || ended) return;
         if (ignorePartner(event.data)) return;
-        const msg = JSON.parse(event.data as string) as ServerMsg;
+        const incoming = JSON.parse(event.data as string);
+        if (incoming.type === "recipe_result") {
+          if (!isOn("app-recipes")) return;
+          const pending = recipePending.current.get(incoming.request_id);
+          if (pending) { window.clearTimeout(pending.timer); recipePending.current.delete(incoming.request_id); pending.resolve(incoming); }
+          return;
+        }
+        const msg = incoming as ServerMsg;
+        if (receiveReplyFormat(incoming)) return;
+        if (msg.type === "question_result") {
+          const waiter = questionWaiters.current.get(msg.id);
+          const matching = waiter && currentWorld.questions?.some(q => q.id === msg.id && q.revision === msg.revision
+            && q.question === waiter.input.text && q.answer === waiter.input.answer && q.status === waiter.input.status && q.thought_id === waiter.input.thought_id);
+          if (waiter && (!msg.ok || (matching && (msg.revision === waiter.revision || (waiter.create && msg.revision > 0))))) {
+            questionWaiters.current.delete(msg.id);
+            waiter.receive(msg);
+          }
+          return;
+        }
         // In the same update as the move, so the map follows you there (App.tsx doesn't while Recap is open).
         if (asked(currentWorld, msg)) closeRecap();
         if (receiveRecap(msg)) return;
@@ -950,6 +1052,14 @@ export function useCore(speaker?: string) {
             if (!estimatesOn.current) break;
             const wait = estimateWaits.current.get(msg.request_id);
             if (wait) { clearTimeout(wait.timer); estimateWaits.current.delete(msg.request_id); wait.resolve(msg); }
+            break;
+          }
+          case "point_proposal":
+          case "point_edit_result":
+            if (builtInOn("review-text-edits")) setTextEditResult(msg);
+            break;
+          case "alias_result": {
+            if (aliasesOn.current) { aliasWaiting.current.get(msg.request_id)?.(msg); aliasWaiting.current.delete(msg.request_id); }
             break;
           }
           case "returned": {
@@ -1173,8 +1283,14 @@ export function useCore(speaker?: string) {
       };
       ws.onclose = () => {
         failEstimateWaits("Save unconfirmed: connection lost. Your draft is kept; retry explicitly.");
+        for (const [id, waiter] of questionWaiters.current) waiter.receive({ id, revision: 0, ok: false, error: "Disconnected before confirmation. Review the saved list after reconnecting. Nothing will retry automatically." });
+        questionWaiters.current.clear();
+        aliasFail("Connection lost. Draft kept. Retry explicitly when connected.");
         if (ended) return;
+        if (voicePolicy.snapshot().enabled) voicePolicy.end();
         ended = true;
+        connectReplyFormat(null);
+        resetReplyFormat();
         window.clearInterval(heartbeat);
         identityReady.current = false;
         setRecovery(state => ({ ...state, onlinePending: false }));
@@ -1193,6 +1309,7 @@ export function useCore(speaker?: string) {
         setPulls(NO_PULLS);
         recapDisconnected();
         setConnected(false);
+        endRecipes("Connection lost. Draft kept; retry explicitly.");
         localMic.current = false;
         micTail.current = 0;
         stopListeningStep();
@@ -1219,6 +1336,9 @@ export function useCore(speaker?: string) {
     return () => {
       window.removeEventListener("storage", storageChanged);
       unwatchHelpers();
+      unwatchFormat();
+      connectReplyFormat(null);
+      resetReplyFormat();
       closed = true;
       window.clearTimeout(timer);
       window.clearInterval(heartbeat);
@@ -1236,6 +1356,16 @@ export function useCore(speaker?: string) {
     socket.current.send(data);
     return true;
   }, []);
+  useEffect(() => {
+    let previous = builtInOn("review-text-edits");
+    return watchBuiltIns(() => {
+      const on = builtInOn("review-text-edits");
+      if (on === previous) return;
+      previous = on;
+      send(JSON.stringify({ type: "review_text_edits", on }));
+      if (!on) setTextEditResult(null);
+    });
+  }, [send]);
   const placeAt = useMemo(() => placeSender((data) => send(data)), [send]);
   const sendOrWarn = useCallback((data: string) => {
     if (send(data)) return true;
@@ -1302,6 +1432,38 @@ export function useCore(speaker?: string) {
         clearTimeout(timer); estimateWaits.current.delete(request.request_id); failed("Not connected. Your draft is kept; retry explicitly.");
       }
     }),
+    saveQuestion: (input: QuestionInput, receive: (result: QuestionResult) => void): boolean => {
+      const ws = socket.current;
+      if (!identityReady.current || ws?.readyState !== WebSocket.OPEN || questionWaiters.current.has(input.id)) return false;
+      questionWaiters.current.set(input.id, { revision: input.expected_revision + 1, create: input.expected_revision === 0, input, receive });
+      try { ws.send(JSON.stringify({ type: "save_question", ...input })); return true; }
+      catch { questionWaiters.current.delete(input.id); return false; }
+    },
+    textEditResult,
+    sendTextEdit: (message: TextEditRequest) => builtInOn("review-text-edits") && send(JSON.stringify(message)),
+    voiceShortcuts: (on: boolean) => {
+      aliasesOn.current = on;
+      if (!on) aliasFail("My voice shortcuts is off. Draft kept.");
+      send(JSON.stringify({type:"voice_shortcuts",on}));
+    },
+    voiceShortcut: (request: AliasRequest): Promise<AliasResult> => {
+      if (!aliasesOn.current) return Promise.resolve({request_id:request.request_id,ok:false,message:"My voice shortcuts is off."});
+      return new Promise(resolve => {
+        const timer = window.setTimeout(() => { aliasWaiting.current.delete(request.request_id); resolve({request_id:request.request_id,ok:false,message:"No save acknowledgement. Draft kept. Retry explicitly."}); }, 10000);
+        aliasWaiting.current.set(request.request_id, result => { window.clearTimeout(timer); resolve(result); });
+        if (!send(JSON.stringify({type:"alias_operation",...request}))) {
+          aliasWaiting.current.get(request.request_id)?.({request_id:request.request_id,ok:false,message:"Not connected. Draft kept. Retry explicitly."}); aliasWaiting.current.delete(request.request_id);
+        }
+      });
+    },
+    exportRecipe: (app: import("./apps-core").MiniApp) => JSON.stringify(recipeOf(app), null, 2),
+    saveRecipe: (save: RecipeSave): Promise<RecipeResult> => new Promise(resolve => {
+      if (!isOn("app-recipes") || socket.current?.readyState !== WebSocket.OPEN) { resolve({ request_id: save.request_id, app_id: null, message: "Not connected or App recipes is off. Draft kept." }); return; }
+      if (recipePending.current.has(save.request_id)) { resolve({ request_id: save.request_id, app_id: null, message: "Save already waiting for the core." }); return; }
+      const timer = window.setTimeout(() => { recipePending.current.delete(save.request_id); resolve({ request_id: save.request_id, app_id: null, message: "No save receipt. Draft kept; retry explicitly." }); }, 10000);
+      recipePending.current.set(save.request_id, { resolve, timer });
+      if (!send(JSON.stringify({ type: "save_recipe", save }))) endRecipes("Connection lost. Draft kept; retry explicitly.");
+    }),
     returnResult,
     clearReturn: () => setReturnResult(null),
     resumePause: (pause_id: string) => {
@@ -1310,6 +1472,7 @@ export function useCore(speaker?: string) {
     },
     pauseChoice: (pause_id: string, later: boolean) => send(JSON.stringify({type:"pause_choice",pause_id,later})),
     captures,
+    mapIdentity: mapId.current,
     retryCapture: (id: string) => {
       const capture = captures.find(capture => capture.id === id);
       if (!capture || !identityReady.current) return false;
@@ -1518,8 +1681,8 @@ export function useCore(speaker?: string) {
       }
       setWhys((w) => ({ ...w, [thought_id]: { text: "", failed: false, pending: true } }));
     }, [send]),
-    explain: (id: string, text: string, context: string, thread_id: string | null) =>
-      send(JSON.stringify({ type: "explain", id, text, context, thread_id })),
+    explain: (id: string, text: string, context: string, thread_id: string | null, reuse = false) =>
+      send(JSON.stringify({ type: "explain", id, text, context, thread_id, reuse })),
     // An "off" mark on an AI answer, or taking it back: the core journals it as a label for improving the prompt.
     mark: (kind: "explain" | "recap", id: string, off: boolean) => send(JSON.stringify({ type: "mark", kind, id, off })),
     importStatus,

@@ -14,6 +14,7 @@ import { dropHeld, useHeld } from "./held";
 import { KIND_NAMES, NAMES } from "./names";
 import { shown } from "../talk/call-core";
 import { Icon, Keycap, mod, modAria, Stamp, type Mode } from "./parts";
+import { SampleTools, type SampleToolsProps } from "./SampleTools";
 
 export { ToolSlot } from "../bricks/contract";
 
@@ -22,12 +23,12 @@ const cls = (...names: (string | false | null | undefined)[]) => names.filter(Bo
 // ── Top left ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** The wordmark, the map's name and its one stamp. */
-export function TopLeft({ mapName, mode, wordmark }: { mapName: string; mode: Mode | null; wordmark: boolean }) {
+export function TopLeft({ mapName, mode, wordmark, sampleTools }: { mapName: string; mode: Mode | null; wordmark: boolean; sampleTools?: SampleToolsProps }) {
   return <div className="shell-corner shell-tl" data-slot="top-left">
     <div className="shell-pill shell-identity">
       {wordmark && <><span className="shell-wordmark">{NAMES.wordmark}</span><span className="shell-sep" aria-hidden="true" /></>}
       <span className="shell-mapname">{mapName}</span>
-      <Stamp mode={mode} />
+      {sampleTools ? <><Stamp mode={mode === "sample" ? null : mode} /><SampleTools {...sampleTools} /></> : <Stamp mode={mode} />}
     </div>
   </div>;
 }
@@ -96,6 +97,7 @@ export function CornerButton({ icon, label, keyName, keyAria, pressed, onClick, 
 
 export type StatusState = {
   mic: MicState;
+  comparison?: boolean;
   /** Listening is switched off in the Catalog: typing only. */
   typingOnly: boolean;
   hosted: boolean;
@@ -127,7 +129,7 @@ export function micWords(s: StatusState): { dot: "on" | "off" | "wait" | "warn";
   if (s.typingOnly && s.mic !== "listening" && s.mic !== "hearing" && s.mic !== "reply-paused" && s.mic !== "capturing") return { dot: "off", text: "Typing only" };
   switch (s.mic) {
     case "capturing": return { dot: "on", text: "Mic open · connecting speech…" };
-    case "reply-paused": return { dot: "on", text: "Mic open · capture paused during reply" };
+    case "reply-paused": return { dot: "on", text: s.comparison ? "Mic paused · Speaking · microphone open" : "Mic open · capture paused during reply" };
     case "failed": return { dot: "warn", text: "Mic stopped · retry or type" };
     case "offline": return { dot: "wait", text: "Connecting…" };
     case "starting": return { dot: "wait", text: "Starting the mic…" };
@@ -196,9 +198,16 @@ export function HeldStack({ answerFallback, phone }: { answerFallback: () => voi
   useEffect(() => {
     // Supplied cards own their state and removal. Handle their keys before the shell's default Later removes one.
     const key = (event: KeyboardEvent) => {
-      if (top?.content == null || event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || event.repeat || document.querySelector("dialog[open]")) return;
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || event.repeat || document.querySelector("dialog[open]")) return;
       const target = event.target;
       if (target instanceof Element && target.closest("input, textarea, select, [contenteditable]")) return;
+      if (top && phone && !open && event.key.toLowerCase() === "l") {
+        setOpen(true);
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      if (top?.content == null) return;
       if (event.key.toLowerCase() === "l") top.later?.();
       else if (event.key === "Enter" && !event.shiftKey && !(phone && !open) &&
         (!target || target === document.body || target === document.documentElement)) top.answer?.();
@@ -212,7 +221,7 @@ export function HeldStack({ answerFallback, phone }: { answerFallback: () => voi
   if (!held.length) return null;
   const more = held.length - 1;
   if (phone && !open) return <div className="shell-held-chip-row" data-slot="held">
-    <button type="button" className="shell-held-chip" onClick={() => setOpen(true)} aria-expanded={false} aria-keyshortcuts="L" title={NAMES.held.label}>
+    <button type="button" className="shell-held-chip" onClick={() => setOpen(true)} aria-label={`${NAMES.held.label}: ${held.length} waiting`} aria-expanded={false} aria-keyshortcuts="L" title={NAMES.held.label}>
       {NAMES.held.label.split(" ")[0]} <span className="shell-count">{held.length}</span>
     </button>
   </div>;
@@ -235,7 +244,7 @@ export function HeldStack({ answerFallback, phone }: { answerFallback: () => voi
     {more > 0 && <button type="button" className="guide-held-more" aria-expanded={all} onClick={() => setAll(!all)}>
       {all ? "Just the next" : <><b>{more}</b> more held</>}
     </button>}
-    {phone && <button type="button" className="shell-held-chip" aria-expanded={open} onClick={() => setOpen(false)}>
+    {phone && <button type="button" className="shell-held-chip" aria-label={`${NAMES.held.label}: ${held.length} waiting`} aria-expanded={open} onClick={() => setOpen(false)}>
       {NAMES.held.label.split(" ")[0]} <span className="shell-count">{held.length}</span>
     </button>}
   </section>;
@@ -281,12 +290,15 @@ const ago = (time: number, now: number) => {
   return hours < 24 ? `${hours} hr` : `${Math.floor(hours / 24)} d`;
 };
 
-export const HistoryTab = memo(function HistoryTab({ entries, undoId, now, recap, onUndo, onShow, inspectAction }: {
+export const HistoryTab = memo(function HistoryTab({ onSetup, setupText, entries, undoId, now, recap, onUndo, onShow, inspectAction }: {
+  onSetup?: () => void; setupText?: string;
   entries: Entry[]; undoId: number | null; now: number; recap: (() => void) | null;
   onUndo: (entry: Entry) => void; onShow: (threadId: string) => void;
   inspectAction?: (threadId: string) => ReactNode;
 }) {
   return <div className="shell-history">
+    {onSetup && <button type="button" className="shell-row-button" aria-keyshortcuts="Enter" onClick={onSetup}>Set up AI</button>}
+    {onSetup && setupText && !entries.some(entry => entry.text === setupText) && <p className="shell-foot">{setupText}</p>}
     {recap && <button type="button" className="shell-row-button" onClick={recap} aria-keyshortcuts="R">
       <Icon name="recap" /><span>{NAMES.recap} this session</span><Keycap>R</Keycap>
     </button>}
@@ -310,11 +322,12 @@ export const HistoryTab = memo(function HistoryTab({ entries, undoId, now, recap
 // ── Catalog ──────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export type CatalogRow = { id: string; kind: BrickKind | "app"; name: string; aka?: string; does: string; lives?: string; on: boolean; core: boolean;
-  toggle?: (on: boolean) => void; disabled?: boolean; parts?: ReactNode; /** A view that's on: shows it. */ show?: () => void };
+  savedOn?: boolean;
+  toggle?: (on: boolean) => void; disabled?: boolean; disabledReason?: string; parts?: ReactNode; /** A view that's on: shows it. */ show?: () => void };
 
 /** One short page: a row per feature, grouped by kind, each with its switch (the core's: on, built in). Arrows move
  *  between the switches; Space switches the one focused. */
-export const CatalogTab = memo(function CatalogTab({ rows, at }: { rows: CatalogRow[]; at: string | null }) {
+export const CatalogTab = memo(function CatalogTab({ rows, at, header }: { rows: CatalogRow[]; at: string | null; header?: ReactNode }) {
   const list = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     if (!at) return;
@@ -333,15 +346,19 @@ export const CatalogTab = memo(function CatalogTab({ rows, at }: { rows: Catalog
     switches[Math.max(0, Math.min(switches.length - 1, i + (event.key === "ArrowDown" ? 1 : -1)))]?.focus();
   };
   return <div ref={list} className="shell-catalog" onKeyDown={arrows} data-key="↑ ↓ Space">
+    {header}
     <p className="shell-lead">{NAMES.catalogTab.lead(on, rows.length)}</p>
     {kinds.filter((kind) => rows.some((r) => r.kind === kind)).map((kind) => <section key={kind} className="shell-catalog-group" aria-label={KIND_NAMES[kind]}>
       <h3>{KIND_NAMES[kind]}</h3>
       <ul>{rows.filter((r) => r.kind === kind).map((row) => <li key={row.id} className={cls("shell-catalog-row", row.id === at && "shell-at")} data-row={row.id} title={row.does}>
-        <span className="shell-catalog-name">{row.name}{row.aka && <span className="shell-aka">{row.aka}</span>}</span>
+        <span className="shell-catalog-name" style={row.disabledReason ? { whiteSpace: "normal", overflow: "visible" } : undefined}>
+          {row.name}{row.aka && <span className="shell-aka">{row.aka}</span>}
+          {row.disabledReason && <span id={`reason-${row.id}`} className="shell-catalog-lives" style={{ flexBasis: "100%", whiteSpace: "normal" }}>{row.disabledReason}</span>}
+        </span>
         {row.show ? <button type="button" className="shell-link" onClick={row.show} aria-keyshortcuts="Enter">{NAMES.show}</button>
           : row.lives && <span className="shell-catalog-lives">{row.lives}</span>}
         {row.core ? <span className="shell-catalog-core">{NAMES.catalogTab.core}</span>
-          : <button type="button" role="switch" aria-checked={row.on} aria-label={row.name} aria-describedby={`does-${row.id}`} disabled={row.disabled}
+          : <button type="button" role="switch" aria-checked={row.on} aria-label={row.name} aria-describedby={`does-${row.id}${row.disabledReason ? ` reason-${row.id}` : ""}`} disabled={row.disabled}
             className={cls("shell-switch", row.on && "shell-on")} onClick={() => row.toggle?.(!row.on)}><i aria-hidden="true" /></button>}
         <span id={`does-${row.id}`} className="sr-only">{row.does}</span>
         {row.parts}
@@ -374,7 +391,7 @@ export const TalkTurns = memo(function TalkTurns({ thoughts, me, ai }: { thought
 export function SettingsTab({ say, keys }: { say: ReactNode; keys: [string, string][] }) {
   return <div className="shell-settings">
     <h3>{NAMES.settings.keys}</h3>
-    <dl className="shell-keys">{keys.map(([key, what]) => <div key={key + what}><dt><Keycap>{key}</Keycap></dt><dd>{what}</dd></div>)}</dl>
+    <dl className="shell-keys">{keys.map(([key, what]) => <div key={key + what}><dt><kbd className="keycap">{key}</kbd></dt><dd>{what}</dd></div>)}</dl>
     <h3>{NAMES.settings.say}</h3>
     <div className="shell-say">{say}</div>
   </div>;
@@ -382,10 +399,11 @@ export function SettingsTab({ say, keys }: { say: ReactNode; keys: [string, stri
 
 // ── First open: an empty map ─────────────────────────────────────────────────────────────────────────────────────────
 
-export function Welcome({ models, sample }: { models: string; sample: ReactNode }) {
+export function Welcome({ models, sample, onSetup }: { models: string; sample: ReactNode; onSetup?: () => void }) {
   return <section className="shell-welcome" aria-labelledby="shell-welcome-title">
     <h1 id="shell-welcome-title">Think out loud.<br />Keep your place.</h1>
-    <p className="shell-welcome-how">Talk or type, in any order. Each thought lands on its own topic a few seconds after you stop. Lost your place? Say “where was I?”</p>
+    {onSetup ? <p className="shell-welcome-how">This copy has no AI key. Explore an example or save typed thoughts. <button type="button" className="shell-link" aria-keyshortcuts="Enter" onClick={onSetup}>Set up AI</button> for listening, automatic placement and Recap.</p>
+      : <p className="shell-welcome-how">Talk or type, in any order. Each thought lands on its own topic a few seconds after you stop. Lost your place? Say “where was I?”</p>}
     {sample}
     {models && <p className="shell-welcome-models">{models}</p>}
   </section>;

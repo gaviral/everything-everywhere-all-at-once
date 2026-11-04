@@ -28,7 +28,7 @@ try {
   fine.state = { broken: false };
   assert.equal(ReactDOMServer.renderToStaticMarkup(fine.render()), "<p>the map</p>");
   // The map's page and the phone's Remote (?remote) are both behind the one boundary, in the room.
-  assert.match(src("main.tsx"), /<Crash>\s*<Room>[^]*<Remote \/>[^]*<App \/>[^]*<\/Room>\s*<\/Crash>/, "the whole app, and the Remote, sit inside it");
+  assert.match(src("main.tsx"), /<Crash>\s*(?:\{!REMOTE && <RememberedRemote \/>\}\s*)?<Room>[^]*<Remote \/>[^]*<App \/>[^]*<\/Room>\s*<\/Crash>/, "the whole app, and the Remote, sit inside it");
 
   // Before the first snapshot the window's world is the empty one: the map stays empty rather than greet a returning
   // person with "Think out loud." (the header already says "Connecting…").

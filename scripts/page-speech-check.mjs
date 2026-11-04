@@ -28,12 +28,15 @@ try {
   await evaluate(`(async () => {
     window.spoken = []; window.cancelled = 0; window.logs = []; window.delays = [];
     const installed = [
-      { name: "French Premium", lang: "fr-FR", default: true },
-      { name: "Samantha", lang: "en-US", default: true },
-      { name: "English Enhanced", lang: "en-GB" },
-      { name: "English Premium", lang: "en-US" },
+      { name: "French Premium", lang: "fr-FR", default: true, localService: true },
+      { name: "Samantha", lang: "en-US", default: true, localService: true },
+      { name: "English Enhanced", lang: "en-GB", localService: true },
+      { name: "English Premium", lang: "en-US", localService: true },
     ];
-    window.voices = [];
+    let installedVoices = [];
+    Object.defineProperty(window, "voices", { get: () => installedVoices, set: value => {
+      installedVoices = value; window.speechSynthesis.dispatchEvent(new Event("voiceschanged"));
+    } });
     Object.defineProperty(window, "speechSynthesis", { configurable: true, value: Object.assign(new EventTarget(), {
       getVoices: () => voices, cancel: () => cancelled++,
       speak: u => { if (window.throwSpeech) throw Error("voice failed"); spoken.push(u); u.onstart?.(); },
@@ -86,11 +89,13 @@ try {
     check(spoken.length === 0, "caption already restored by a snapshot cannot speak from a queued live relay");
     send(caption);
     check(spoken.length === 0 && logs.length === 0, "empty asynchronous list never uses an unspecified voice");
-    check(frameIs("0,0"), "waiting for voices keeps capture paused");
+    check(!speech.pageSpeaking() && frameIs("123,-456"), "no voice leaves capture running and playback off");
     speechSynthesis.dispatchEvent(new Event("voiceschanged"));
     check(spoken.length === 0, "another empty voice event still waits");
     voices = installed;
     speechSynthesis.dispatchEvent(new Event("voiceschanged"));
+    check(spoken.length === 0, "voice arrival does not replay text-only replies");
+    send(caption);
     check(spoken[0].voice.name === "English Premium", "Premium English wins over default and Enhanced");
     speechSynthesis.dispatchEvent(new Event("voiceschanged"));
     check(spoken.length === 1, "voice events cannot replay the reply");
@@ -105,7 +110,7 @@ try {
     check(spoken.at(-1).voice.name === "English Enhanced", "Enhanced beats default");
     spoken.at(-1).onerror();
     check(!speech.pageSpeaking() && frameIs("123,-456"), "error immediately restores the mic");
-    voices = [{ name: "English alternative", lang: "en-GB" }, { name: "English default", lang: "en-US", default: true }];
+    voices = [{ name: "English alternative", lang: "en-GB", localService: true }, { name: "English default", lang: "en-US", default: true, localService: true }];
     send(caption);
     check(spoken.at(-1).voice.name === "English default", "default English wins within the remaining tier");
     const old = spoken.at(-1);
@@ -143,9 +148,9 @@ try {
     check(spoken.length === beforeWait && !speech.pageSpeaking(), "cancelled pending speech never plays when voices arrive");
     voices = []; send(caption); send({ ...caption, text: "The replacement reply." });
     voices = installed; speechSynthesis.dispatchEvent(new Event("voiceschanged"));
-    check(spoken.length === beforeWait + 1 && spoken.at(-1).text === "The replacement reply.", "only the latest waiting reply plays");
+    check(spoken.length === beforeWait, "replies received without a voice stay text-only after voice arrival");
     speech.stopPageSpeech();
-    voices = [{ name: "French installed", lang: "fr-FR", default: true }]; send(caption);
+    voices = [{ name: "French installed", lang: "fr-FR", default: true, localService: true }]; send(caption);
     check(spoken.at(-1).voice.name === "French installed", "an installed voice is explicit even without English");
     speech.stopPageSpeech(); voices = installed;
     speech.hearPageSpeech("invalid JSON");
@@ -178,7 +183,8 @@ try {
     voices = []; send(caption);
     check(!writer.capture.bargeIn, "waiting for a voice never learns silence as a playback residual");
     voices = installed; speechSynthesis.dispatchEvent(new Event("voiceschanged"));
-    check(writer.capture.bargeIn, "voice start arms a fresh playback calibration");
+    send(caption);
+    check(writer.capture.bargeIn, "a new reply with a voice arms a fresh playback calibration");
     speech.stopPageSpeech();
     const beforeQuiet = spoken.length;
     send({ ...reply, speak: false });
@@ -212,24 +218,10 @@ try {
   assert.ok(await until("!speech.pageSpeaking()", delay + 1500), "missing end is cancelled within the text-based limit");
   assert.equal(await evaluate('frameIs("123,-456")'), true, "missing end restores real mic samples");
 
-  // Voices arriving near the loading deadline still earn the reply's full speaking time.
-  await evaluate(`(async () => {
-    const installed = voices;
-    voices = []; send(caption);
-    await new Promise(resolve => setTimeout(resolve, shortDelay * 3 / 4));
-    check(speech.pageSpeaking(), "reply is still waiting near the loading deadline");
-    const count = spoken.length;
-    voices = installed; speechSynthesis.dispatchEvent(new Event("voiceschanged"));
-    check(spoken.length === count + 1, "late voices start the waiting reply");
-    window.playbackStarted = performance.now();
-    await new Promise(resolve => setTimeout(resolve, shortDelay * 0.9));
-    check(speech.pageSpeaking() && frameIs("0,0"), "late voice keeps its speaking time and mic pause past the old deadline");
-  })()`);
-  assert.ok(await until("!speech.pageSpeaking()", delay + 1500), "late voice still has a bounded speaking time");
-  assert.equal(await evaluate('performance.now() - playbackStarted >= shortDelay && frameIs("123,-456")'), true, "full speaking time elapses before capture resumes");
+  // Missing voices stay off immediately, with no loading deadline or stale playback.
   await evaluate('voices = []; window.beforeTimeout = spoken.length; send(caption)');
-  assert.ok(await until("!speech.pageSpeaking()", delay + 1500), "missing voice list releases the mic within the text-based limit");
-  await evaluate('voices = [{ name: "Late voice", lang: "en-US" }]; speechSynthesis.dispatchEvent(new Event("voiceschanged")); check(spoken.length === beforeTimeout, "voice loading timeout cannot play later")');
+  assert.equal(await evaluate('!speech.pageSpeaking() && frameIs("123,-456")'), true, "missing voice never pauses capture");
+  await evaluate('voices = [{ name: "Late voice", lang: "en-US", localService: true }]; check(spoken.length === beforeTimeout, "voice arrival never replays text-only replies")');
   await evaluate('stopMic(); check(writer.port.onmessage === null, "capture cleanup still works")');
 
   // Chrome's real audio thread: speech ends inside the worklet's first buffered frame.
@@ -273,6 +265,7 @@ try {
         await context.audioWorklet.addModule(workletURL);
         const native = new NativeWorkletNode(context, "pcm-writer");
         const captured = [], events = [];
+        let silentBeforeAcknowledgement = false;
         const stop = await mic.startMic(frame => captured.push([...new Int16Array(frame)]));
         const bridge = writer;
         bridge.port.postMessage = state => { bridge.capture = state; native.port.postMessage(state); };
@@ -283,6 +276,7 @@ try {
             if (data.generation === bridge.capture.generation) acknowledge();
             return;
           }
+          if (data.type === "barge") silentBeforeAcknowledgement = captured.length > 0 && captured.every(f => f.every(s => s === 0));
           events.push(data); bridge.port.onmessage?.({ data });
         };
         native.port.postMessage(bridge.capture);
@@ -322,7 +316,7 @@ try {
         check(!speech.pageSpeaking() && cancelled === before + 1, rate + "/" + scenario + ": local PCM cancels spoken reply; "
           + JSON.stringify({ barges: events.filter(e => e.type === "barge"), frames: captured.length, state: bridge.capture }));
         check(bridge.capture.resumeBarge === playbackGeneration, rate + ": mic acknowledges only this reply");
-        check(captured.length > 0 && captured.every(f => f.every(s => s === 0)), rate + ": ASR stays silent before acknowledgement");
+        check(silentBeforeAcknowledgement, rate + ": ASR stays silent before acknowledgement");
         await context.resume(); await rendered;
         for (let n = 0; n < 100 && captured.filter(f => f.some(s => s !== 0)).length < 8; n++) await new Promise(resolve => setTimeout(resolve, 10));
         const audible = captured.filter(f => f.some(s => s !== 0));

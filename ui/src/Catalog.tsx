@@ -1,9 +1,10 @@
+import { builtInOn, BUILT_INS, featureAvailable, switchBuiltIn, useBuiltInsOn } from "./shell/features";
+import { FEATURE_NAMES } from "./shell/names";
 // The Catalog (docs/bricks.md): every brick the app has, each with its one line and its switch, grouped by where it
 // shows; those not fit to switch on in front of people fold away under "Not for the demo". Opened from the Apps panel,
 // or by a brick (`openCatalog`, at a brick's row: shown, marked and its switch focused), a modal sheet as Recap is (Esc,
 // ×, or a click outside closes it). A switch acts at once, and only in this browser.
-import { BUILT_INS, featureAvailable, switchBuiltIn, useBuiltInsOn } from "./shell/features";
-import { FEATURE_NAMES } from "./shell/names";
+import { ReplyFormat } from "./ReplyFormat";
 import { useEffect, useRef } from "react";
 import type { BrickKind } from "./bricks/contract";
 import { BRICKS, closeCatalog, KINDS, switchBrick, useBricksOn, useCatalogAt, useCatalogOpen, type Brick } from "./bricks-core";
@@ -27,6 +28,8 @@ export function Catalog({ apps, state }: { apps: readonly MiniApp[]; state: AppP
 function CatalogSheet({ apps, state }: { apps: readonly MiniApp[]; state: AppPartsState }) {
   const on = useBricksOn();
   const builtIns = useBuiltInsOn();
+  const comparison = FEATURE_NAMES["compare-return-controls"];
+  const compareOn = builtIns.has("compare-return-controls");
   const at = useCatalogAt();
   const sheet = useRef<HTMLDialogElement>(null);
   // Modal from its first frame, as Recap is: the page behind holds still, × rings only when the focus before it did
@@ -58,7 +61,7 @@ function CatalogSheet({ apps, state }: { apps: readonly MiniApp[]; state: AppPar
   }, [at]);
   const ready = BRICKS.filter((brick) => brick.info.demoSafe);
   const more = BRICKS.filter((brick) => !brick.info.demoSafe);
-  const count = BRICKS.filter((brick) => on.has(brick.info.id)).length + Number(builtIns.has("compare-phone-reading"));
+  const count = BRICKS.filter((brick) => on.has(brick.info.id)).length + Number(builtIns.has("compare-phone-reading")) + Number(builtIns.has("voice-policy-comparison")) + Number(compareOn) + Number(builtIns.has("review-text-edits"));
   return <dialog ref={sheet} className="catalog" aria-labelledby="catalog-title" onCancel={(event) => { event.preventDefault(); closeCatalog(); }}
     onClick={(event) => { if (event.target === event.currentTarget) closeCatalog(); }}>
     <div className="catalog-top">
@@ -68,6 +71,11 @@ function CatalogSheet({ apps, state }: { apps: readonly MiniApp[]; state: AppPar
       </div>
       <button type="button" className="catalog-close" onClick={closeCatalog} aria-label="Close">×</button>
     </div>
+    <section className="catalog-group" aria-label="Voice comparison"><ul><li className="catalog-row" data-row="voice-policy-comparison" data-built-in="voice-policy-comparison">
+      <div><strong>{FEATURE_NAMES["voice-policy-comparison"].name}</strong><p>{FEATURE_NAMES["voice-policy-comparison"].does}</p></div>
+      <button type="button" role="switch" className="apps-switch" aria-label="Compare voice turns" aria-checked={builtInOn("voice-policy-comparison")}
+        onClick={() => switchBuiltIn("voice-policy-comparison", !builtInOn("voice-policy-comparison"))}>{builtInOn("voice-policy-comparison") ? "On" : "Off"}</button>
+    </li></ul></section>
     {apps.length > 0 && <section className="catalog-apps" aria-label="Built apps">
       <h3>Built apps · inspect their parts</h3>
       {apps.map((app) => <article className="catalog-app" key={app.id}><strong>{app.name}</strong><p>{app.purpose}</p>
@@ -84,6 +92,21 @@ function CatalogSheet({ apps, state }: { apps: readonly MiniApp[]; state: AppPar
       <div><strong>Thinking helpers</strong><p>Say “put five helpers on the pitch”. Read their answers in Work spine.</p></div>
       <button type="button" className={builtIns.has("helpers") ? "apps-switch on" : "apps-switch"} role="switch" aria-checked={builtIns.has("helpers")} aria-label="Thinking helpers" onClick={() => switchBuiltIn("helpers", !builtIns.has("helpers"))}>{builtIns.has("helpers") ? "On" : "Off"}</button>
     </li></ul></section>}
+    <section className="catalog-group" aria-label="Return controls"><h3>Return controls</h3><ul>
+      <li className="catalog-row" data-row="compare-return-controls" data-built-in="compare-return-controls">
+        <div><strong>{comparison.name}</strong><p>{comparison.does}</p></div>
+        <button type="button" className={compareOn ? "apps-switch on" : "apps-switch"} role="switch" aria-checked={compareOn}
+          aria-label={comparison.name} onClick={() => switchBuiltIn("compare-return-controls", !compareOn)}>{compareOn ? "On" : "Off"}</button>
+      </li>
+    </ul></section>
+    <section className="catalog-group" aria-label="Built in"><h3>Built in</h3><ul>{BUILT_INS.filter(b => b.id === "review-text-edits").map(b => <li key={b.id} className="catalog-row" data-row={b.id}>
+      <div><strong>{FEATURE_NAMES[b.id].name}</strong><p>{FEATURE_NAMES[b.id].does}</p></div>
+      <button type="button" role="switch" aria-label={FEATURE_NAMES[b.id].name} aria-checked={builtIns.has(b.id)} onClick={() => switchBuiltIn(b.id, !builtIns.has(b.id))}>{builtIns.has(b.id) ? "On" : "Off"}</button>
+    </li>)}</ul></section>
+    <section className="catalog-group" aria-label="Reply format"><ul><li className="catalog-row" data-built-in="reply-format">
+      <div><strong>{FEATURE_NAMES["reply-format"].name}</strong><p>{FEATURE_NAMES["reply-format"].does}</p></div>
+      <button type="button" role="switch" aria-label="Reply format" aria-checked={builtIns.has("reply-format")} onClick={() => switchBuiltIn("reply-format", !builtIns.has("reply-format"))}>{builtIns.has("reply-format") ? "On" : "Off"}</button>
+    </li></ul><ReplyFormat /></section>
     <Groups bricks={ready} on={on} at={at?.id ?? null} />
     {more.length > 0 && <details className="catalog-more">
       <summary>Not for the demo · {more.length}</summary>

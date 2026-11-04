@@ -13,6 +13,7 @@ mod catalog;
 mod chunks;
 mod clock;
 mod data_lock;
+mod storage;
 mod decided;
 mod explain;
 mod find;
@@ -73,11 +74,13 @@ use world::{Change, Journal, Thought, ThreadStatus, World};
 pub struct Core {
     #[cfg(test)]
     asr_test_url: Option<String>,
+    alias_windows: Mutex<HashMap<(String, u64), Arc<std::sync::atomic::AtomicBool>>>,
     typed_receipts: Mutex<()>,
     find: find::Runtime,
     /// Each speaker's last turn, what "this" means to them, and the Undo button (catalog.rs).
     catalog: catalog::Runtime,
     recap: recap::Runtime,
+    explain: explain::Runtime,
     apps: apps::Runtime,
     guide: guide::Runtime,
     conversation: conversation::Runtime,
@@ -171,6 +174,108 @@ impl Core {
             Ok(false) => Err("Estimate not saved: source or revision changed, or the 100-record limit was reached. Inspect the current action before retrying.".into()),
             Err(_) => Err("Estimate not saved. Keep your draft and retry explicitly when connected.".into()),
         }
+    }
+
+    /// No queue or retry: validate again under commit_if, then acknowledge only the sender's speaker.
+    #[allow(clippy::too_many_arguments)]
+    fn save_question(&self, speaker: &str, id: String, text: String, thought_id: Option<String>, answer: String, status: String, expected: u64) {
+        let now = now_ms();
+        let plan = |w: &World| w.question_save(speaker, &id, &text, &thought_id, &answer, &status, expected, now);
+        let result = (|| -> Result<u64, String> {
+            let question = plan(&self.snapshot()).map_err(str::to_string)?;
+            if expected == 0 && self.snapshot().questions.iter().any(|q| q == &question) { return Ok(question.revision); }
+            if !self.commit_if(|w| plan(w).is_ok_and(|q| q == question)
+                && w.questions.iter().find(|q| q.id == id).map_or(expected == 0, |q| q.revision == expected),
+                vec![Change::QuestionSaved { question: question.clone() }]) {
+                // A concurrent identical create may have won. Reconcile that read only; never replay an edit.
+                if expected == 0 {
+                    let current = self.snapshot();
+                    if let Ok(existing) = plan(&current) {
+                        if current.questions.iter().any(|q| q == &existing) { return Ok(existing.revision); }
+                    }
+                }
+                return Err("Question could not be saved. Review the current record; no automatic retry was made.".into());
+            }
+            Ok(question.revision)
+        })();
+        let revision = result.as_ref().copied().unwrap_or_else(|_| self.snapshot().questions.iter().find(|q| q.id == id && q.owner == speaker).map_or(0, |q| q.revision));
+        self.send_to(speaker, ServerMsg::QuestionResult { id, revision, ok: result.is_ok(), error: result.err() });
+    }
+
+    fn alias_enabled(&self, speaker: &str, window: u64) -> bool {
+        self.alias_windows.lock().unwrap().get(&(speaker.into(), window)).is_some_and(|on| on.load(std::sync::atomic::Ordering::SeqCst))
+    }
+
+    fn alias_switch(&self, speaker: &str, window: u64, on: bool) {
+        let mut windows = self.alias_windows.lock().unwrap();
+        if let Some(old) = windows.remove(&(speaker.into(), window)) { old.store(false, std::sync::atomic::Ordering::SeqCst); }
+        if on { windows.insert((speaker.into(), window), Arc::new(std::sync::atomic::AtomicBool::new(true))); }
+    }
+
+    fn alias_turn(self: &Arc<Self>, speaker: &str, window: Option<u64>, text: &str) -> bool {
+        let Some(window) = window else { return false };
+        // Hold opt-in through synchronous validation, execution and publication. Off cannot race a commit.
+        let windows = self.alias_windows.lock().unwrap();
+        let Some(token) = windows.get(&(speaker.into(), window)) else { return false };
+        let world = self.snapshot();
+        let Some(alias) = world.aliases.iter().find(|a| a.owner == speaker && a.enabled && !a.deleted && !a.unavailable && spoken::alias_normalize(&a.phrase) == spoken::alias_normalize(text)).cloned() else { return false };
+        drop(world);
+        let result = catalog::execute_alias(self, speaker, &alias, text, None, token.clone());
+        if let Err(message) = result { self.send_to(speaker, ServerMsg::Notice { message }); }
+        else { catalog::did(self, speaker, text, result.unwrap()); }
+        true
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn alias_operation(self: &Arc<Self>, speaker: &str, window: u64, request_id: &str, operation: &str, id: &str, revision: u64, phrase: &str, target: world::AliasTarget, enabled: bool) {
+        let windows = self.alias_windows.lock().unwrap();
+        let Some(token) = windows.get(&(speaker.into(), window)) else {
+            // Refusals are visible even when off; successes are restricted to live opted-in windows.
+            self.send_to(speaker, ServerMsg::Notice { message: "My voice shortcuts is off in this window.".into() }); return;
+        };
+        let answer = (|| -> Result<String, String> {
+            if uuid::Uuid::parse_str(request_id).is_err() || uuid::Uuid::parse_str(id).is_err() { return Err("Invalid shortcut request ID.".into()); }
+            let signature = serde_json::to_string(&(operation, id, revision, phrase, &target, enabled)).unwrap();
+            let world = self.snapshot();
+            if let Some(saved) = world.alias_receipts.get(&(speaker.into(), request_id.into())) {
+                return if saved == &signature { Ok("Already saved.".into()) } else { Err("Request ID already used for different words. Preview again.".into()) };
+            }
+            let old = world.aliases.iter().find(|a| a.id == id && a.owner == speaker);
+            if old.map_or(0, |a| a.revision) != revision { return Err("Shortcut changed. Reload its current words and Preview again.".into()); }
+            if !matches!(operation, "preview" | "save" | "delete" | "try") { return Err("Unknown shortcut operation.".into()); }
+            let normalized = spoken::alias_normalize(phrase);
+            if normalized.is_empty() || phrase.chars().count() > 160 || phrase.contains(['\n', '\r']) { return Err("Type one phrase, at most 160 characters.".into()); }
+            if let Some(meaning) = spoken::alias_conflict(phrase) { return Err(format!("Built-in command: {meaning}. Choose another phrase.")); }
+            if world.aliases.iter().any(|a| a.owner == speaker && a.id != id && !a.deleted && spoken::alias_normalize(&a.phrase) == normalized) { return Err("That phrase is already taught by you.".into()); }
+            if operation == "try" {
+                let alias = old.filter(|a| a.enabled && !a.deleted && a.phrase == phrase && a.target == target).ok_or("Save and enable this shortcut before Try now.")?.clone();
+                drop(world);
+                let done = catalog::execute_alias(self, speaker, &alias, phrase, Some((request_id.into(), signature)), token.clone())?;
+                catalog::did(self, speaker, phrase, done);
+                return Ok("Shortcut applied.".into());
+            }
+            let deleted = operation == "delete";
+            if old.is_none_or(|a| a.deleted) && !deleted && world.aliases.iter().filter(|a| a.owner == speaker && !a.deleted).count() >= 30 { return Err("You can keep at most 30 shortcuts.".into()); }
+            let mut alias = world::VoiceAlias { id: id.into(), owner: speaker.into(), phrase: phrase.into(), target, revision: revision + 1, enabled: enabled && !deleted, deleted, unavailable: false };
+            if let world::AliasTarget::OpenTopic { topic_id } = &alias.target {
+                alias.unavailable = !world.threads.iter().any(|t| &t.id == topic_id);
+                if alias.unavailable && alias.enabled { return Err("Topic no longer on map".into()); }
+            }
+            let label = catalog::alias_label(&world, &alias.target);
+            if operation == "preview" { return if alias.unavailable { Err("Topic no longer on map".into()) } else { Ok(format!("Preview: {label}. Does not execute.")) }; }
+            let before = old.cloned();
+            drop(world);
+            let committed = self.try_commit_if(|w| w.aliases.iter().find(|a| a.id == id && a.owner == speaker) == before.as_ref()
+                && !w.alias_receipts.contains_key(&(speaker.into(), request_id.into()))
+                && (!alias.enabled || match &alias.target { world::AliasTarget::OpenTopic { topic_id } => w.threads.iter().any(|t| &t.id == topic_id), _ => true })
+                && !w.aliases.iter().any(|a| a.owner == speaker && a.id != id && !a.deleted && spoken::alias_normalize(&a.phrase) == normalized)
+                && (before.as_ref().is_some_and(|a| !a.deleted) || w.aliases.iter().filter(|a| a.owner == speaker && !a.deleted).count() < 30),
+                vec![Change::AliasChanged { alias: alias.clone(), request_id: request_id.into(), signature }]).map_err(|_| "Couldn't save. Your draft is still here.".to_string())?;
+            if !committed { return Err("Shortcut or topic changed. Preview again.".into()); }
+            Ok(if deleted { "Deleted. Undo is available." } else { "Saved. Taught by you." }.into())
+        })();
+        let (ok, message) = match answer { Ok(message) => (true, message), Err(message) => (false, message) };
+        self.send_to(speaker, ServerMsg::AliasResult { window, request_id: request_id.into(), ok, message });
     }
 
     pub fn touch(&self) {
@@ -509,6 +614,16 @@ impl Core {
         }
     }
 
+    /// Checkpoint live words without showing a recovery card during speech. A process restart must not lose
+    /// a partial just because the service had not finished its turn. Final receipts resolve this same identity.
+    fn checkpoint_speech(&self, draft: world::SpeechDraft) {
+        let _receipt = self.typed_receipts.lock().unwrap();
+        let world = self.snapshot();
+        if world.speech_resolved.contains(&draft.id)
+            || world.speech_drafts.get(&draft.id).is_some_and(|saved| saved.text == draft.text) { return; }
+        self.recovery_change(Change::SpeechRecovered { draft });
+    }
+
     fn resolve_speech(&self, speaker: &str, id: &str) {
         if self.recovery_change(Change::SpeechResolved { id: id.into() }) {
             self.send_to(speaker, ServerMsg::RecoverableSpeech { id: id.into(), text: String::new() });
@@ -605,6 +720,8 @@ impl Core {
             }
             return self.take_turn(speaker, stop, search, false, false, window);
         }
+        // Literal taught rules follow safety handling, before corrections or model interpretation.
+        if spoken::alias_conflict(text).is_none() && self.alias_turn(speaker, window, text) { return; }
         // The AI's open question on the speaker's latest words ("Did you mean …?") takes a spoken yes, no or short fix
         // first: "yeah" is filler otherwise.
         if catalog::answer(self, speaker, text) {
@@ -1210,9 +1327,11 @@ fn is_ask(text: &str, asks: &[&str], tails: &[&str]) -> bool {
     })
 }
 
-/// The map's folder: `E2A2O_DATA`, else `../data` (beside the core's folder, as run.sh starts it).
+static DATA_DIR: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+/// The validated directory selected at startup, also used by the sample button.
 pub fn data_dir() -> String {
-    std::env::var("E2A2O_DATA").unwrap_or_else(|_| "../data".into())
+    DATA_DIR.get().cloned().unwrap_or_else(|| storage::from_env(None)
+        .expect("safe external storage").to_string_lossy().into_owned())
 }
 
 /// Run by a service for people who sign in (`E2A2O_HOSTED=1`, set by the deploy): the map lives on its server, not
@@ -1256,6 +1375,29 @@ pub fn now_ms() -> u64 {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().is_some_and(|a| a == "--data-path") {
+        anyhow::ensure!(args.len() <= 2, "usage: e2a2o-core --data-path [NAME]");
+        println!("{}", storage::from_env(args.get(1).map(String::as_str))?.display());
+        return Ok(());
+    }
+    if args.first().is_some_and(|a| a == "--seed-sample") {
+        anyhow::ensure!(args.len() == 2, "usage: e2a2o-core --seed-sample FIXTURE");
+        let data = storage::from_env(Some("sample"))?;
+        storage::sample_destination(&data, &args[1])?;
+        let _lock = data_lock::acquire(&data)?;
+        // Recheck after acquiring the lock; an active core prevents every reset.
+        // A newly created directory contains only the lock sidecar at this point.
+        if data.join(".sample-map.json").exists() { storage::sample_destination(&data, &args[1])?; }
+        let samples = std::env::var_os("E2A2O_SAMPLES").map(std::path::PathBuf::from)
+            .unwrap_or_else(|| "../samples".into());
+        storage::seed_sample(&data, &args[1], &samples)?;
+        return Ok(());
+    }
+    anyhow::ensure!(args.len() <= 1, "usage: e2a2o-core [NAME]");
+    // Resolve before dotenv, keys, locks, traces, certificates or service initialization.
+    let data = storage::from_env(args.first().map(String::as_str))?.to_string_lossy().into_owned();
+    let _ = DATA_DIR.set(data.clone());
     let _ = dotenvy::from_filename("../.env");
     let _ = dotenvy::dotenv();
     tracing_subscriber::fmt()
@@ -1270,7 +1412,6 @@ async fn main() -> anyhow::Result<()> {
     }
     let room = room_code()?;
     let tunnel = tunnel::Tunnel::from_env(room.as_deref())?;
-    let data = data_dir();
     // Keep this handle through every serving path; dropping it releases the map's lock.
     let _data_lock = data_lock::acquire(Path::new(&data))?;
     let (journal, world) = Journal::open(&Path::new(&data).join("journal.jsonl"))?;
@@ -1281,10 +1422,12 @@ async fn main() -> anyhow::Result<()> {
     let core = Arc::new(Core {
         #[cfg(test)]
         asr_test_url: None,
+        alias_windows: Default::default(),
         typed_receipts: Default::default(),
         find: find::Runtime::default(),
         catalog: catalog::Runtime::default(),
         recap: recap::Runtime::default(),
+        explain: explain::Runtime::default(),
         apps: apps::Runtime::default(),
         guide: guide::Runtime::default(),
         conversation: conversation::Runtime::default(),
@@ -1334,7 +1477,8 @@ async fn main() -> anyhow::Result<()> {
     if notes::on(&core) {
         tracing::info!("Notes: {}", if core.notes.write { "writes" } else { "dry run" });
     }
-    apps::seed(&core, Path::new(&data).file_name().is_some_and(|name| name == "demo"));
+    apps::seed(&core, std::env::var("E2A2O_MODE").map(|mode| mode == "demo").unwrap_or_else(|_|
+        args.first().map_or_else(|| Path::new(&data).file_name().is_some_and(|name| name == "demo"), |mode| mode == "demo")));
     apple::recover(&core);
     tokio::spawn(apps::run(core.clone()));
     tokio::spawn(placer::run(core.clone(), queue));
@@ -1808,10 +1952,11 @@ fn invisible_name_format(c: char) -> bool {
 }
 
 /// Journals a window's "off" mark on an Explain or a Recap. Anything else, or an id no answer could have, is
-/// ignored: a mark is a label for later, never an instruction.
+/// ignored: a mark is a label for later; an Explain off mark also evicts that reusable answer.
 fn mark(core: &Core, speaker: &str, kind: String, id: String, off: bool) {
     let fits = !id.is_empty() && id.len() <= 80 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
     if matches!(kind.as_str(), "explain" | "recap") && fits {
+        if kind == "explain" && off { core.explain.mark_off(speaker, &id); }
         core.record(Change::AnswerMarked { kind, id, off, speaker: speaker.into(), at_ms: now_ms() });
     }
 }
@@ -1892,7 +2037,10 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
     // This window's number: guide messages, tours and jobs go to every window but this one (guide.rs).
     let window = guide::window();
     let estimates_on = Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let forwarding = tokio::spawn(forward_with_estimates(out, updates, core.clone(), speaker.clone(), window, estimates_on.clone()));
+    let recipe_gate = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let (recipe_tx, recipe_rx) = mpsc::unbounded_channel();
+    let forwarding = tokio::spawn(forward_with_estimates(out, updates, core.clone(), speaker.clone(), window, estimates_on.clone(), recipe_rx, recipe_gate.clone()));
+    let mut recipe_epoch = 0u64;
     if here {
         core.hosts.lock().unwrap().insert(speaker.clone());
     }
@@ -1910,6 +2058,8 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
     let mut refused: Option<String> = None;
     let mut pace = guide::Pace::default();
     let mut partner: Option<conversation::Here> = None;
+    let review = Arc::new(Mutex::new(annotate::PointReview::default()));
+    let mut shorter: Option<tokio::task::JoinHandle<()>> = None;
     while let Some(message) = incoming.next().await {
         // A frame past `FRAME_MAX` (only a script sends one: the page checks first) ends the window here.
         let message = match message {
@@ -1931,6 +2081,42 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                     };
                     core.send_to(&speaker, ServerMsg::ActionEstimateResult { request_id, ok, message, estimate, window });
                 }
+                Ok(ClientMsg::SaveQuestion { id, text, thought_id, answer, status, expected_revision }) => core.save_question(&speaker, id, text, thought_id, answer, status, expected_revision),
+                Ok(ClientMsg::ReviewTextEdits { on }) if !ai && !remote => {
+                    review.lock().unwrap().switch(on);
+                    if let Some(task) = shorter.take() { task.abort(); }
+                }
+                Ok(ClientMsg::EditPoint { request_id, thought_id, observed, replacement, undo_of }) => {
+                    let gate = review.lock().unwrap();
+                    let result = annotate::edit_point(&core, &gate, &speaker, &request_id, &thought_id, &observed, &replacement, undo_of.as_deref());
+                    core.send_to(&annotate::review_target(window), ServerMsg::PointEditResult { request_id, thought_id, ok: result.is_ok(), message: result.err().unwrap_or("Point saved.").into() });
+                }
+                Ok(ClientMsg::ShorterPoint { request_id, thought_id, observed }) => {
+                    let mut gate = review.lock().unwrap();
+                    let source = if !gate.on { Err("Review text edits is off.") }
+                        else if gate.busy { Err("One proposal at a time. Keep editing while it finishes.") }
+                        else if !annotate::review_id(&request_id) { Err("Invalid request identity.") }
+                        else { annotate::shorter_source(&core, &thought_id, &observed) };
+                    match source {
+                        Err(message) => core.send_to(&annotate::review_target(window), ServerMsg::PointProposal { request_id, thought_id, text: message.into(), failed: true }),
+                        Ok(raw) => {
+                            gate.busy = true;
+                            let epoch = gate.epoch;
+                            let (core, review) = (core.clone(), review.clone());
+                            shorter = Some(tokio::spawn(async move {
+                                let result = core.shorter_point(&observed, &raw).await;
+                                let mut gate = review.lock().unwrap();
+                                if !gate.on || gate.epoch != epoch { return; }
+                                gate.busy = false;
+                                let (text, failed) = match result {
+                                    Ok(text) => (text, false),
+                                    Err(_) => (if core.key_refused() { model::REFUSED.into() } else if let Some(message) = core.capped_message() { message } else { "Couldn't make a proposal. Your typed proposal is kept; try again explicitly.".into() }, true),
+                                };
+                                core.send_to(&annotate::review_target(window), ServerMsg::PointProposal { request_id, thought_id, text, failed });
+                            }));
+                        }
+                    }
+                }
                 Ok(ClientMsg::Resume { pause_id, request_id }) => core.queue_command(&speaker, placer::Job::Resume { speaker: speaker.clone(), pause_id, request_id }),
                 Ok(ClientMsg::PauseChoice { pause_id, later }) => core.pause_choice(&speaker, &pause_id, later),
                 Ok(ClientMsg::RetryPlacement { id }) => {
@@ -1942,13 +2128,30 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                     if id.len() <= 128 { core.send_to(&speaker, ServerMsg::Heartbeat { id }); }
                 }
                 Ok(ClientMsg::RecoverSpeech { id, keep }) => core.recover_speech(&speaker, &id, keep),
+                Ok(ClientMsg::VoiceShortcuts { on }) => core.alias_switch(&speaker, window, on),
+                Ok(ClientMsg::AliasOperation { request_id, operation, id, revision, phrase, target, enabled }) => {
+                    core.alias_operation(&speaker, window, &request_id, &operation, &id, revision, &phrase, target, enabled);
+                }
                 Ok(ClientMsg::Partner { on }) if !ai && !remote => {
                     if on && partner.is_none() { partner = Some(conversation::enable(&core, &speaker, window)); }
                     else if !on { partner = None; }
                 }
+                Ok(ClientMsg::ReplyFormat { on }) if !ai && !remote => conversation::format_switch(&core, &speaker, window, on),
+                Ok(ClientMsg::ReplyFormatSet { request_id, observed_revision, preferences }) if !ai && !remote => conversation::format_set(&core, &speaker, window, request_id, observed_revision, preferences),
                 Ok(ClientMsg::Email { on }) if !ai => messages::email_switch(&core, &speaker, on),
                 Ok(ClientMsg::PartnerCancel) => conversation::cancel(&core, &speaker),
                 Ok(ClientMsg::Recap { period }) => recap::request(core.clone(), speaker.clone(), period),
+                Ok(ClientMsg::RecipesSwitch { on }) => {
+                    recipe_epoch += 1;
+                    recipe_gate.store(if on { recipe_epoch } else { 0 }, std::sync::atomic::Ordering::SeqCst);
+                }
+                Ok(ClientMsg::SaveRecipe { save }) => {
+                    let epoch = recipe_gate.load(std::sync::atomic::Ordering::SeqCst);
+                    let result = apps::save_recipe(&core, &save, || epoch != 0 && recipe_gate.load(std::sync::atomic::Ordering::SeqCst) == epoch);
+                    let (app_id, message) = match result { Ok(id) => (Some(id), "Saved disabled app.".into()), Err(e) => (None, e.to_string()) };
+                    // A refusal without opt-in is visible, but cannot opt this connection in.
+                    let _ = recipe_tx.send((epoch, ServerMsg::RecipeResult { request_id: save.request_id, app_id, message }));
+                }
                 Ok(ClientMsg::ComposeApp { request }) => apps::compose(core.clone(), request),
                 Ok(ClientMsg::DecideApp { build_id, keep }) => {
                     catalog::clicked(&core, &speaker);
@@ -1973,8 +2176,8 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::Sample { name }) => sample::fill(&core, &speaker, name.as_deref()),
                 Ok(ClientMsg::Focus { thread_id }) => core.focus(&speaker, &thread_id),
                 Ok(ClientMsg::Stay { thread_id }) => { stay::set(&core, &speaker, thread_id.as_deref()); }
-                Ok(ClientMsg::Explain { id, text, context, thread_id }) => {
-                    tokio::spawn(explain::run(core.clone(), id, text, context, thread_id));
+                Ok(ClientMsg::Explain { id, text, context, thread_id, reuse }) => {
+                    tokio::spawn(explain::run(core.clone(), id, text, context, thread_id, speaker.clone(), reuse));
                 }
                 Ok(ClientMsg::WhyHere { thought_id }) => {
                     tokio::spawn(whyhere::run(core.clone(), speaker.clone(), thought_id));
@@ -2084,6 +2287,8 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                     let _ = call::read(&core, &speaker, &thought_id);
                 }
                 Ok(ClientMsg::Level { level }) => call::level(&core, &speaker, level),
+                // Navigation is of the moment: broadcast without changing or journaling the world.
+                Ok(ClientMsg::RemoteSelection { message }) => core.send(ServerMsg::RemoteSelection { message }),
                 Ok(_) => {}
                 Err(e) => {
                     match serde_json::from_str::<serde_json::Value>(text.as_str()).ok().and_then(|message| message["type"].as_str().map(str::to_owned)).as_deref() {
@@ -2103,6 +2308,10 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
         }
     }
     estimates_on.store(false, std::sync::atomic::Ordering::SeqCst);
+    review.lock().unwrap().switch(false);
+    if let Some(task) = shorter { task.abort(); }
+    core.alias_switch(&speaker, window, false);
+    recipe_gate.store(0, std::sync::atomic::Ordering::SeqCst);
     forwarding.abort();
     apps::disconnect(&core, &volume_source);
     if core.room.is_some() {
@@ -2115,15 +2324,21 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
 /// tunnel cut a silent WebSocket at 125 s, and held one with a 30 s ping (measured, cloudflared 2026.10.7).
 #[cfg(test)]
 async fn forward(out: SplitSink<WebSocket, Message>, updates: broadcast::Receiver<Outgoing>, core: Arc<Core>, speaker: String, window: u64) {
-    forward_with_estimates(out, updates, core, speaker, window, Arc::new(std::sync::atomic::AtomicBool::new(false))).await
+    let (_, recipes) = mpsc::unbounded_channel();
+    forward_with_estimates(out, updates, core, speaker, window, Arc::new(std::sync::atomic::AtomicBool::new(false)), recipes, Arc::new(std::sync::atomic::AtomicU64::new(0))).await;
 }
 
-async fn forward_with_estimates(mut out: SplitSink<WebSocket, Message>, mut updates: broadcast::Receiver<Outgoing>, core: Arc<Core>, speaker: String, window: u64, estimates_on: Arc<std::sync::atomic::AtomicBool>) {
+async fn forward_with_estimates(mut out: SplitSink<WebSocket, Message>, mut updates: broadcast::Receiver<Outgoing>, core: Arc<Core>, speaker: String, window: u64, estimates_on: Arc<std::sync::atomic::AtomicBool>, mut recipes: mpsc::UnboundedReceiver<(u64, ServerMsg)>, recipe_gate: Arc<std::sync::atomic::AtomicU64>) {
     let mut keep_alive = tokio::time::interval_at(tokio::time::Instant::now() + KEEP_ALIVE, KEEP_ALIVE);
     let mut replayed = 0usize;
     loop {
         let update = tokio::select! {
             update = updates.recv() => update,
+            Some((epoch, message)) = recipes.recv() => {
+                if recipe_gate.load(std::sync::atomic::Ordering::SeqCst) == epoch
+                    && write(&mut out, &message).await.is_err() { return; }
+                continue;
+            },
             _ = keep_alive.tick() => {
                 if out.send(Message::Ping(Default::default())).await.is_err() {
                     return;
@@ -2137,9 +2352,12 @@ async fn forward_with_estimates(mut out: SplitSink<WebSocket, Message>, mut upda
                 let superseded = replayed > 0;
                 replayed = replayed.saturating_sub(1);
                 // Consume all pre-replay messages, forwarding non-jobs with the usual privacy rules.
-                if to.as_deref().is_some_and(|to| to != speaker) { continue; }
+                if to.as_deref().is_some_and(|to| to != speaker && to != annotate::review_target(window)) { continue; }
                 match message {
                     ServerMsg::ActionEstimateResult { window: target, ok, .. } if *target != window || (*ok && !estimates_on.load(std::sync::atomic::Ordering::SeqCst)) => continue,
+                    ServerMsg::AliasResult { window: origin, .. } if *origin != window || !core.alias_enabled(&speaker, window) => continue,
+                    ServerMsg::ReplyFormatState { window: origin, .. } | ServerMsg::PartnerReply { window: origin, .. }
+                        if *origin != window || !conversation::format_enabled(&core, &speaker, window) => continue,
                     ServerMsg::Job { .. } if superseded => continue,
                     // Its own guide, tour or job: only the other windows receive it (guide.rs).
                     ServerMsg::Guide { from, .. } | ServerMsg::Tour { from, .. } | ServerMsg::Job { from, .. } if *from == window => continue,
@@ -2206,9 +2424,11 @@ impl Core {
         Core {
             asr_test_url: None,
             typed_receipts: Default::default(),
+            alias_windows: Default::default(),
             find: Default::default(),
             catalog: Default::default(),
             recap: Default::default(),
+            explain: Default::default(),
             apps: Default::default(),
             guide: Default::default(),
             conversation: Default::default(),
@@ -2278,6 +2498,159 @@ mod tests {
         let (journal, _) = crate::Journal::open(&path).unwrap();
         let (placer_queue, queue) = mpsc::unbounded_channel();
         (Arc::new(Core { placer_queue, ..Core::test(journal, world) }), queue, path)
+    }
+
+    #[test]
+    fn f7_questions_persist_retries_ownership_and_stale_edits() {
+        let (core, _queue, path) = keyless(World::default());
+        let id = "00000000-0000-4000-8000-000000000007".to_string();
+        let save = |who: &str, text: &str, answer: &str, status: &str, revision| core.save_question(who, id.clone(), text.into(), None, answer.into(), status.into(), revision);
+        let mut updates = core.updates.subscribe();
+        save("test-speaker", "Which route?", "", "open", 0);
+        assert_eq!(core.snapshot().questions[0].revision, 1);
+        let bytes = std::fs::read(&path).unwrap();
+        save("test-speaker", "Which route?", "", "open", 0);
+        assert_eq!(bytes, std::fs::read(&path).unwrap(), "identical create retry writes nothing");
+        save("other-speaker", "Changed", "", "open", 1);
+        save("test-speaker", "Changed", "", "open", 0);
+        assert_eq!(core.snapshot().questions[0].question, "Which route?");
+        save("test-speaker", "Which route?", "The river path.", "answered", 1);
+        save("test-speaker", "Old overwrite", "", "open", 1);
+        assert_eq!(core.snapshot().questions[0].revision, 2);
+        let (_, loaded) = crate::Journal::open(&path).unwrap();
+        assert_eq!(loaded.questions, core.snapshot().questions);
+        save("test-speaker", "Which route?", "The river path.", "open", 2);
+        save("test-speaker", "Which route?", "The river path.", "archived", 3);
+        assert_eq!(core.snapshot().questions[0].status, "archived");
+        let results: Vec<_> = std::iter::from_fn(|| updates.try_recv().ok()).filter(|m| matches!(m.message, ServerMsg::QuestionResult { .. })).collect();
+        assert_eq!(results.len(), 8);
+        assert!(results.iter().all(|m| m.to.is_some()), "results never broadcast");
+    }
+
+    #[test]
+    fn f7_questions_concurrent_edits_increment_once() {
+        let (core, _queue, _path) = keyless(World::default());
+        let id = "00000000-0000-4000-8000-000000000008";
+        core.save_question("test", id.into(), "Which route?".into(), None, "".into(), "open".into(), 0);
+        std::thread::scope(|scope| {
+            for answer in ["East", "West"] {
+                let core = &core;
+                scope.spawn(move || core.save_question("test", id.into(), "Which route?".into(), None, answer.into(), "answered".into(), 1));
+            }
+        });
+        assert_eq!(core.snapshot().questions[0].revision, 2);
+    }
+
+    #[test]
+    fn c10_aliases_save_restart_exact_match_and_connection_scope() {
+        use crate::world::AliasTarget;
+        let (core, mut queue, path) = keyless(World::default());
+        for (id, title) in [("A", "Topic A"), ("B", "Topic B")] {
+            core.commit(vec![Change::ThreadAdded { thread: crate::world::fixtures::thread(id, title, 1) }]);
+        }
+        core.commit(vec![Change::ActiveChanged { thread_id:"A".into(), speaker:"you".into() }]);
+        let id = uuid::Uuid::new_v4().to_string();
+        let request = uuid::Uuid::new_v4().to_string();
+        let target = AliasTarget::OpenTopic { topic_id:"B".into() };
+        core.alias_operation("you", 10, &request, "save", &id, 0, "Violet doorway", target.clone(), true);
+        assert!(core.snapshot().aliases.is_empty(), "operation alone never opts in");
+        core.alias_switch("you", 10, true);
+        let before = std::fs::read(&path).unwrap();
+        core.alias_operation("you", 10, &request, "preview", &id, 0, "Violet doorway", target.clone(), true);
+        assert_eq!(std::fs::read(&path).unwrap(), before, "Preview is mutation-free");
+        core.alias_operation("you", 10, &request, "save", &id, 0, "Violet doorway", target.clone(), true);
+        assert_eq!(core.snapshot().aliases.len(), 1);
+        core.alias_operation("you", 10, &request, "save", &id, 0, "Violet doorway", target.clone(), true);
+        assert_eq!(core.snapshot().aliases[0].revision, 1, "same identity is idempotent");
+        let (_, replayed) = crate::Journal::open(&path).unwrap();
+        assert_eq!(replayed.aliases, core.snapshot().aliases);
+        assert!(core.alias_turn("you", Some(10), "  VIOLET   doorway！？ "));
+        assert_eq!(core.snapshot().active_for("you").map(String::as_str), Some("B"));
+        assert!(queue.try_recv().is_err(), "navigation never queues model placement");
+        assert!(!core.alias_turn("you", Some(11), "Violet doorway"));
+        assert!(!core.alias_turn("other", Some(10), "Violet doorway"));
+        assert!(!core.alias_turn("you", Some(10), "a Violet doorway in a longer sentence"));
+        core.alias_switch("you", 10, false);
+        assert!(!core.alias_turn("you", Some(10), "Violet doorway"));
+        core.take_turn("you", "Violet doorway", true, true, false, Some(10));
+        assert_eq!(core.snapshot().thoughts.last().unwrap().text, "Violet doorway", "off restores ordinary thought handling");
+        let (_, replayed) = crate::Journal::open(&path).unwrap();
+        let restarted = Arc::new(Core::test(crate::Journal::open(&path).unwrap().0, replayed));
+        assert!(!restarted.alias_turn("you", Some(10), "Violet doorway"), "restart requires a new connection opt-in");
+        restarted.alias_switch("you", 12, true);
+        assert!(restarted.alias_turn("you", Some(12), "Violet doorway"));
+    }
+
+    #[test]
+    fn c10_aliases_stale_safety_removal_and_undo() {
+        use crate::world::AliasTarget;
+        let (core, _queue, _path) = keyless(World::default());
+        core.commit(vec![Change::ThreadAdded {thread: crate::world::fixtures::thread("B", "Topic B", 1)}]);
+        core.alias_switch("you", 1, true);
+        let id = uuid::Uuid::new_v4().to_string();
+        let target = AliasTarget::OpenTopic {topic_id:"B".into()};
+        let op = |operation: &str, revision, phrase: &str, enabled| core.alias_operation("you",1,&uuid::Uuid::new_v4().to_string(),operation,&id,revision,phrase,target.clone(),enabled);
+        op("save",0,"Stop listening!",true);
+        assert!(core.snapshot().aliases.is_empty());
+        op("save",0,"violet doorway",true);
+        op("save",0,"stale edit",true);
+        assert_eq!(core.snapshot().aliases[0].phrase, "violet doorway");
+        op("delete",1,"violet doorway",true);
+        assert!(core.snapshot().aliases[0].deleted);
+        op("save",2,"violet doorway",true);
+        assert!(core.snapshot().aliases[0].enabled && !core.snapshot().aliases[0].deleted, "explicit Undo restores same record");
+        core.commit(vec![Change::ThreadRemoved {thread_id:"B".into()}]);
+        let alias = core.snapshot().aliases[0].clone();
+        assert!(alias.unavailable && !alias.enabled);
+        assert_eq!(alias.target, target, "source ID remains readable");
+        core.commit(vec![Change::ThreadAdded {thread: crate::world::fixtures::thread("B", "Replacement", 2)}]);
+        assert!(!core.alias_turn("you",Some(1),"violet doorway"), "restoring a topic never silently re-enables an alias");
+    }
+
+    #[test]
+    fn c10_aliases_limit_and_failed_journal_ack() {
+        use crate::world::AliasTarget;
+        let (core, _queue, path) = keyless(World::default());
+        core.alias_switch("you", 1, true);
+        for n in 0..31 {
+            core.alias_operation("you",1,&uuid::Uuid::new_v4().to_string(),"save",&uuid::Uuid::new_v4().to_string(),0,&format!("violet path {n}"),AliasTarget::NextTopic,true);
+        }
+        assert_eq!(core.snapshot().aliases.len(),30);
+        let mut updates = core.updates.subscribe();
+        let alias = core.snapshot().aliases[0].clone();
+        *core.journal.lock().unwrap() = crate::Journal::read_only(&path).unwrap();
+        core.alias_operation("you",1,&uuid::Uuid::new_v4().to_string(),"save",&alias.id,1,"new doorway",AliasTarget::NextTopic,true);
+        assert_eq!(core.snapshot().aliases[0],alias);
+        let mut seen = false;
+        while let Ok(out) = updates.try_recv() { if let ServerMsg::AliasResult { ok, .. } = out.message { assert!(!ok); seen = true; } }
+        assert!(seen,"write failure gets a matching failed acknowledgement");
+    }
+
+    #[tokio::test]
+    async fn c10_aliases_closed_actions_and_recap_revocation() {
+        use crate::world::AliasTarget;
+        let (core, mut queue, _path) = keyless(World::default());
+        for id in ["A", "B"] { core.commit(vec![Change::ThreadAdded { thread: crate::world::fixtures::thread(id, id, 1) }]); }
+        core.commit(vec![Change::ActiveChanged { thread_id:"A".into(), speaker:"you".into() }]);
+        core.alias_switch("you", 1, true);
+        for (target, expected) in [(AliasTarget::NextTopic, "B"), (AliasTarget::PreviousTopic, "A")] {
+            let id=uuid::Uuid::new_v4().to_string();
+            core.alias_operation("you",1,&uuid::Uuid::new_v4().to_string(),"save",&id,0,&format!("violet {expected}"),target.clone(),true);
+            core.alias_operation("you",1,&uuid::Uuid::new_v4().to_string(),"try",&id,1,&format!("violet {expected}"),target,true);
+            assert_eq!(core.snapshot().active_for("you").map(String::as_str),Some(expected));
+        }
+        assert!(queue.try_recv().is_err());
+        let id=uuid::Uuid::new_v4().to_string();
+        core.alias_operation("you",1,&uuid::Uuid::new_v4().to_string(),"save",&id,0,"violet summary",AliasTarget::ShowRecap,true);
+        let mut updates=core.updates.subscribe();
+        core.alias_operation("you",1,&uuid::Uuid::new_v4().to_string(),"try",&id,1,"violet summary",AliasTarget::ShowRecap,true);
+        core.alias_switch("you",1,false);
+        tokio::task::yield_now().await;
+        tokio::task::yield_now().await;
+        assert!(core.snapshot().recaps.is_empty());
+        while let Ok(out)=updates.try_recv() { assert!(!matches!(out.message,ServerMsg::RecapState {..})); }
+        let arbitrary=serde_json::json!({"type":"alias_operation","request_id":id,"operation":"save","id":uuid::Uuid::new_v4().to_string(),"revision":0,"phrase":"violet tool","target":{"kind":"shell","command":"anything"},"enabled":true});
+        assert!(serde_json::from_value::<crate::protocol::ClientMsg>(arbitrary).is_err(),"no arbitrary tool target");
     }
 
     #[test]
@@ -3694,6 +4067,40 @@ mod tests {
         .await;
         assert!(closed.is_ok(), "an oversized frame ends the connection");
         let _ = std::fs::remove_file(&path);
+    }
+
+    /// A phone gesture and the desktop's answer use the room socket, never history or catch-up.
+    #[tokio::test]
+    async fn remote_selection_is_live_only() {
+        use tokio_tungstenite::tungstenite::Message;
+        let path = std::env::temp_dir().join(format!("e2a2o-remote-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, world) = crate::Journal::open(&path).unwrap();
+        let core = Arc::new(Core::test(journal, world));
+        let routes = axum::Router::new().route("/ws", axum::routing::get(super::connect))
+            .layer(axum::middleware::from_fn_with_state(core.clone(), super::gate)).with_state(core.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, routes.into_make_service_with_connect_info::<Link>()).await });
+        let (mut phone, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws?remote=1")).await.unwrap();
+        let (mut desktop, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws")).await.unwrap();
+        let before = std::fs::read(&path).unwrap_or_default();
+        for message in [
+            serde_json::json!({"kind":"right"}),
+            serde_json::json!({"kind":"selection","thread_id":"T1","thought_id":null,"label":"Garden","enabled":true}),
+            serde_json::json!({"kind":"pan","x":24.0,"y":-12.0}),
+            serde_json::json!({"kind":"zoom","scale":1.2}),
+        ] {
+            let envelope = serde_json::json!({"type":"remote_selection","message":message});
+            phone.send(Message::Text(envelope.to_string().into())).await.unwrap();
+            let received = tokio::time::timeout(std::time::Duration::from_secs(3), async {
+                loop { let next = received(&mut desktop).await; if next["type"] == "remote_selection" { break next; } }
+            }).await.unwrap();
+            assert_eq!(received, envelope);
+        }
+        assert_eq!(std::fs::read(&path).unwrap_or_default(), before);
+        assert!(core.snapshot().thoughts.is_empty());
+        assert!(super::catch_up(&core, "you").iter().all(|m| !matches!(m, ServerMsg::RemoteSelection { .. })));
+        phone.close(None).await.unwrap(); desktop.close(None).await.unwrap(); server.abort();
     }
 
     /// One window over a real WebSocket, as the page connects: the world first, then what's meant for it and

@@ -135,13 +135,17 @@ try {
     await check('!document.querySelector("[data-slot=held]")', "empty region cleaned up");
     assert.equal(await evaluate('document.body.dataset.otherAnswer'), "1", "existing shell Answer callback once");
 
-    // The shell's L callback must update the guide, even while the phone shows only a chip.
+    // A phone's first L reveals the concealed question; the next L can defer the visible card.
     guide("Keyboard question?");
     await check(phone ? '!!document.querySelector(".shell-held-chip")' : '!!document.querySelector(".guide-held-card")', "keyboard item held");
     await evaluate("document.activeElement?.blur()");
     await key("l", "KeyL", 76);
-    if (phone) await click(".shell-held-chip");
-    await check('document.querySelector(".guide-held-card")?.dataset.state === "later"', "shell L callback retained");
+    if (phone) {
+      await check('document.querySelector(".guide-held-card")?.dataset.state === "waiting"', "first phone L reveals without deferring");
+      assert.equal(await evaluate('!!document.querySelector(".guide-caption")'), false, "revealing does not answer");
+      await key("l", "KeyL", 76);
+    }
+    await check('document.querySelector(".guide-held-card")?.dataset.state === "later"', "visible card L callback retained");
     guide("", "Friend");
     await check('!document.querySelector("[data-slot=held]")', "withdrawn Later cleaned up");
 
@@ -252,7 +256,10 @@ try {
       if (phone) await click(".shell-held-chip");
       await evaluate('document.activeElement?.blur()');
       await key("l", "KeyL", 76);
-      if (phone) await click(".shell-held-chip");
+      if (phone) {
+        await check(`document.querySelector('[data-held-id="${overId}"] .guide-held-card')?.dataset.state === "over"`, "phone L reveals Talked over unchanged");
+        await key("l", "KeyL", 76);
+      }
       await check(`document.querySelector('[data-held-id="${overId}"] .guide-held-card')?.dataset.state === "over"`, "L preserves Talked over");
       assert.match(await evaluate('document.querySelector(".guide-held-acts").textContent'), /Continue.*Drop it/s);
       await click(".guide-held-acts button:first-child");

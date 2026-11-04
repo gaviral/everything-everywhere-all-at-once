@@ -1,0 +1,8 @@
+{
+  "id": "app-recipes",
+  "name": "App recipes",
+  "does": "Preview, fork and share closed app recipes. Saved copies start disabled.",
+  "kind": "card",
+  "defaultOn": false,
+  "demoSafe": false
+}

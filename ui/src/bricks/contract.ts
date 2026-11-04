@@ -4,10 +4,10 @@
 // words as they come, the mic's loudness, a notice). Nothing here runs the app's code, so a brick works the same in the
 // app and in the playground (bricks.html), which hands it a sample map instead.
 import { createElement, createContext, useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
-import type { MiniApp } from "../apps-core";
+import type { AppRecipe, RecipeSave, RecipeResult, MiniApp } from "../apps-core";
 import type { Anchor, AnchorContext } from "../annotate-core";
 export { anchorRange, codePointOffset } from "../annotate-core";
-import type { ActionEstimate, EstimateRequest, EstimateResult, Action, Note, Pause, Suggestion, Thought, Thread as MapThread, UsageRow, UsageSnapshot } from "../core";
+import type { ActionEstimate, EstimateRequest, EstimateResult, Question, QuestionInput, QuestionResult, Action, Note, Pause, Suggestion, Thought, Thread as MapThread, UsageRow, UsageSnapshot } from "../core";
 import type { Position } from "../positions-core";
 
 export type CanvasToolId = "composer" | "features" | "history";
@@ -26,6 +26,9 @@ export const CanvasToolsContext = createContext<CanvasTools | null>(null);
 export type FullContentRequest = { threadId: string; thoughtIds?: readonly string[]; displayedPoint?: string; restoreCamera: () => void };
 export const FullContentContext = createContext<((request: FullContentRequest, source: HTMLElement) => void) | null>(null);
 
+/** Explicit point review in the host. A joined group opens source selection first. */
+export type PointReviewAction = (thoughtIds: readonly string[], returnFocus: HTMLElement) => void;
+export const TextEditReviewContext = createContext<{ enabled: boolean; open: PointReviewAction }>({ enabled: false, open: () => {} });
 export const SemanticZoomContext = createContext(false);
 
 /** Optional presentation objects, local to this visit. Never World thoughts or positions. */
@@ -48,9 +51,18 @@ export interface Shapes {
 export const ShapesContext = createContext<Shapes | null>(null);
 
 /** The app's existing speech-correction controls, attached to a thought by a view. */
+export type RemoteGesture = { kind: "hello" | "left" | "right" | "up" | "down" | "open" | "back" }
+  | { kind: "zoom"; scale: number } | { kind: "pan"; x: number; y: number };
+export type RemotePosition = { kind: "selection"; thread_id: string | null; thought_id: string | null; label: string; enabled: boolean };
+/** Optional phone controller supplied by the app; the standalone Canvas has none. */
+export const PhoneRemoteContext = createContext<{
+  subscribe: (hear: (gesture: RemoteGesture) => void) => () => void;
+  select: (position: RemotePosition) => void;
+} | null>(null);
+
 export const SpeechFixesContext = createContext<((thought: Thought) => ReactNode) | null>(null);
 
-export type { ActionEstimate, EstimateRequest, EstimateResult, Action, Anchor, AnchorContext, MiniApp, Note, Pause, Position, Suggestion, Thought, UsageRow, UsageSnapshot };
+export type { AppRecipe, RecipeSave, RecipeResult, ActionEstimate, EstimateRequest, EstimateResult, Question, QuestionInput, QuestionResult, Action, Anchor, AnchorContext, MiniApp, Note, Pause, Position, Suggestion, Thought, UsageRow, UsageSnapshot };
 
 /** One thought of a turn: a turn the placer cut in two is one turn of two parts, each its own point on the map. */
 export interface Part {
@@ -125,7 +137,7 @@ export type BrickKind = "view" | "card" | "input" | "panel";
 export interface BrickInfo {
   /** Its folder's name: lowercase letters, digits and dashes. */
   id: string;
-  /** What the Catalog calls it: a word or two. */
+  /** What the Catalog calls it: a short phrase. */
   name: string;
   /** One line for a person: what it does. The Catalog shows it under the name. */
   does: string;
@@ -182,7 +194,18 @@ export interface Job {
 }
 
 /** The map as it is now, read-only: a brick changes the map only through `actions`. Each change brings a new one. */
+/** Exact raw source value for a read-only navigation request. */
+export type ThoughtSource = { readonly id: string; readonly text: string; readonly threadId: string; readonly at: number; readonly speaker: string };
+export type CaptureSource = { readonly requestId: string; readonly thoughtIds: readonly string[] };
+
 export interface MapSnapshot {
+  /** Only your deliberate saved questions; underlying records live on this shared map. */
+  readonly questions: readonly Question[];
+  /** Current map and speaker; visit-only helpers must clear their memory when it changes. */
+  readonly visitKey?: string;
+  /** Successful, non-replayed capture receipts, never browser queue acknowledgements. */
+  readonly captureSources?: readonly CaptureSource[];
+  readonly aliases?: readonly VoiceAlias[];
   /** Optional browser presentation: chronological turns with linked topics. Missing/off keeps the current Canvas. */
   readonly conversationSpine?: boolean;
   /** Optional presentation only; never enabled by a sample or recording preset. */
@@ -191,6 +214,7 @@ export interface MapSnapshot {
   /** Whether the host conversation controls are enabled. */
   readonly partnerOn?: boolean;
   readonly rotateCanvas?: boolean;
+  readonly reviewTextEdits?: boolean;
   /** Allowances from USAGE_FILE and the core's rolling-hour model budget; null with no readable file or connection. */
   readonly usage: UsageSnapshot | null;
   /** The helpers' jobs, in the order each first came (the oldest first, the newest last), each in its latest state; the
@@ -248,9 +272,17 @@ export interface MapSnapshot {
 export interface BrickActions {
   /** Resolves only with the matching write acknowledgement, or an explicit failure. */
   setActionEstimate?(request: EstimateRequest): Promise<EstimateResult>;
+  /** Portable data only; throws on unsupported blocks. Never starts the app. */
+  exportRecipe(app: MiniApp): string;
+  /** Successful response means the matching core journal batch was written; never queues offline. */
+  saveRecipe(save: RecipeSave): Promise<RecipeResult>;
   /** Explicitly hands a plain text file to the browser, not proof it reached disk. Host bounds: plain filename
    *  up to 80 characters, text/plain or text/markdown, and at most 64 KiB UTF-8. False on refusal or failure. */
   saveTextFile(name: string, text: string, mime: string): boolean;
+  /** True means queued on this connection. Only the matching result and world record confirm a save. Never retried. */
+  saveQuestion(input: QuestionInput, receive: (result: QuestionResult) => void): boolean;
+  reviewPoint: PointReviewAction;
+  voiceShortcut(request: AliasRequest): Promise<AliasResult>;
   /** Counts a visible thought as read, advancing the shared Talk/canvas position (never moving it back). */
   readThought(thoughtId: string): void;
   /** Adds a thought as if typed in the composer: it lands on a thread a few seconds later, and its `landed` says this
@@ -263,7 +295,9 @@ export interface BrickActions {
    *  place moves there too. */
   openThread(threadId: string): void;
   /** Opens this exact live placed thought through the shared jump path. False, with a notice, if it is gone. */
-  openThought(thoughtId: string): boolean;
+  openThought(thoughtId: string | ThoughtSource): boolean;
+  /** Leaves the current view for the map and returns keyboard focus to its entry control. */
+  closeView(): void;
   /** Makes a thread "this", as pointing at its card does: what "rename this" or "expand this" said next acts on.
    *  null lets it go. A view's own elements can skip this: one marked `data-thread={id}` is "this" while pointed at. */
   select(threadId: string | null): void;
@@ -382,3 +416,14 @@ export function ToolSlot({ host }: { host: HTMLElement }) {
   }, [host]);
   return createElement("div", { ref: place, className: "shell-tool-slot spine-tool-slot" });
 }
+/** Deliberately taught literal rules. No arbitrary tool, prompt or external action. */
+export type AliasTarget = { readonly kind: "open_topic"; readonly topic_id: string } | { readonly kind: "next_topic" | "previous_topic" | "show_recap" };
+export interface VoiceAlias {
+  readonly id: string; readonly owner: string; readonly phrase: string; readonly target: AliasTarget;
+  readonly revision: number; readonly enabled: boolean; readonly deleted: boolean; readonly unavailable: boolean;
+}
+export interface AliasRequest {
+  readonly request_id: string; readonly operation: "preview" | "save" | "delete" | "try";
+  readonly id: string; readonly revision: number; readonly phrase: string; readonly target: AliasTarget; readonly enabled: boolean;
+}
+export interface AliasResult { readonly request_id: string; readonly ok: boolean; readonly message: string }

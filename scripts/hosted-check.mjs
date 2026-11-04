@@ -51,12 +51,18 @@ try {
   assert.match(readFileSync(`${root}/src/Recap.tsx`, "utf8"), /resting \? "Recap is back tomorrow: today's free tries are used up\."/);
   for (const prop of ["<Recap ", "<Tour ", "<PendingThought "]) assert.match(appSource, new RegExp(`${prop}[^\\n]*resting=\\{core\\.resting\\}`), prop);
   assert.match(site.keyWords(true, false, "notice", true), /type/, "typing still works, and is placed then");
-  // On a laptop the words are as they were: the .env fix is yours (marks-check holds the mic's).
+  // Local copy also uses plain words; technical setup waits behind its action.
   assert.equal(site.savedWhere(false), "Your thoughts are saved on the host's computer.");
-  assert.equal(site.keyWords(false, false, "notice"), "No AI key: you can browse the map, but new thoughts and listening need MODEL_API_KEY in .env (see .env.example).");
-  assert.equal(site.siteText("Making an app needs the AI key. Set MODEL_API_KEY in .env, then restart.", false), "Making an app needs the AI key. Set MODEL_API_KEY in .env, then restart.");
+  assert.match(site.keyWords(false, false, "notice"), /This copy has no AI key/);
+  for (const refused of [false, true]) for (const what of ["notice", "mic", "tour"]) {
+    assert.doesNotMatch(site.keyWords(false, refused, what), /MODEL_API_KEY|\.env/);
+    assert.match(site.keyWords(false, refused, what), /typed thoughts/);
+  }
+  assert.ok(site.AI_SETUP_STEPS.some(step => /MODEL_API_KEY/.test(step)), "technical instructions remain behind Set up AI");
+  assert.equal(site.siteText("Making an app needs the AI key. Set MODEL_API_KEY in .env, then restart.", false), site.keyWords(false, false, "notice"));
   assert.equal(site.siteText("Couldn't make this app just now.", true), "Couldn't make this app just now.", "other words pass through");
-  assert.match(MIC_WORDS.refused.tip, /MODEL_API_KEY in \.env/);
+  assert.match(MIC_WORDS.refused.tip, /Set up AI/);
+  assert.doesNotMatch(MIC_WORDS.refused.tip, /MODEL_API_KEY|\.env/);
 
   // Every host-only line in the UI goes through site.ts, so a new one can't slip past hosting: outside it, these
   // words appear only in comments, or in the import's list, which shows only on the core's own machine (Import.tsx).

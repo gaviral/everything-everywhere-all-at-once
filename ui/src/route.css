@@ -38,3 +38,9 @@
   .thread { --route-delay: 0s !important; }
   .route-tag, .thread.route-deep > .route-tag { animation: none; }
 }
+
+/* Keep the hidden Canvas measured without letting ReactFlow descendants paint over another view. */
+.persistent-canvas[aria-hidden="true"] .spine-frame { opacity: 0; pointer-events: none; }
+
+/* A closed sample menu has no gallery clearance to reserve; keep Canvas camera spacing unchanged. */
+html.shell2[data-view="palace"] .sample-tools .sample-recovery-actions[hidden] { display: none; }

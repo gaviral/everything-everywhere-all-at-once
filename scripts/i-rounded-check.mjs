@@ -126,6 +126,7 @@ try {
   await navigate("/bricks.html?brick=shapes&sample=empty");
   assert.ok(await browser.until(palette), "synthetic playground provider");
   assert.equal(await browser.evaluate(instanceCount), 0, "playground starts empty");
+  assert.ok(await browser.until('!!document.querySelector(".spine-frame.spine-ready") && !!document.querySelector(".shapes-button") && !document.querySelector(".shapes-button").disabled'), "playground canvas host is ready for placement");
   await click("Place rectangle");
   assert.ok(await browser.until(`${instanceCount} === 1`), "playground uses same spine host");
   console.log("i-rounded-check: ok (fresh off, Features, zero until Place, edit, stable ID drag, keyboard, remove/reuse, reload clears, World unchanged, off, 390px/reduced motion, playground)");

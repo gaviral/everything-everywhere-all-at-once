@@ -5,9 +5,9 @@
 import { createContext, Fragment, memo, useContext, useEffect, useLayoutEffect, useRef, useState, useId, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode, type RefObject } from "react";
 import { useReactFlow, useStore, type Node, type NodeProps } from "@xyflow/react";
 import { G, type Entry, type Item, type Who } from "./layout";
-import { SpeechFixesContext, SemanticZoomContext, FullContentContext, type Pause, type Thought } from "../contract";
+import { TextEditReviewContext, SpeechFixesContext, SemanticZoomContext, FullContentContext, type Pause, type Thought } from "../contract";
 import { StayHere } from "../../StayHere";
-import { C } from "./conversation";
+import { C, topicShortcutHeight } from "./conversation";
 
 /** Below this zoom a point's 15 px words are under 11 px on screen, the smallest the app sets: they turn to bars. */
 export const READ = 0.75;
@@ -113,9 +113,12 @@ export function Initial({ who, small, style }: { who: Who; small?: boolean; styl
  *  (placed by hand) put it back where the layout would. */
 function Tools({ item }: { item: Item }) {
   const acts = useContext(ActsContext)!;
+  const review = useContext(TextEditReviewContext);
   const thread = item.kind === "head" || item.kind === "card" || item.kind === "aside";
   return <span className="spine-tools">
     <InspectAction item={item} />
+    {review.enabled && !!item.thoughts?.length && <button type="button" className="spine-tool nodrag nopan" aria-label="Suggest a shorter point" title="Suggest a shorter point"
+      onClick={event => { event.stopPropagation(); review.open(item.thoughts!, event.currentTarget); }}>✎</button>}
     {thread && <button type="button" className="spine-tool nodrag" aria-label={`Open ${item.title} on the map`} title="Open on the map" onClick={() => acts.openOnMap(item.thread)}>↗</button>}
     <button type="button" className="spine-tool nodrag" aria-label="Keep on the shelf" title="Keep on the shelf" onClick={() => acts.shelve(item)}>⤓</button>
     {item.kind === "head" && acts.topics.length >= 2 && <TopicTool item={item} />}
@@ -421,8 +424,8 @@ function ConversationPoint({ data }: { data: ItemData }) {
       {item.decided ? "✓ Decided" : item.left ? "Left off" : ""}
     </span>
     <span className="spine-turn-topics" style={{ left: G.textX, top: C.speaker + textH + C.status, width: G.textW }}>
-      {item.replyTo && <button type="button" className="nodrag nopan" aria-label="Back to the turn these words answer" onClick={() => acts.visit(item.replyTo!)}>↖ Reply to</button>}
-      {item.memberships?.map((topic) => <button key={topic.thread} type="button" className="nodrag nopan" title={topic.title}
+      {item.replyTo && <button type="button" className="nodrag nopan" style={{ height: topicShortcutHeight("↖ Reply to") }} aria-label="Back to the turn these words answer" onClick={() => acts.visit(item.replyTo!)}>↖ Reply to</button>}
+      {item.memberships?.map((topic) => <button key={topic.thread} type="button" className="nodrag nopan" title={topic.title} style={{ height: topicShortcutHeight(`↗ ${topic.title}`) }}
         aria-label={`Topic: ${topic.title}`} onClick={() => acts.visit(`t:${topic.thread}`)}>↗ {topic.title}</button>)}
       {!item.memberships?.length && <span className="spine-turn-sorting">Awaiting topic</span>}
     </span>

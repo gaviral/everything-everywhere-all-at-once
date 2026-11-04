@@ -32,7 +32,7 @@ try {
     localStorage.setItem("e2a2o.name", "Tester"); localStorage.setItem("e2a2o.toured", "1");
     window.spoken = []; window.messages = []; window.mapWorld = null;
     Object.defineProperty(window, "speechSynthesis", { configurable: true, value: Object.assign(new EventTarget(), {
-      getVoices: () => [{ name: "Synthetic English", lang: "en-US", default: true }], cancel() {}, speak(u) { spoken.push(u.text); queueMicrotask(() => u.onend?.()); }
+      getVoices: () => [{ name: "Synthetic English", lang: "en-US", default: true, localService: true }], cancel() {}, speak(u) { spoken.push(u.text); queueMicrotask(() => u.onend?.()); }
     }) });
     window.SpeechSynthesisUtterance = class { constructor(text) { this.text = text; } };
     const Socket = window.WebSocket;

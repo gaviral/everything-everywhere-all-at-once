@@ -772,3 +772,30 @@ fn preset(text: &str) -> Option<View> {
     else if crate::is_command(text, &["all features"], &[]) { Some(View::Features) }
     else { None }
 }
+
+/// Normalization deliberately preserves internal punctuation and words. Unicode lowercase,
+/// whitespace folding and terminal sentence punctuation only; never a substring match.
+pub(crate) fn alias_normalize(text: &str) -> String {
+    text.trim().trim_end_matches(|c: char| c.is_whitespace() || matches!(c, '.' | '!' | '?' | '…' | '。' | '！' | '？'))
+        .to_lowercase().split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+pub(crate) fn alias_conflict(text: &str) -> Option<String> {
+    let normalized = alias_normalize(text);
+    if let Some(act) = crate::catalog::classify(&normalized) { return Some(crate::catalog::def(act).does.into()); }
+    if crate::notice_control(&normalized).is_some() { return Some("Change notice visibility".into()); }
+    if matches!(normalized.as_str(), "stop" | "cancel" | "abort" | "never mind" | "nevermind") { return Some("Stop or cancel".into()); }
+    if crate::spoken::stop_tail(&normalized).is_some() { return Some("Stop listening".into()); }
+    None
+}
+
+#[cfg(test)]
+mod c10_aliases_tests {
+    #[test] fn c10_aliases_literal_normalization_and_safety() {
+        assert_eq!(super::alias_normalize("  ÉCHO   Doorway！？  "), "écho doorway");
+        assert_ne!(super::alias_normalize("my echo doorway story"), super::alias_normalize("echo doorway"));
+        assert!(super::alias_conflict("STOP listening!").is_some());
+        assert!(super::alias_conflict("cancel").is_some());
+        assert!(super::alias_conflict("next topic").is_some());
+    }
+}

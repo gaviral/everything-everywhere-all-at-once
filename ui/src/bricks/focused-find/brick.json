@@ -1,0 +1,8 @@
+{
+  "id": "focused-find",
+  "name": "Focused find",
+  "does": "Narrow the map by words, speaker, day or theme, then open the exact thought.",
+  "kind": "view",
+  "defaultOn": false,
+  "demoSafe": false
+}

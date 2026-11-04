@@ -1,0 +1,22 @@
+.focused-find { box-sizing: border-box; max-width: 1088px; margin: 0 auto; padding: 76px 24px max(200px, calc(var(--dock-height, 120px) + 80px)); color: var(--ink); overflow-wrap: anywhere; }
+.focused-find-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.focused-find h1 { font-size: 1.5rem; margin: 0 0 12px; }
+.focused-find button, .focused-find input, .focused-find select { box-sizing: border-box; min-height: 44px; max-width: 100%; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink); font: inherit; }
+.focused-find button { cursor: pointer; white-space: normal; }
+.focused-find :focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.focused-find-form { display: flex; flex-wrap: wrap; align-items: end; gap: 14px; margin-top: 16px; }
+.focused-find-form label { display: flex; flex: 1 1 160px; min-width: 0; flex-direction: column; gap: 6px; }
+.focused-find-form .focused-find-words { flex-basis: 100%; }
+.focused-find input, .focused-find select { width: 100%; min-width: 0; }
+.focused-find-status, .focused-find-meta { color: var(--muted); }
+.focused-find-results { list-style: none; padding: 0; margin: 0; }
+.focused-find-result { padding: 18px; margin: 12px 0; border: 1px solid var(--line); border-radius: 14px; background: var(--card); }
+.focused-find-point { margin: 0 0 8px; white-space: pre-wrap; }
+.focused-find-meta { margin: 0 0 12px; }
+.focused-find-original { margin-bottom: 12px; }
+.focused-find-original summary { cursor: pointer; padding: 8px 0; }
+.focused-find-original p { white-space: pre-wrap; }
+@media (max-width: 560px) {
+  .focused-find { padding-top: 96px; padding-inline: 16px; }
+  .focused-find-form label { flex-basis: 100%; }
+}

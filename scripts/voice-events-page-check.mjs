@@ -22,7 +22,7 @@ try {
     localStorage.setItem('e2a2o.toured','1'); localStorage.setItem('e2a2o.features',JSON.stringify({partner:true}));
     window.spoken=[]; window.cancelled=0; window.micStarts=0; window.tracks=[];
     Object.defineProperty(window,'speechSynthesis',{configurable:true,value:Object.assign(new EventTarget(),{
-      getVoices:()=>[{name:'Fixture English',lang:'en-US',default:true}],speak:u=>spoken.push(u),cancel:()=>cancelled++
+      getVoices:()=>[{name:'Fixture English',lang:'en-US',default:true,localService:true}],speak:u=>spoken.push(u),cancel:()=>cancelled++
     })});
     window.SpeechSynthesisUtterance=class {constructor(text){this.text=text}};
     class Node { constructor(){this.port={postMessage:s=>this.capture=s,close(){}}} connect(n){return n} disconnect(){} }
@@ -99,7 +99,8 @@ try {
   await sleep(80);
   assert.equal(await evaluate(`document.querySelector('.partner-status').dataset.playback`),'queued','stale thinking cannot interrupt the next reply');
   await evaluate('spoken[1].onerror()');
-  assert.ok(await until(`document.querySelector('.partner-status').dataset.playback==='failed' && document.querySelector('.partner-status').textContent.includes('Retry audio')`));
+  assert.ok(await until(`document.querySelector('.partner-status').dataset.playback==='off' && !document.querySelector('.partner-status').textContent.includes('Retry audio')`),'unusable voice falls back quietly');
+  assert.ok(await evaluate(`document.body.textContent.includes('Second reply.')`),'reply text remains available');
   for(const [name,width,height,large,dark] of [['phone',390,844,false,false],['large-text',390,844,true,false],['dark',390,844,false,true]]) {
     await page('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false});
     await evaluate(`document.documentElement.style.fontSize='${large?'200':'100'}%'`);
@@ -108,8 +109,10 @@ try {
     assert.ok(await evaluate(`(()=>{const buttons=[...document.querySelectorAll('.partner-status button')];return buttons.every(b=>{const r=b.getBoundingClientRect();return r.x>=0&&r.right<=innerWidth&&r.y>=0&&r.bottom<=innerHeight&&r.height>=44&&b.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))})})()`),`${name}: actions reachable`);
     await shot(name);
   }
-  await evaluate(`[...document.querySelectorAll('.partner-status button')].find(b=>b.textContent==='Retry audio').click()`);
-  assert.ok(await until(`spoken.length===3 && spoken[2].text==='Second reply.'`),'retry uses retained reply words');
+  await evaluate(`speechSynthesis.dispatchEvent(new Event('voiceschanged'))`);
+  send({type:'partner_state',state:'thinking',message:'Thinking…',reply_id:'reply-c'});
+  send({type:'guide',kind:'caption',text:'New reply after voice recovery.',by:'E2A2O',reply_id:'reply-c',at_ms:now+2,speak:true});
+  assert.ok(await until(`spoken.length===3 && spoken[2].text==='New reply after voice recovery.'`),'recovered voice speaks only new reply words');
   await evaluate('spoken[2].onstart()');
   const beforeConversationStop = await evaluate('cancelled');
   await evaluate(`[...document.querySelectorAll('.partner-status button')].find(b=>b.textContent==='Stop conversation').click()`);

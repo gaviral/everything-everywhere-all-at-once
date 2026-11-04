@@ -4,7 +4,7 @@
 // and events each brick is handed (bricks/contract.ts). BrickSlot.tsx mounts them; Catalog.tsx switches them.
 import { useSyncExternalStore, type ComponentType } from "react";
 import type { BrickEvents, BrickInfo, BrickKind, BrickOn, BrickProps, Job, MapSnapshot, Speaker } from "./bricks/contract";
-import type { Note, Thought, UsageSnapshot, World } from "./core";
+import type { Capture, Note, Thought, UsageSnapshot, World } from "./core";
 import { anchoredThreads } from "./annotate-core";
 import { asIdeas } from "./chunks";
 import { landedNow } from "./landed";
@@ -34,7 +34,7 @@ export function infoProblems(json: unknown, folder: string): string[] {
   const bare = folder.replace(/^_/, "");
   if (!/^[a-z][a-z0-9-]*$/.test(bare)) problems.push(`the folder's name "${folder}" must be lowercase letters, digits and dashes`);
   if (APP_VIEWS.includes(bare)) problems.push(`"${bare}" is the app's own view; pick another name`);
-  if (typeof info.name !== "string" || !info.name.trim() || info.name.length > 24) problems.push("name: a word or two, at most 24 characters");
+  if (typeof info.name !== "string" || !info.name.trim() || info.name.length > 32) problems.push("name: a short phrase, at most 32 characters");
   if (typeof info.does !== "string" || !info.does.trim() || info.does.length > 90 || /\n/.test(info.does)) problems.push("does: one line, at most 90 characters");
   if (!KINDS.includes(info.kind as BrickKind)) problems.push(`kind: one of ${KINDS.join(", ")}`);
   if (typeof info.defaultOn !== "boolean") problems.push("defaultOn: true or false (a new feature starts off: false)");
@@ -99,7 +99,7 @@ function readSwitches(): Switches {
 /** The ids on, given what was switched (`switches`), what the address turned on for this visit (`flagged`) and the
  *  shell's core (`core`, shell/flag.ts): on with no switch, unless one broke and was switched off this visit (`off`). */
 export function onIds(bricks: readonly Brick[], switches: Switches, flagged: ReadonlySet<string>, core: readonly string[] = [], off: ReadonlySet<string> = new Set()): ReadonlySet<string> {
-  return new Set(bricks.filter(({ info }) => (core.includes(info.id) && !off.has(info.id)) || flagged.has(info.id) || (switches[info.id] ?? info.defaultOn)).map(({ info }) => info.id));
+  return new Set(bricks.filter(({ info }) => (core.includes(info.id) && !off.has(info.id)) || (info.id !== "app-recipes" && flagged.has(info.id)) || (switches[info.id] ?? info.defaultOn)).map(({ info }) => info.id));
 }
 
 /** A feature the shell is built around (shell/flag.ts `CORE_BRICKS`): the Catalog shows it on, with no switch. */
@@ -116,6 +116,8 @@ const currentIds = () => talkOn() ? new Set(["spine", "tiny-transcript", "usage"
 let on = currentIds();
 /** Whether a brick is enabled now, including core bricks and this visit's switches. */
 export const isOn = (id: string) => on.has(id);
+/** Browser choice before address flags, presets and core policy are applied. */
+export const brickChoice = (id: string) => readSwitches()[id] ?? BRICKS.find((b) => b.info.id === id)?.info.defaultOn ?? false;
 const watchers = new Set<() => void>();
 const changed = () => { on = currentIds(); for (const watcher of watchers) watcher(); };
 watchTalk(changed);
@@ -192,13 +194,16 @@ const NO_JOBS: readonly Job[] = Object.freeze([]);
  *  margin note's thread with its `anchor`, each thread with its `topic`), `partial`, this tab's live words (core.ts
  *  `partial`: the core sends them to the speaker's windows alone, and a tab takes them only while its own mic is on),
  *  and the helpers' jobs (work-jobs.ts: they're the connection's, not the world's). */
-export function snapshotOf(world: World, me: string, connected: boolean, rooms: ReadonlyMap<string, string>, partial: string, jobs: readonly Job[] = NO_JOBS, usage: UsageSnapshot | null = null): MapSnapshot {
+export function snapshotOf(world: World, me: string, connected: boolean, rooms: ReadonlyMap<string, string>, partial: string, jobs: readonly Job[] = NO_JOBS, usage: UsageSnapshot | null = null, reviewTextEdits = false): MapSnapshot {
   const notes = world.notes ?? {};
   const sorted = threadsWithTopics(threadsWithAnchors(world.threads, world.anchors), world.topics);
   return {
+    questions: (world.questions ?? []).filter(q => q.owner === me),
+    aliases: world.aliases?.filter(a => a.owner === me),
     threads: sorted.threads,
     topics: sorted.topics,
     thoughts: world.thoughts,
+    reviewTextEdits,
     active: world.active_by[me] ?? world.active,
     suggestions: world.suggestions,
     reminders: world.actions,
@@ -226,6 +231,12 @@ export function pointCounts(thoughts: readonly Thought[], notes: Record<string, 
     byThread.set(thought.thread_id, group);
   }
   return new Map([...byThread].map(([id, group]) => [id, asIdeas(group.sort((a, b) => a.at_ms - b.at_ms), notes).length]));
+}
+
+/** Only core write receipts can prove a fresh capture; queued text and replay cannot. */
+export function captureSourcesOf(captures: readonly Capture[]) {
+  return captures.filter((capture) => capture.saved && capture.mapped && !capture.replay)
+    .map((capture) => ({ requestId: capture.id, thoughtIds: Object.freeze([...capture.thought_ids]) }));
 }
 
 /** Thoughts that just landed, for `on("landed")`: each call takes the thoughts as they are now and returns those placed

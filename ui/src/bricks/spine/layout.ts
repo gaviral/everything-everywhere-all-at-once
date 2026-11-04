@@ -51,7 +51,7 @@ export const G = {
   asideLine: 18, asidePad: 9, asideIn: 14, asideMax: 300,
   // The gutter between a column and its cards holds the curve from a point to its card; topics stand twice that
   // apart, so a topic's own cards read as its own (closer = belongs together).
-  gutter: 48, laneGap: 96, stack: 12,
+  gutter: 48, laneGap: 96, stack: 12, stayGap: 64,
   // Topics stand in six columns, each new one under the column that was shortest when it started (a masonry): a live
   // map of 37 threads (Nov 2) then fits a 1440 × 900 window at zoom ≈ 0.4, where titles still read, instead of one
   // strip 12,800 units long (rows of four made it 6,200 tall: zoom 0.1). Under each other, topics keep the same gap
@@ -354,7 +354,9 @@ export function ideasOf(thoughts: Thought[], notes: Readonly<Record<string, Note
     const heads: Thought[] = [];
     for (let head = headOf(t); head && carried.get(head.id) === (heads[0] ?? t).id; head = headOf(head)) heads.unshift(head);
     const parts = [...heads, t];
-    ideas.push({ key: parts[0].id, parts, text: (t.point || t.text).trim(), at: t.at_ms, decided: parts.some((p) => !!p.decided) });
+    // A quoted unfinished sentence must be the speaker's words, not a model summary.
+    const text = t.complete ? t.point || t.text : parts.map((p) => p.text).join(" ");
+    ideas.push({ key: parts[0].id, parts, text: text.trim(), at: t.at_ms, decided: parts.some((p) => !!p.decided) });
   }
   return ideas;
 }
@@ -847,7 +849,7 @@ export function layout(input: LayoutInput): Layout {
       const size = card(t);
       const wanted = (side: Side) => {
         const from = side > 0 ? origin.right : origin.left;
-        return Math.max(endY(s, from) - CARD_ROW, (s.columns.get(columnKey(parent.owner, side, parent.level)) ?? -Infinity) + G.stack);
+        return Math.max(endY(s, from) - CARD_ROW, (s.columns.get(columnKey(parent.owner, side, parent.level)) ?? -Infinity) + G.stayGap);
       };
       let side: Side = parent.side ?? sides.get(t.id) ?? ((lastSide.get(parent.key) ?? -1) > 0 ? -1 : 1);
       // Beside its point beats strict turns: if the other side would hold it two lines nearer, it goes there.

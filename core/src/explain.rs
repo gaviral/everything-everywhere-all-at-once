@@ -5,8 +5,10 @@ use crate::world::{Change, World};
 use crate::{protocol::ServerMsg, Core};
 use anyhow::bail;
 use serde_json::json;
-use std::sync::Arc;
+use std::collections::VecDeque;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tokio::time::Instant;
 
 const URL: &str = "https://api.meta.ai/v1/chat/completions";
 const SYSTEM: &str = "The person selected a word or phrase in their own notes: a live map of their spoken thoughts, \
@@ -20,11 +22,173 @@ notes or common knowledge support; when they don't make clear what it is, say wh
 /// An answer this late has missed its moment; the person can ask again.
 const PATIENCE: Duration = Duration::from_secs(20);
 
-pub async fn run(core: Arc<Core>, id: String, phrase: String, context: String, thread_id: Option<String>) {
-    let notes = notes(&core.snapshot(), thread_id.as_deref(), &context, &phrase);
+const TTL: Duration = Duration::from_secs(5 * 60);
+const CAPACITY: usize = 64;
+const SERVED_IDS: usize = 128;
+const MAX_ANSWER: usize = 2 * 1024;
+
+#[derive(Clone, PartialEq, Eq)]
+struct Key {
+    speaker: String,
+    phrase: String,
+    notes: String,
+    model: String,
+    system: &'static str,
+}
+
+struct Entry {
+    serial: u64,
+    key: Key,
+    text: String,
+    at: Instant,
+}
+struct Served {
+    speaker: String,
+    id: String,
+    serial: u64,
+    at: Instant,
+}
+
+#[derive(Default)]
+struct Cache {
+    entries: VecDeque<Entry>,
+    // Globally capped, which also bounds each speaker's request history.
+    served: VecDeque<Served>,
+    serial: u64,
+}
+
+impl Cache {
+    fn prune(&mut self, now: Instant) {
+        self.entries.retain(|e| now.duration_since(e.at) < TTL);
+        self.served.retain(|s| {
+            now.duration_since(s.at) < TTL && self.entries.iter().any(|e| e.serial == s.serial)
+        });
+    }
+
+    fn served(&mut self, key: &Key, id: &str, serial: u64, now: Instant) {
+        self.served
+            .retain(|s| s.speaker != key.speaker || s.id != id);
+        if self.served.len() == SERVED_IDS {
+            self.served.pop_front();
+        }
+        self.served.push_back(Served {
+            speaker: key.speaker.clone(),
+            id: id.into(),
+            serial,
+            at: now,
+        });
+    }
+
+    fn get(&mut self, key: &Key, id: &str, now: Instant) -> Option<String> {
+        self.prune(now);
+        let at = self.entries.iter().position(|e| e.key == *key)?;
+        let entry = self.entries.remove(at).unwrap();
+        let text = entry.text.clone();
+        self.served(key, id, entry.serial, now);
+        self.entries.push_back(entry);
+        Some(text)
+    }
+
+    fn put(&mut self, key: Key, id: &str, text: &str, now: Instant) {
+        self.prune(now);
+        if text.trim().is_empty() || text.len() > MAX_ANSWER {
+            return;
+        }
+        // Concurrent misses may both finish. Keep the newest answer, with its own identity.
+        self.entries.retain(|e| e.key != key);
+        if self.entries.len() == CAPACITY {
+            self.entries.pop_front();
+        }
+        self.serial += 1;
+        self.served(&key, id, self.serial, now);
+        self.entries.push_back(Entry {
+            serial: self.serial,
+            key,
+            text: text.into(),
+            at: now,
+        });
+        self.prune(now);
+    }
+
+    fn mark_off(&mut self, speaker: &str, id: &str, now: Instant) {
+        self.prune(now);
+        if let Some(serial) = self
+            .served
+            .iter()
+            .find(|s| s.speaker == speaker && s.id == id)
+            .map(|s| s.serial)
+        {
+            self.entries.retain(|e| e.serial != serial);
+            self.served.retain(|s| s.serial != serial);
+        }
+    }
+}
+
+#[cfg(test)]
+type FakeProvider = Arc<dyn Fn(&str, &str) -> anyhow::Result<String> + Send + Sync>;
+
+#[derive(Default)]
+pub struct Runtime {
+    cache: Mutex<Cache>,
+    #[cfg(test)]
+    provider: Option<FakeProvider>,
+}
+
+impl Runtime {
+    pub fn mark_off(&self, speaker: &str, id: &str) {
+        self.cache
+            .lock()
+            .unwrap()
+            .mark_off(speaker, id, Instant::now());
+    }
+}
+
+pub async fn run(
+    core: Arc<Core>,
+    id: String,
+    phrase: String,
+    context: String,
+    thread_id: Option<String>,
+    speaker: String,
+    reuse: bool,
+) {
     let started = crate::now_ms();
-    let message = match ask(&core, &phrase, &notes).await {
-        Ok(text) => {
+    let notes = notes(&core.snapshot(), thread_id.as_deref(), &context, &phrase);
+    let mut key = Key {
+        speaker,
+        phrase: phrase.clone(),
+        notes: notes.clone(),
+        model: core.placer_model.name().into(),
+        system: SYSTEM,
+    };
+    // Off does not even inspect the cache. Only an explicit request reaches this path.
+    let cached = if reuse {
+        core.explain
+            .cache
+            .lock()
+            .unwrap()
+            .get(&key, &id, Instant::now())
+    } else {
+        None
+    };
+    let answer = if let Some(text) = cached {
+        Ok((text, key.model.clone()))
+    } else {
+        let answer = ask(&core, &phrase, &notes).await;
+        if let Ok((text, model)) = &answer {
+            if reuse {
+                key.model = model.clone();
+                core.explain
+                    .cache
+                    .lock()
+                    .unwrap()
+                    .put(key, &id, text, Instant::now());
+            }
+        }
+        answer
+    };
+    let message = match answer {
+        Ok((text, model)) => {
             // Kept with what it was asked and how long it took, so a later change to the prompt is judged on real
             // answers and the person's "off" marks (C42).
             core.record(Change::ExplainAnswered {
@@ -32,12 +196,16 @@ pub async fn run(core: Arc<Core>, id: String, phrase: String, context: String, t
                 phrase: phrase.chars().take(200).collect(),
                 context: context.chars().take(600).collect(),
                 thread_id,
-                model: core.placer_model.name().into(),
+                model,
                 ms: crate::now_ms().saturating_sub(started),
                 text: text.clone(),
                 at_ms: started,
             });
-            ServerMsg::Explanation { id, text, failed: false }
+            ServerMsg::Explanation {
+                id,
+                text,
+                failed: false,
+            }
         }
         Err(e) => {
             tracing::warn!("explain failed: {e:#}");
@@ -50,7 +218,11 @@ pub async fn run(core: Arc<Core>, id: String, phrase: String, context: String, t
             } else {
                 "Couldn't explain that just now.".into()
             };
-            ServerMsg::Explanation { id, text, failed: true }
+            ServerMsg::Explanation {
+                id,
+                text,
+                failed: true,
+            }
         }
     };
     core.send(message);
@@ -137,9 +309,16 @@ fn names(text: &str, term: &str) -> bool {
     })
 }
 
-async fn ask(core: &Core, phrase: &str, notes: &str) -> anyhow::Result<String> {
+async fn ask(core: &Core, phrase: &str, notes: &str) -> anyhow::Result<(String, String)> {
+    #[cfg(test)]
+    if let Some(provider) = &core.explain.provider {
+        return provider(phrase, notes).map(|text| (text, core.placer_model.name().into()));
+    }
+    // Capture the setting actually used, including the existing Contributor fallback.
+    let selected = Mutex::new(String::new());
     let phrase: String = phrase.chars().take(200).collect();
     let body = |model: &str| {
+        *selected.lock().unwrap() = model.into();
         json!({
             "model": model,
             "reasoning_effort": "minimal",
@@ -152,17 +331,286 @@ async fn ask(core: &Core, phrase: &str, notes: &str) -> anyhow::Result<String> {
             ],
         })
     };
-    let value = core.ask_model(&core.placer_model, URL, PATIENCE, body, serde_json::Value::Null).await?;
-    let text = value["choices"][0]["message"]["content"].as_str().unwrap_or_default().trim();
+    let value = core
+        .ask_model(
+            &core.placer_model,
+            URL,
+            PATIENCE,
+            body,
+            serde_json::Value::Null,
+        )
+        .await?;
+    let text = value["choices"][0]["message"]["content"]
+        .as_str()
+        .unwrap_or_default()
+        .trim();
     if text.is_empty() {
-        bail!("no answer ({})", value["choices"][0]["finish_reason"].as_str().unwrap_or("no reason given"));
+        bail!(
+            "no answer ({})",
+            value["choices"][0]["finish_reason"]
+                .as_str()
+                .unwrap_or("no reason given")
+        );
     }
-    Ok(text.to_string())
+    Ok((text.to_string(), selected.into_inner().unwrap()))
 }
 
 #[cfg(test)]
 mod tests {
     use crate::world::{Change, Thought, Thread, ThreadStatus, World};
+
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    fn fixture() -> (Arc<Core>, Arc<AtomicUsize>, std::path::PathBuf) {
+        let dir = std::env::var_os("F7_EXPLAIN_FIXTURE_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                std::env::temp_dir().join(format!("f7-explain-{}", uuid::Uuid::new_v4()))
+            });
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("synthetic.jsonl");
+        let (journal, _) = crate::Journal::open(&path).unwrap();
+        let mut world = map(
+            &[("T1", "Garden plans", None)],
+            &[("T1", "Mulch protects the soil", "Mulch protects the soil")],
+        );
+        world.apply(&Change::ActiveChanged {
+            thread_id: "T1".into(),
+            speaker: "you".into(),
+        });
+        let mut core = Core::test(journal, world);
+        let calls = Arc::new(AtomicUsize::new(0));
+        let count = calls.clone();
+        core.explain.provider = Some(Arc::new(move |phrase, _notes| {
+            count.fetch_add(1, Ordering::SeqCst);
+            match phrase {
+                "fail" => bail!("synthetic provider failure"),
+                "large" => Ok("x".repeat(MAX_ANSWER + 1)),
+                "empty" => Ok(String::new()),
+                _ => Ok("A covering that protects garden soil.".into()),
+            }
+        }));
+        (Arc::new(core), calls, path)
+    }
+
+    async fn request(
+        core: &Arc<Core>,
+        id: &str,
+        phrase: &str,
+        context: &str,
+        speaker: &str,
+        reuse: bool,
+    ) -> String {
+        let mut updates = core.updates.subscribe();
+        run(
+            core.clone(),
+            id.into(),
+            phrase.into(),
+            context.into(),
+            Some("T1".into()),
+            speaker.into(),
+            reuse,
+        )
+        .await;
+        loop {
+            if let ServerMsg::Explanation { id: got, text, .. } =
+                updates.recv().await.unwrap().message
+            {
+                assert_eq!(got, id, "every response has the current request ID");
+                return text;
+            }
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn f7_explain_exact_reuse_and_current_receipts() {
+        let (core, calls, path) = fixture();
+        let first = request(&core, "first", "Mulch", "soil", "you", true).await;
+        tokio::time::advance(Duration::from_millis(25)).await;
+        assert_eq!(
+            request(&core, "second", "Mulch", "soil", "you", true).await,
+            first
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        let lines: Vec<serde_json::Value> = std::fs::read_to_string(path)
+            .unwrap()
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0]["id"], "first");
+        assert_eq!(lines[1]["id"], "second");
+        assert!(lines[1]["at_ms"].as_u64().unwrap() >= lines[0]["at_ms"].as_u64().unwrap());
+        assert!(
+            lines[1]["ms"].as_u64().unwrap() < 100,
+            "hit timing belongs to this request"
+        );
+        assert_eq!(core.explain.cache.lock().unwrap().served.len(), 2);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn f7_explain_freshness_model_speaker_expiry_and_off() {
+        let (mut core, calls, _) = fixture();
+        request(&core, "a", "Mulch", "soil", "you", true).await;
+        request(&core, "b", "Mulch", "different words", "you", true).await;
+        request(&core, "c", "mulch", "soil", "you", true).await;
+        request(&core, "d", "Mulch", "soil", "guest", true).await;
+        assert_eq!(calls.load(Ordering::SeqCst), 4);
+        // Real map notes, rather than only the selection's surrounding words, change the key.
+        core.commit(vec![Change::ThoughtRepointed {
+            thought_id: "th-0".into(),
+            point: "Use leaf mulch".into(),
+        }]);
+        request(&core, "e", "Mulch", "soil", "you", true).await;
+        assert_eq!(calls.load(Ordering::SeqCst), 5);
+        Arc::get_mut(&mut core).unwrap().placer_model = "another-meta-setting".into();
+        request(&core, "f", "Mulch", "soil", "you", true).await;
+        assert_eq!(calls.load(Ordering::SeqCst), 6);
+        tokio::time::advance(TTL - Duration::from_millis(1)).await;
+        request(&core, "g", "Mulch", "soil", "you", true).await;
+        assert_eq!(calls.load(Ordering::SeqCst), 6);
+        tokio::time::advance(Duration::from_millis(1)).await;
+        request(&core, "h", "Mulch", "soil", "you", true).await;
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            7,
+            "hits do not extend answer TTL"
+        );
+        crate::mark(&core, "guest", "explain".into(), "h".into(), true);
+        request(&core, "i", "Mulch", "soil", "you", true).await;
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            7,
+            "another speaker cannot invalidate this entry"
+        );
+        crate::mark(&core, "you", "explain".into(), "h".into(), true);
+        request(&core, "j", "Mulch", "soil", "you", true).await;
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            8,
+            "original ID invalidates its answer"
+        );
+        request(&core, "k", "Mulch", "soil", "you", true).await;
+        crate::mark(&core, "you", "explain".into(), "k".into(), false);
+        request(&core, "l", "Mulch", "soil", "you", true).await;
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            8,
+            "taking a mark back does not invalidate"
+        );
+        crate::mark(&core, "you", "explain".into(), "k".into(), true);
+        request(&core, "m", "Mulch", "soil", "you", true).await;
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            9,
+            "hit ID invalidates its answer too"
+        );
+    }
+
+    #[tokio::test]
+    async fn f7_explain_off_errors_and_response_bound() {
+        let (core, calls, _) = fixture();
+        request(&core, "a", "Mulch", "soil", "you", false).await;
+        request(&core, "b", "Mulch", "soil", "you", true).await;
+        request(&core, "c", "Mulch", "soil", "you", false).await;
+        request(&core, "d", "Mulch", "soil", "you", true).await;
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            3,
+            "off neither reads nor populates"
+        );
+        for phrase in ["fail", "large", "empty"] {
+            for id in ["x", "y"] {
+                request(&core, id, phrase, "soil", "you", true).await;
+            }
+        }
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            9,
+            "errors, empty and oversized answers never reused"
+        );
+        let cache = core.explain.cache.lock().unwrap();
+        assert_eq!(cache.entries.len(), 1);
+        assert_eq!(cache.served.len(), 2);
+        let old: crate::protocol::ClientMsg = serde_json::from_value(
+            json!({"type":"explain","id":"old","text":"Mulch","context":"soil"}),
+        )
+        .unwrap();
+        assert!(matches!(
+            old,
+            crate::protocol::ClientMsg::Explain { reuse: false, .. }
+        ));
+    }
+
+    #[test]
+    fn f7_explain_lru_id_bound_and_prompt_identity() {
+        let now = Instant::now();
+        let key = |n: usize| Key {
+            speaker: "you".into(),
+            phrase: n.to_string(),
+            notes: "exact notes".into(),
+            model: "meta-setting".into(),
+            system: SYSTEM,
+        };
+        let mut cache = Cache::default();
+        for n in 0..CAPACITY {
+            cache.put(key(n), &format!("id-{n}"), "answer", now);
+        }
+        cache.get(&key(0), "touch", now).unwrap();
+        cache.put(key(CAPACITY), "new", "answer", now);
+        assert!(cache.get(&key(1), "evicted", now).is_none());
+        assert!(cache.get(&key(0), "retained", now).is_some());
+        let mut other_prompt = key(0);
+        other_prompt.system = "different system prompt";
+        assert!(cache.get(&other_prompt, "prompt", now).is_none());
+        for n in 0..200 {
+            cache.get(&key(0), &format!("hit-{n}"), now).unwrap();
+        }
+        assert_eq!(cache.entries.len(), CAPACITY);
+        assert_eq!(cache.served.len(), SERVED_IDS);
+        cache.mark_off("you", "hit-199", now);
+        assert!(cache.get(&key(0), "gone", now).is_none());
+        cache.prune(now + TTL);
+        assert!(cache.entries.is_empty() && cache.served.is_empty());
+    }
+
+    /// Only the acceptance script starts this test-only server. No app startup, env loading or background jobs.
+    #[tokio::test]
+    #[ignore = "synthetic browser fixture, owned by scripts/f7-explain-check.mjs"]
+    async fn f7_explain_browser_fixture() {
+        let dir = std::path::PathBuf::from(
+            std::env::var("F7_EXPLAIN_FIXTURE_DIR").expect("script-owned temporary directory"),
+        );
+        assert!(
+            dir.starts_with(std::env::temp_dir().canonicalize().unwrap())
+                || dir.starts_with(std::env::temp_dir())
+        );
+        let (core, calls, _) = fixture();
+        let stats_core = core.clone();
+        let routes = axum::Router::new()
+            .route("/ws", axum::routing::get(crate::connect))
+            .route("/room", axum::routing::get(crate::room_info))
+            .route("/f7-stats", axum::routing::get(move || { let core = stats_core.clone(); let calls = calls.clone(); async move {
+                let cache = core.explain.cache.lock().unwrap();
+                axum::Json(json!({"calls":calls.load(Ordering::SeqCst),"entries":cache.entries.len(),"served":cache.served.len()}))
+            }}))
+            .fallback_service(tower_http::services::ServeDir::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../ui/dist")))
+            .layer(axum::middleware::from_fn_with_state(core.clone(), crate::gate))
+            .with_state(core);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        std::fs::write(
+            dir.join("port"),
+            listener.local_addr().unwrap().port().to_string(),
+        )
+        .unwrap();
+        axum::serve(
+            listener,
+            routes.into_make_service_with_connect_info::<crate::Link>(),
+        )
+        .await
+        .unwrap();
+    }
 
     fn map(threads: &[(&str, &str, Option<&str>)], thoughts: &[(&str, &str, &str)]) -> World {
         let mut world = World::default();
@@ -379,7 +827,7 @@ mod tests {
                     let mut updates = core.updates.subscribe();
                     let id = format!("{n}-{run}");
                     let started = std::time::Instant::now();
-                    super::run(core.clone(), id.clone(), phrase.into(), context, Some(thread)).await;
+                    super::run(core.clone(), id.clone(), phrase.into(), context, Some(thread), "you".into(), false).await;
                     let ms = started.elapsed().as_millis();
                     loop {
                         if let ServerMsg::Explanation { id: of, text, failed } = updates.recv().await.unwrap().message {

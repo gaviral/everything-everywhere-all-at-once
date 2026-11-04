@@ -156,3 +156,8 @@ export function attentionTeller() {
 }
 
 export type AttentionTeller = ReturnType<typeof attentionTeller>;
+
+/** A joined point's source IDs are explicit; a review must pick one rather than assuming its head. */
+export function reviewSources(ids: readonly string[], thoughts: readonly import("./core").Thought[]) {
+  return [...new Set(ids)].map(id => thoughts.find(t => t.id === id && t.placed)).filter((t): t is import("./core").Thought => !!t);
+}

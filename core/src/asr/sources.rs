@@ -99,4 +99,12 @@ impl Sources {
             if !source.draft.text.trim().is_empty() { core.remember_speech(source.draft.clone()); }
         }
     }
+
+    pub(super) fn checkpoint(&self, core: &Core) {
+        for source in &self.0 {
+            if !source.finished && !source.draft.text.trim().is_empty() {
+                core.checkpoint_speech(source.draft.clone());
+            }
+        }
+    }
 }

@@ -208,3 +208,106 @@ fn one_line(text: &str) -> String {
 
 #[cfg(test)]
 mod tests;
+
+
+/// A connection's opt-in; never inferred from a command or another window of the same speaker.
+#[derive(Default)]
+pub struct PointReview {
+    pub on: bool,
+    pub epoch: u64,
+    pub busy: bool,
+}
+
+impl PointReview {
+    pub fn switch(&mut self, on: bool) { self.on = on; self.epoch += 1; self.busy = false; }
+}
+
+pub fn review_target(window: u64) -> String { format!("\0point-review:{window}") }
+
+pub fn edit_point(core: &Core, gate: &PointReview, actor: &str, request_id: &str, thought_id: &str, observed: &str, replacement: &str, undo_of: Option<&str>) -> Result<(), &'static str> {
+    if !gate.on { return Err("Review text edits is off."); }
+    if !review_id(request_id) || observed.chars().count() > 6000 || !(if undo_of.is_some() { !replacement.trim().is_empty() && replacement.chars().count() <= 6000 } else { replacement_valid(replacement) }) {
+        return Err("A replacement needs 1–1,200 characters and a valid request.");
+    }
+    let receipt = crate::world::PointEdit { request_id: request_id.into(), thought_id: thought_id.into(), old_point: observed.into(), new_point: replacement.into(), actor: actor.into(), undo_of: undo_of.map(String::from) };
+    let already = || core.snapshot().point_edits.iter().find(|e| e.actor == actor && e.request_id == request_id)
+        .map(|r| if r == &receipt { Ok(()) } else { Err("This request identity was already used. Keep the proposal for manual copy.") });
+    if let Some(result) = already() { return result; }
+    if let Some(id) = undo_of {
+        if !core.snapshot().point_edits.iter().any(|e| e.request_id == id && e.actor == actor && e.thought_id == thought_id && e.new_point == observed && e.old_point == replacement && e.undo_of.is_none()) {
+            return Err("That accepted edit is unavailable. Keep the proposal for manual copy.");
+        }
+    }
+    let change = Change::PointEdited { request_id: request_id.into(), thought_id: thought_id.into(), old_point: observed.into(), new_point: replacement.into(), actor: actor.into(), undo_of: undo_of.map(String::from) };
+    match core.try_commit_if(|w| !w.point_edits.iter().any(|e| e.actor == actor && e.request_id == request_id) && w.thoughts.iter().any(|t| t.id == thought_id && t.placed && t.point == observed && home(w, thought_id).is_some()), vec![change]) {
+        Ok(true) => Ok(()),
+        Ok(false) => already().unwrap_or(Err("That point changed or left the map. Keep the proposal for manual copy.")),
+        Err(_) => Err("Couldn't save. Your proposal is still editable; retry explicitly."),
+    }
+}
+
+pub fn review_id(id: &str) -> bool { !id.is_empty() && id.len() <= 80 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') }
+fn replacement_valid(text: &str) -> bool {
+    !text.trim().is_empty() && text.chars().count() <= 1200 && !text.chars().any(|c| c.is_control() && c != '\n' && c != '\t')
+}
+
+pub fn shorter_source(core: &Core, thought_id: &str, observed: &str) -> Result<String, &'static str> {
+    let world = core.snapshot();
+    let t = world.thoughts.iter().find(|t| t.id == thought_id && t.placed && t.point == observed && home(&world, thought_id).is_some())
+        .ok_or("That point changed or left the map. Keep your proposal for manual copy.")?;
+    if t.point.chars().count() + t.text.chars().count() > 6000 { return Err("Point and original text exceed 6,000 characters. Type a proposal instead."); }
+    Ok(t.text.clone())
+}
+
+#[cfg(test)]
+mod c10_suggest_tests {
+    use super::*;
+    #[test]
+    fn c10_suggest_journal_stale_retry_undo_and_identity() {
+        let path = std::env::temp_dir().join(format!("c10-suggest-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, world) = crate::Journal::open(&path).unwrap();
+        let core = Core::test(journal, world);
+        let seed = serde_json::json!({"threads":[{"id":"T1","title":"Synthetic topic","parent_id":null,"status":"open","last_point":"A longer point","touched_ms":20}],
+            "thoughts":[{"id":"older","speaker":"speaker","text":"Synthetic original words","point":"A longer point","thread_id":"T1","placed":true,"unclear":"","at_ms":10,"place_ms":0},
+            {"id":"newer","speaker":"speaker","text":"Other synthetic words","point":"A longer point","thread_id":"T1","placed":true,"unclear":"","at_ms":20,"place_ms":0}]});
+        let seeded: World = serde_json::from_value(seed).unwrap();
+        core.commit(seeded.threads.into_iter().map(|thread| Change::ThreadAdded {thread}).chain(seeded.thoughts.into_iter().map(|thought| Change::ThoughtAdded {thought})).collect());
+        let before = core.snapshot();
+        let mut gate = PointReview::default();
+        assert!(edit_point(&core,&gate,"actor","one","older","A longer point","Short point",None).is_err());
+        gate.switch(true);
+        assert!(shorter_source(&core,"older","changed").is_err());
+        assert!(edit_point(&core,&gate,"actor","one","older","A longer point","Short point",None).is_ok());
+        let lines = std::fs::read_to_string(&path).unwrap().lines().count();
+        assert!(edit_point(&core,&gate,"actor","one","older","A longer point","Short point",None).is_ok());
+        assert_eq!(std::fs::read_to_string(&path).unwrap().lines().count(), lines);
+        assert!(edit_point(&core,&gate,"actor","one","older","A longer point","Different",None).is_err());
+        let after = core.snapshot();
+        assert_eq!(after.thoughts[0].id, before.thoughts[0].id);
+        assert_eq!(after.thoughts[0].text, before.thoughts[0].text);
+        assert_eq!(after.thoughts[0].speaker, before.thoughts[0].speaker);
+        assert_eq!(after.thoughts[0].at_ms, before.thoughts[0].at_ms);
+        assert_eq!(after.threads[0].last_point,"A longer point", "an older equal point is not the latest source");
+        assert_eq!(after.threads[0].touched_ms,20);
+        assert!(edit_point(&core,&gate,"actor","stale","older","A longer point","Must not win",None).is_err());
+        assert!(edit_point(&core,&gate,"actor","undo","older","Short point","A longer point",Some("one")).is_ok());
+        assert!(edit_point(&core,&gate,"actor","latest","newer","A longer point","Latest edit",None).is_ok());
+        assert_eq!(core.snapshot().threads[0].last_point,"Latest edit");
+        assert_eq!(core.snapshot().threads[0].touched_ms,20);
+        assert!(edit_point(&core,&gate,"actor","late-undo","newer","A longer point","Wrong undo",None).is_err());
+        let (_, replay) = crate::Journal::open(&path).unwrap();
+        assert_eq!(replay.thoughts[1].point,"Latest edit");
+        assert!(replay.point_edits.iter().any(|e| e.actor == "actor" && e.request_id == "latest"));
+        gate.switch(false);
+        assert!(edit_point(&core,&gate,"actor","off","newer","Latest edit","Off edit",None).is_err());
+    }
+
+    #[test]
+    fn c10_suggest_bounds_and_default_off() {
+        assert!(!PointReview::default().on);
+        assert!(replacement_valid("A shorter point"));
+        assert!(!replacement_valid(&"x".repeat(1201)));
+        assert!(!replacement_valid("  "));
+        assert!(!review_id("../request"));
+    }
+}

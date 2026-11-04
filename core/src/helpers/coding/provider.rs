@@ -58,14 +58,22 @@ struct Edit {
 }
 
 // Only regular tracked UTF-8 files from the pinned worktree enter the prompt.
-// A small repository must fit in full: silently omitted context is not a basis
-// for changing files. No tool calls, shell, git writes, or new paths are exposed.
+// The explicitly selected scope (or a small repository in full) must fit. No
+// silent truncation, tool calls, shell, git writes, or new paths are exposed.
 async fn context(job: &Work) -> anyhow::Result<HashMap<String, String>> {
     let paths = git(&job.path, &["ls-files", "-z"]).await?;
+    let selected: Vec<&str> = match &job.files {
+        Some(files) => {
+            ensure!(files.iter().all(|file| paths.split('\0').any(|p| p == file)),
+                "Coding source scope changed");
+            files.iter().map(String::as_str).collect()
+        }
+        None => paths.split('\0').filter(|p| !p.is_empty()).collect(),
+    };
     let root = job.path.canonicalize()?;
     let mut files = HashMap::new();
     let mut bytes = 0;
-    for path in paths.split('\0').filter(|p| !p.is_empty()) {
+    for path in selected {
         ensure!(!private_target(path), "Private coding context refused");
         let target = root.join(path);
         let metadata = std::fs::symlink_metadata(&target)?;

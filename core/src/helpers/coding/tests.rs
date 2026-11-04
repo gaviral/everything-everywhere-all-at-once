@@ -423,7 +423,7 @@ async fn provider_claims_fail_closed_before_jobs_start() {
 
 #[tokio::test]
 async fn dirty_private_targets_and_commit_toggle_refused() {
-    for mode in ["dirty", "ignored", "private", "commit"] {
+    for mode in ["dirty", "ignored", "private", "scoped_private", "commit"] {
         let repo = repository().await;
         if mode == "dirty" {
             std::fs::write(repo.join("README.md"), "dirty").unwrap();
@@ -432,7 +432,7 @@ async fn dirty_private_targets_and_commit_toggle_refused() {
             std::fs::write(repo.join(".git/info/exclude"), "hidden\n").unwrap();
             std::fs::write(repo.join("hidden"), "private").unwrap();
         }
-        if mode == "private" {
+        if mode == "private" || mode == "scoped_private" {
             std::fs::write(repo.join("journal.jsonl"), "fixture").unwrap();
             git(&repo, &["add", "journal.jsonl"]).await.unwrap();
             git(
@@ -454,6 +454,9 @@ async fn dirty_private_targets_and_commit_toggle_refused() {
         let before = source_snapshot(&repo).await;
         let mut core = core(&repo, stub(&repo, "change"), true);
         Arc::get_mut(&mut core).unwrap().helpers.coding.commit = mode == "commit";
+        if mode == "scoped_private" {
+            Arc::get_mut(&mut core).unwrap().helpers.coding.files = Some("[\"README.md\"]".into());
+        }
         assert!(said(&core, "you", "put three helpers on the README"));
         finished(&core).await;
         assert!(core.helpers.coding.results.lock().unwrap().is_empty());
@@ -493,6 +496,52 @@ fn executable_resolution_and_argv_stay_literal() {
 // transport. No socket is opened and no real model request is sent.
 fn meta_answer(model: &str, edits: Value) -> Value {
     json!({"model":model,"choices":[{"message":{"content":json!({"edits":edits}).to_string()}}]})
+}
+
+#[test]
+fn explicit_source_scope_requires_distinct_safe_tracked_paths() {
+    for value in ["[]", "{}", "[1]", "[\"../README.md\"]", "[\"/README.md\"]",
+        "[\".env.example\"]", "[\"private/note.md\"]", "[\"missing.md\"]",
+        "[\"README.md\",\"README.md\"]", "[\"./README.md\"]", "[\"README.md\\n\"]"] {
+        let settings = Settings { files: Some(value.into()), ..Settings::default() };
+        assert!(settings.source_files("README.md\0.env.example\0private/note.md\0").is_err(), "{value}");
+    }
+    assert_eq!(Settings { files: Some("[\"README.md\"]".into()), ..Settings::default() }
+        .source_files("README.md\0.env.example\0").unwrap(), Some(vec!["README.md".into()]));
+    assert!(Settings::default().source_files("README.md\0").unwrap().is_none());
+}
+
+#[tokio::test]
+async fn scoped_meta_work_excludes_protected_and_non_text_files_and_rejects_outside_edits() {
+    for outside in [false, true] {
+        let repo = repository().await;
+        std::fs::write(repo.join(".env.example"), "# Excluded fixture\n").unwrap();
+        std::fs::write(repo.join("image.bin"), [0xff, 0xfe]).unwrap();
+        git(&repo, &["add", ".env.example", "image.bin"]).await.unwrap();
+        git(&repo, &["-c", "user.name=Fixture", "-c", "user.email=fixture@users.noreply.github.com",
+            "commit", "-q", "--no-gpg-sign", "-m", "Protected and non-text fixture"]).await.unwrap();
+        let before = source_snapshot(&repo).await;
+        let mut core = core(&repo, "builtin-meta".into(), true);
+        let settings = &mut Arc::get_mut(&mut core).unwrap().helpers.coding;
+        settings.test_only = false;
+        settings.files = Some("[\"README.md\"]".into());
+        settings.meta_test_answer = Some(meta_answer("muse-spark-1.3", json!([{
+            "path": if outside { ".env.example" } else { "README.md" },
+            "content": "# Proposed update\n"
+        }])));
+        assert!(said(&core, "you", "put three helpers on the README"));
+        finished(&core).await;
+        assert_eq!(source_snapshot(&repo).await, before);
+        let records = core.helpers.coding.results.lock().unwrap().clone();
+        assert_eq!(records.len(), 3);
+        for record in records.values() {
+            assert_eq!(std::fs::read(record.worktree.join(".env.example")).unwrap(), b"# Excluded fixture\n");
+            assert_eq!(git(&record.worktree, &["rev-parse", "HEAD"]).await.unwrap(), record.base);
+            assert_eq!(record.exit, if outside { ExitStatus::Failed } else { ExitStatus::Completed });
+            assert_eq!(std::fs::read_to_string(record.worktree.join("README.md")).unwrap(),
+                if outside { "# Example\n\nInitial README.\n" } else { "# Proposed update\n" });
+        }
+    }
 }
 
 #[test]

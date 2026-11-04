@@ -27,6 +27,7 @@ import "./spine.css";
 import { InlinePhone } from "./InlinePhone";
 import { phoneUsableArea } from "./measure";
 import { CanvasToolNode, CanvasToolControls, useCanvasToolNodes, type CanvasNode } from "./canvas-tools";
+import { PhoneNavigation } from "./phone";
 import { semanticBlend } from "./semantic-zoom";
 import { CanvasShapes } from "./shapes";
 import { anchorAt, normalAngle, rotatePoint, screenToWorld, turnAt, worldToScreen, type Camera } from "./rotation";
@@ -266,7 +267,11 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
       const at = here.getBoundingClientRect().top - pad;
       // With nothing pinned (the playground, the new shell), the view's place is where it starts.
       const under = pinned > 0 ? pinned : at + window.scrollY;
-      const room = here.closest("main")?.parentElement?.getBoundingClientRect();
+      // A retained view can sit inside a display:contents wrapper, which has no layout box.
+      // Measure the containing box, just as when main is a direct child of the app.
+      let container = here.closest("main")?.parentElement;
+      while (container && getComputedStyle(container).display === "contents") container = container.parentElement;
+      const room = container?.getBoundingClientRect();
       const next = { top: Math.max(pinned > 0 ? pinned : 0, at), left: Math.max(0, room?.left ?? 0), right: Math.max(0, innerWidth - (room?.right ?? innerWidth)), tall: Math.max(0, innerHeight - under), width: innerWidth };
       setBox((was) => was && Math.abs(was.top - next.top) < 0.5 && Math.abs(was.left - next.left) < 0.5 && Math.abs(was.right - next.right) < 0.5 && Math.abs(was.tall - next.tall) < 0.5 && was.width === next.width ? was : next);
       const docked = parseFloat(getComputedStyle(here).getPropertyValue("--dock-height")) || 0;
@@ -351,13 +356,15 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
     // The rail (`data-slot="rail"`, the panel at the right) once the page has one: the camera keeps clear of it.
     const rail = document.querySelector('[data-slot="rail"]')?.getBoundingClientRect();
     // The shell's top buttons and Talk pill float over the map. Leave their measured band clear, just as we do the input.
-    const topCovers = [...document.querySelectorAll('[data-slot="top-left"], [data-slot="top-right"], .talk-pill, .spine-rotation')]
+    const topCovers = [...document.querySelectorAll('[data-slot="top-left"], [data-slot="top-right"], .talk-pill, .spine-rotation' + (!conversation ? ', .sample-recovery-actions' : ''))]
       .map((el) => el.getBoundingClientRect()).filter((r) => r.width && r.height);
     const y0 = Math.max(0, ...topCovers.map((r) => r.bottom - (frameBox?.top ?? 0) + 8));
-    const y1 = chrome.stage?.height ? Math.min(h, chrome.stage.top - (frameBox?.top ?? 0) - 8) : h - dock;
+    const controlBand = !conversation && document.documentElement.classList.contains("shell2")
+      ? parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--shell-content-bottom")) || 0 : 0;
+    const y1 = Math.min(h - controlBand, chrome.stage?.height ? chrome.stage.top - (frameBox?.top ?? 0) - 8 : h - dock);
     const x1 = rail && rail.width && rail.left > (frameBox?.left ?? 0) + w / 2 ? rail.left - (frameBox?.left ?? 0) - 8 : w;
     return { x0: 0, y0, x1: Math.max(160, x1), y1: Math.max(y0 + 120, y1) };
-  }, [dock, compare]);
+  }, [dock, compare, conversation]);
 
   /** What floats over the canvas, in its pixels: the shell's corners (Find, Catalog, the people in a call), the Talk
    *  pill, the held questions, and this canvas's own corners (Follow, the views, the shelf). An edge chip under any of
@@ -512,7 +519,10 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
   useEffect(() => {
     if (ready || top === null) return;
     const g = goal();
-    if (g) camera.aim(g.box, { zoom: 1, instant: true }); else camera.fit(all(), 1, minZoom, { instant: true });
+    const opening = narrow && !conversation && document.documentElement.classList.contains("shell2")
+      ? layout.items.find(item => item.kind === "head" && item.thread === here?.thread) : undefined;
+    if (opening) camera.aim(opening.box, { zoom: 1, instant: true, alignTop: true });
+    else if (g) camera.aim(g.box, { zoom: 1, instant: true }); else camera.fit(all(), 1, minZoom, { instant: true });
     const timer = window.setTimeout(() => setReady(true), 0);
     return () => window.clearTimeout(timer);
   }, [top, ready]);
@@ -1075,6 +1085,18 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
         <ZoomVar semantic={semantic} />
         <CanvasShapes />
         <CanvasToolControls hold={stopFollowing} />
+        <PhoneNavigation map={map} layout={layout} hold={stopFollowing} overview={() => { setOriginals(new Set()); setOpen(null); camera.fit(all(), 1, minZoom); }} reveal={(thread, thought, opened) => {
+          stopFollowing();
+          const topic = map.threads.find((t) => t.id === thread);
+          if (topic?.parent_id) setOpen({ id: thread, by: "you" });
+          const item = (thought ? layout.items.find((item) => item.thoughts?.includes(thought)) : undefined) ?? layout.byKey.get(`t:${thread}`);
+          if (item) {
+            setPicked(item.key);
+            if (opened) setOriginals((was) => new Set([...was, item.id]));
+            else setOriginals(new Set());
+            camera.aim(item.box, { ring: item.key, zoom: opened ? 1 : undefined, instant: true });
+          }
+        }} />
         <EdgeLabelRenderer>
           <svg className="spine-links" aria-hidden="true">
             <g transform={`rotate(${angle})`}>{layout.links.map((link) => {

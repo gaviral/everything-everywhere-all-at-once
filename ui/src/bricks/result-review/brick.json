@@ -1,0 +1,8 @@
+{
+  "id": "result-review",
+  "name": "Result review",
+  "does": "Mark which finished helper results this tab reviewed, for this visit only.",
+  "kind": "card",
+  "defaultOn": false,
+  "demoSafe": false
+}

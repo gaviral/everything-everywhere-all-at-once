@@ -213,19 +213,22 @@ esac
 exit 0
 `);
   executable(join(dir, "fixture-core"), `#!/usr/bin/env node
-import { appendFileSync, readFileSync } from 'node:fs';
+import { appendFileSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+if (process.argv[2] === '--data-path') { console.log(resolve(process.env.E2A2O_CALLER_CWD || process.cwd(), process.env.E2A2O_DATA || 'fixture-map')); process.exit(0); }
+if (process.argv[2] === '--seed-sample') { const p=process.env.E2A2O_DATA; mkdirSync(p+'/images',{recursive:true}); writeFileSync(p+'/journal.jsonl',readFileSync('../samples/'+process.argv[3]+'.jsonl')); writeFileSync(p+'/images/picture.txt','fixture picture\\n'); process.exit(0); }
 appendFileSync(process.env.FIXTURE_LOG, 'core\\n');
 console.log(JSON.stringify({ cwd: process.cwd(), data: process.env.E2A2O_DATA,
   port: process.env.PORT, key: process.env.MODEL_API_KEY, marker: process.env.FIXTURE_MARKER,
   room: process.env.ROOM_CODE, https: process.env.ROOM_HTTPS, publicUrl: process.env.PUBLIC_URL,
   openssl: process.env.OPENSSL_DIR, ui: readFileSync('../ui/dist/index.html', 'utf8'),
-  sample: process.env.E2A2O_DATA === '../data/sample' ? readFileSync('../data/sample/journal.jsonl', 'utf8') : null }));
+  sample: process.env.E2A2O_MODE === 'sample' ? readFileSync(process.env.E2A2O_DATA+'/journal.jsonl', 'utf8') : null }));
 process.exit(Number(process.env.CORE_EXIT ?? 0));
 `);
   writeFileSync(join(dir, "samples/student-week.jsonl"), "fixture sample\n");
   writeFileSync(join(dir, "samples/images/student-week/picture.txt"), "fixture picture\n");
   const env = { PATH: join(dir, "bin"), PORT: "0", MODEL_API_KEY: "fixture-env-key",
-    FIXTURE_LOG: join(dir, "events"), FIXTURE_MARKER: "kept value", E2A2O_DATA: "../fixture-data",
+    FIXTURE_LOG: join(dir, "events"), FIXTURE_MARKER: "kept value", E2A2O_DATA: join(dir, "fixture-data"),
     OPENSSL_DIR: "/fixture/ssl" };
   const run = (args = [], extra = {}) => spawnSync(join(dir, "run.sh"), args,
     // run.sh starts Node four times before the fixture core starts a fifth process.
@@ -279,7 +282,7 @@ assert.equal(preflight.stderr, "");
 assert.equal(bundle.events(), "");
 
 // There are no Rust, Xcode or Linux build tools in PATH, nor a Cargo manifest to read.
-assert.equal(launched(bundle, bundle.run()).data, "../fixture-data");
+assert.equal(launched(bundle, bundle.run()).data, bundle.env.E2A2O_DATA);
 assert.equal(bundle.events(), "npm install --no-audit --no-fund --no-update-notifier\nnpm run build\ncore\n");
 const sampleRun = bundle.run(["sample"]);
 const sampled = launched(bundle, sampleRun);
@@ -289,11 +292,11 @@ const customSample = bundle.run(["sample"], { PORT: String(sparePort) });
 assert.equal(customSample.status, 0, customSample.stderr);
 assert.ok(customSample.stdout.includes(`sample fixture (no key or mic): http://localhost:${sparePort}/?sample\n`));
 assert.equal(JSON.parse(customSample.stdout.trim().split("\n").at(-1)).port, String(sparePort));
-assert.equal(sampled.data, "../data/sample");
+assert.equal(sampled.data, bundle.env.E2A2O_DATA);
 assert.equal(sampled.sample, "fixture sample\n");
-assert.equal(readFileSync(join(bundle.dir, "data/sample/images/picture.txt"), "utf8"), "fixture picture\n");
+assert.equal(readFileSync(join(bundle.env.E2A2O_DATA, "images/picture.txt"), "utf8"), "fixture picture\n");
 const room = launched(bundle, bundle.run(["room"], { ROOM_CODE: "fixture-room", PUBLIC_URL: "https://fixture.invalid" }));
-assert.equal(room.data, "../data/room");
+assert.equal(room.data, bundle.env.E2A2O_DATA);
 assert.equal(room.room, "fixture-room");
 assert.equal(room.https, "1");
 assert.equal(room.publicUrl, "https://fixture.invalid");
@@ -359,13 +362,14 @@ for (const kind of ["missing", "non-executable", "other-architecture", "director
   for (const cmd of ["rustc", "rustup", "cc", "pkg-config", "xcode-select"]) {
     executable(join(f.dir, "bin", cmd), `#!/bin/sh\necho "probe ${cmd} $*" >> "$FIXTURE_LOG"\necho 'rustc 1.100.0'\n`);
   }
-  executable(join(f.dir, "bin/cargo"), '#!/bin/sh\necho "cargo $*" >> "$FIXTURE_LOG"\nexec ../fixture-core\n');
+  executable(join(f.dir, "bin/cargo"), '#!/bin/sh\necho "cargo $*" >> "$FIXTURE_LOG"\ncase "$*" in *--data-path*) exec ../fixture-core --data-path sample ;; *--seed-sample*) exec ../fixture-core --seed-sample student-week ;; esac\nexec ../fixture-core\n');
   const sourceRun = f.run(["sample"], { CORE_EXIT: "17" });
   const payload = launched(f, sourceRun, 17);
   assert.match(sourceRun.stdout, /Building UI\.\.\.\nUI build complete\.\n[\s\S]*Building and starting Rust core \(cold source build: about 4 min\)\.\.\./);
-  assert.equal(payload.data, "../data/sample");
+  assert.equal(payload.data, f.env.E2A2O_DATA);
   assert.match(f.events(), /probe rustc --version/);
   assert.match(f.events(), /cargo run --release\ncore\n$/);
+  assert.match(f.events(), /--data-path sample/);
 }
 // Help needs neither Node nor Rust and never starts a build.
 const help = fixture();

@@ -23,3 +23,12 @@ export const SPEED = (() => {
   const asked = Number(params.get("speed"));
   return Number.isFinite(asked) && asked > 0 ? Math.min(asked, 60) : 1;
 })();
+
+/** A paired phone returning to the normal page is still a device while it offers the one-tap Remote link. */
+export function returningRemote(): boolean {
+  if (REMOTE || params.has("film") || params.has("demo") || typeof matchMedia !== "function" || !matchMedia("(pointer: coarse)").matches) return false;
+  try {
+    const saved = localStorage.getItem("e2a2o.phone-pair");
+    return !!saved && new URL(saved).origin === location.origin;
+  } catch { return false; }
+}

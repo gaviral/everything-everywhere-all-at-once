@@ -1418,3 +1418,59 @@ fn body(model: &str, prompt: &Value) -> Value {
 
 #[cfg(test)]
 mod tests;
+
+/// Closed local actions for taught phrases; the same catalog records navigation and its Undo.
+pub(crate) fn alias_label(world: &World, target: &crate::world::AliasTarget) -> String {
+    use crate::world::AliasTarget::*;
+    match target {
+        OpenTopic { topic_id } => world.threads.iter().find(|t| &t.id == topic_id).map(|t| format!("Open topic: {} ({})", t.title, topic_id)).unwrap_or_else(|| format!("Topic no longer on map ({topic_id})")),
+        NextTopic => "Next topic".into(), PreviousTopic => "Previous topic".into(), ShowRecap => "Show recap".into(),
+    }
+}
+
+pub(crate) fn execute_alias(core: &Arc<Core>, speaker: &str, alias: &crate::world::VoiceAlias, said: &str, receipt: Option<(String, String)>, token: Arc<std::sync::atomic::AtomicBool>) -> Result<Done, String> {
+    use crate::world::AliasTarget::*;
+    let world = core.snapshot();
+    let before = world.active_for(speaker).cloned();
+    let position = before.as_ref().and_then(|id| world.threads.iter().position(|t| &t.id == id));
+    let destination = match &alias.target {
+        OpenTopic { topic_id } => world.threads.iter().find(|t| &t.id == topic_id),
+        NextTopic => position.and_then(|i| world.threads.get(i + 1)).or_else(|| world.threads.first()),
+        PreviousTopic => position.and_then(|i| i.checked_sub(1)).and_then(|i| world.threads.get(i)).or_else(|| world.threads.last()),
+        ShowRecap => None,
+    };
+    let act = match alias.target { OpenTopic { .. } => Act::Unfold, NextTopic => Act::Next, PreviousTopic => Act::Previous, ShowRecap => Act::Recap };
+    if destination.is_none() && !matches!(alias.target, ShowRecap) { return Err("Topic no longer on map".into()); }
+    let mut changes = Vec::new();
+    if let Some(thread) = destination {
+        changes.push(Change::ActiveChanged { speaker: speaker.into(), thread_id: thread.id.clone() });
+        if thread.status == crate::world::ThreadStatus::Dropped { changes.push(Change::ThreadStatus { speaker: speaker.into(), thread_id: thread.id.clone(), status: crate::world::ThreadStatus::Open }); }
+    }
+    let target_id = destination.map(|t| t.id.clone());
+    if let Some((request_id, signature)) = &receipt { changes.push(Change::AliasChanged { alias: alias.clone(), request_id: request_id.clone(), signature: signature.clone() }); }
+    let period = crate::recap::default_period(&world, now_ms());
+    let observed_threads: Vec<_> = world.threads.iter().map(|t| t.id.clone()).collect();
+    drop(world);
+    let ok = core.try_commit_if(|w| token.load(Ordering::SeqCst)
+        && w.aliases.iter().any(|a| a == alias && a.enabled && !a.deleted && !a.unavailable)
+        && w.active_for(speaker).cloned() == before
+        && w.threads.iter().map(|t| &t.id).eq(observed_threads.iter())
+        && receipt.as_ref().is_none_or(|(id, _)| !w.alias_receipts.contains_key(&(speaker.into(), id.clone()))), changes)
+        .map_err(|_| "Couldn't save navigation. Try again explicitly.".to_string())?;
+    if !ok { return Err("Shortcut or topic changed. Try again explicitly.".into()); }
+    crate::find::stop(core, speaker);
+    core.new_threads.cancel(speaker);
+    if matches!(alias.target, ShowRecap) {
+        core.send_to(speaker, ServerMsg::Notice { message: format!("Taught by you: “{said}” → Show recap") });
+        crate::recap::request_scoped(core.clone(), speaker.into(), period, Some(token));
+    }
+    else {
+        core.placing.moved(speaker);
+        if let Some(thread_id) = target_id {
+            let label = alias_label(&core.snapshot(), &alias.target);
+            core.send_to(speaker, ServerMsg::Unfold { thread_id: Some(thread_id.clone()), open: true });
+            core.send_to(speaker, ServerMsg::Found { thread_id, thought_id: None, message: format!("You're on {label}. Taught by you: “{said}”") });
+        }
+    }
+    Ok(Done::moved(act, before))
+}

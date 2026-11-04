@@ -195,7 +195,7 @@ try {
   await until(() => core.queuedCount === 4, "four waiting");
   // Reconnected (the first retry is a second later): sent first, in the order typed.
   await until(() => sockets.at(-1) !== old && core.connected, "the next connection");
-  assert.deepEqual(sockets.at(-1).sent.slice(0, 4).map((m) => JSON.parse(m).text), ["first paragraph", "x".repeat(6000), "Oh, and the electric bill", "Autopay before the 10th"]);
+  assert.deepEqual(sockets.at(-1).sent.map((m) => JSON.parse(m)).filter((m) => m.type === "text").slice(0, 4).map((m) => m.text), ["first paragraph", "x".repeat(6000), "Oh, and the electric bill", "Autopay before the 10th"]);
   const beforeReconnectStatus = core.voiceStatusRevision;
   say({ type: "status", listening: true, note: "Listening" });
   await until(() => core.voiceStatusRevision === beforeReconnectStatus + 1, "the reconnect status");

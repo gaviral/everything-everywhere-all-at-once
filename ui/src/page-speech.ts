@@ -1,7 +1,9 @@
 // Live replies play in this browser; capture stays silent unless an opted-in local interruption is confirmed.
 // No snapshot playback: only flagged live replies, captions and newly added AI thoughts speak.
 import { useSyncExternalStore } from "react";
-import { builtInOn } from "./shell/features";
+import { voicePolicy } from "./talk/call-core";
+import { builtInOn, watchBuiltIns } from "./shell/features";
+import { speechVoice, disableSpeech } from "./speech-voice";
 import { slowReadMs } from "./notice-rules";
 import { NATURAL_PAUSE_MS } from "./legible";
 
@@ -14,6 +16,7 @@ type SpeechMessage = {
   caption?: { id: string; by: string };
   world?: { captions?: { id: string; by: string }[] };
   text?: string;
+  speakText?: string;
   change?: { type: string; thought?: { text: string } };
   people?: { ai: boolean; remote?: boolean; speaking: boolean }[];
 };
@@ -30,6 +33,8 @@ function publish(phase: Playback["phase"], error = "") {
   playbackListeners.forEach(listener => listener());
 }
 export const usePlayback = () => useSyncExternalStore(listener => { playbackListeners.add(listener); return () => { playbackListeners.delete(listener); }; }, () => playback, () => idlePlayback);
+// Ending a local comparison expires queued audio as well as capture intent.
+voicePolicy.onEnd(() => cancelPageReply());
 let replyId: string | undefined;
 const stoppedReplies = new Set<string>();
 export const replyStopped = (id?: string) => !!id && stoppedReplies.has(id);
@@ -49,8 +54,10 @@ let cleanup: (() => void) | null = null;
 let loggedVoice = false;
 const speakingListeners = new Set<(speaking: boolean, started: boolean) => void>();
 
-// Ask early: some browsers populate their installed voices asynchronously.
-if (typeof window !== "undefined") window.speechSynthesis?.getVoices();
+// Losing the capability or switching it off also stops audio already in flight.
+watchBuiltIns(() => {
+  if (!builtInOn("built-in-speech")) { stopPageSpeech(); publish("off"); }
+});
 
 export const pageSpeaking = () => utterance !== null;
 
@@ -78,7 +85,7 @@ export function stopPageSpeech() {
 
 /** Every human page hears the room socket, including a named guest or a Remote. */
 export function hearPageSpeech(data: unknown) {
-  if (typeof data !== "string" || typeof window === "undefined" || !window.speechSynthesis) return;
+  if (typeof data !== "string" || typeof window === "undefined") return;
   let msg: SpeechMessage;
   try { msg = JSON.parse(data) as SpeechMessage; } catch { return; }
   if (msg.type === "snapshot") {
@@ -98,14 +105,17 @@ export function hearPageSpeech(data: unknown) {
     stopPageSpeech();
     return;
   }
+  if (msg.type === "partner_reply" && (!builtInOn("partner") || !builtInOn("reply-format"))) return;
   if (!msg.speak || (msg.type === "command_reply" && !builtInOn("partner"))) return;
-  const text = msg.type === "command_reply" ? msg.text
+  const text = msg.type === "partner_reply" ? msg.speakText : msg.type === "command_reply" ? msg.text
     : msg.type === "guide" && msg.kind === "caption" ? msg.text
     : msg.type === "change" && msg.change?.type === "thought_added" ? msg.change.thought?.text : "";
   if (!text?.trim()) return;
   stopPageSpeech();
   replyId = msg.reply_id;
-  playback = { phase: "queued", text, error: "" };
+  playback = { phase: "off", text, error: "" };
+  const voice = speechVoice();
+  if (!builtInOn("built-in-speech") || !voice) { publish("off"); return; }
   const next = new SpeechSynthesisUtterance(text);
   // A little quicker than normal speech, without rushing the words while walking.
   next.rate = 1.12;
@@ -119,30 +129,16 @@ export function hearPageSpeech(data: unknown) {
   const failed = () => {
     if (utterance !== next) return;
     stopPageSpeech();
-    publish("failed", "Reply audio failed. Read the reply on the Canvas, retry audio, or type below.");
+    disableSpeech(); // A listed but unusable voice falls back to the visible reply, quietly.
   };
   next.onerror = failed;
   utterance = next;
   publish("queued");
   speakingListeners.forEach((listener) => listener(true, false));
   const synth = window.speechSynthesis;
-  const speak = () => {
-    if (utterance !== next) return;
-    const installed = synth.getVoices();
-    if (!installed.length) return; // Wait for voiceschanged; never let the browser pick an unspecified voice.
-    synth.removeEventListener("voiceschanged", speak);
-    const english = installed.filter((v) => /^en(?:[-_]|$)/i.test(v.lang));
-    const quality = (v: SpeechSynthesisVoice) => /premium/i.test(v.name) ? 2 : /enhanced/i.test(v.name) ? 1 : 0;
-    const voice = (english.length ? english : installed).slice()
-      .sort((a, b) => quality(b) - quality(a) || Number(!!b.default) - Number(!!a.default))[0];
-    next.voice = voice;
-    next.lang = voice.lang;
-    if (!loggedVoice) { console.info("Page voice:", voice.name); loggedVoice = true; }
-    // Loading voices must not use up the reply's speaking time.
-    window.clearTimeout(timer);
-    timer = window.setTimeout(failed, slowReadMs(text) + NATURAL_PAUSE_MS);
-    try { synth.speak(next); } catch { failed(); }
-  };
+  next.voice = voice;
+  next.lang = voice.lang;
+  if (!loggedVoice) { console.info("Page voice:", voice.name); loggedVoice = true; }
   const key = (event: KeyboardEvent) => {
     if (event.key !== " " && event.key !== "Escape") return;
     stopPageSpeech();
@@ -155,13 +151,11 @@ export function hearPageSpeech(data: unknown) {
   window.addEventListener("click", click, true);
   // A slow reading of these words plus a natural pause allows for voice startup and punctuation.
   // Cancel too: a voice that never reports its end must not keep speaking over the resumed mic.
-  let timer = window.setTimeout(failed, slowReadMs(text) + NATURAL_PAUSE_MS);
+  const timer = window.setTimeout(failed, slowReadMs(text) + NATURAL_PAUSE_MS);
   cleanup = () => {
-    synth.removeEventListener("voiceschanged", speak);
     window.clearTimeout(timer);
     window.removeEventListener("keydown", key, true);
     window.removeEventListener("click", click, true);
   };
-  synth.addEventListener("voiceschanged", speak);
-  speak();
+  try { synth.speak(next); } catch { failed(); }
 }

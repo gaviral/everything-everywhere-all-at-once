@@ -15,6 +15,7 @@ import { ANSWER_MAX, asksOf, options, type Ask } from "./ask";
 import { playFeed } from "./demo";
 import { SPEED } from "./flag";
 import "./remote.css";
+import Touchpad, { useRemotePosition } from "./Touchpad";
 
 /** How long "Sent" stays up. */
 const SENT_MS = 5000;
@@ -33,9 +34,22 @@ function Live() {
   const me = useMe();
   const core = useCore(me);
   const call = useCall();
+  const position = useRemotePosition(core.connected);
+  const [touchpad, setTouchpad] = useState(new URLSearchParams(location.search).has("touchpad"));
+  useEffect(() => {
+    const back = () => setTouchpad(new URLSearchParams(location.search).has("touchpad"));
+    window.addEventListener("popstate", back);
+    return () => window.removeEventListener("popstate", back);
+  }, []);
+  const mode = (on: boolean) => {
+    const url = new URL(location.href);
+    if (on) url.searchParams.set("touchpad", "1"); else url.searchParams.delete("touchpad");
+    history.pushState(null, "", url); setTouchpad(on);
+  };
   const ai = useCallback((name: string) => !!call?.people.find((person) => person.name === name)?.ai, [call]);
   const send = useCallback((ask: Ask, text: string) => sendToCore({ type: "answer", to: ask.by, text }), []);
-  return <Page status={core.connected ? `On the shared map as ${me}` : "Connecting…"} ai={ai} send={send} />;
+  if (touchpad) return <Touchpad core={core} position={position} exit={() => mode(false)} />;
+  return <>{position.enabled && <button className="phone-touchpad-mode" onClick={() => mode(true)}>Touchpad</button>}<Page status={core.connected ? `On the shared map as ${me}` : "Connecting…"} ai={ai} send={send} /></>;
 }
 
 /** With no room: the page's own feed, from the start, and answers that stay here. */

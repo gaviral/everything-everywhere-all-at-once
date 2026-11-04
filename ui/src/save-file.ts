@@ -14,3 +14,6 @@ export function saveFile(text: string, type: string, name: string): void {
   // Revoked a moment later: some browsers start the save only after the click returns.
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+/** Recipe download stays on the shared browser save path, with a fixed filename and MIME. */
+export function saveRecipeFile(text: string): void { saveFile(text, "application/json", "app-recipe.json"); }

@@ -15,6 +15,8 @@ pub(super) struct Settings {
     pub enabled: bool,
     pub repo: Option<PathBuf>,
     pub command: Option<String>,
+    // An explicit operator-selected source scope; never supplied by a model or browser.
+    pub files: Option<String>,
     pub commit: bool,
     // Server-owned records, never populated from runner output or client paths.
     pub results: Mutex<HashMap<String, ResultRecord>>,
@@ -31,6 +33,7 @@ impl Settings {
             enabled: std::env::var("HELPERS_RUN").as_deref() == Ok("on"),
             repo: std::env::var_os("HELPERS_REPO").map(PathBuf::from),
             command: std::env::var("HELPERS_CMD").ok(),
+            files: std::env::var("HELPERS_FILES").ok(),
             commit: std::env::var("HELPERS_COMMIT").as_deref() == Ok("on"),
             ..Self::default()
         }
@@ -44,6 +47,23 @@ impl Settings {
         };
         ensure!(!args.is_empty(), "HELPERS_CMD is empty");
         Ok(args)
+    }
+
+    fn source_files(&self, tracked: &str) -> anyhow::Result<Option<Vec<String>>> {
+        let Some(value) = &self.files else { return Ok(None) };
+        let files: Vec<String> = serde_json::from_str(value)
+            .context("HELPERS_FILES must be a JSON array of tracked source paths")?;
+        ensure!(!files.is_empty() && files.len() <= 32, "Choose 1 to 32 source files");
+        let mut seen = HashSet::new();
+        for file in &files {
+            ensure!(!file.is_empty() && !file.starts_with('/') && !file.contains('\\')
+                && !file.chars().any(char::is_control)
+                && file.split('/').all(|p| !p.is_empty() && p != "." && p != "..")
+                && !private_target(file), "Unsafe coding source scope");
+            ensure!(seen.insert(file) && tracked.split('\0').any(|p| p == file),
+                "Coding source scope must contain distinct tracked files");
+        }
+        Ok(Some(files))
     }
 }
 
@@ -240,6 +260,7 @@ struct Work {
     branch: String,
     path: PathBuf,
     brief: PathBuf,
+    files: Option<Vec<String>>,
 }
 
 async fn prepare(core: &Core, run: &Run) -> anyhow::Result<(PathBuf, Vec<Work>)> {
@@ -289,11 +310,16 @@ async fn prepare(core: &Core, run: &Run) -> anyhow::Result<(PathBuf, Vec<Work>)>
         .is_empty(),
         "HELPERS_REPO must be clean, including ignored files"
     );
-    let files = git(repo, &["ls-files"]).await?;
+    let files = git(repo, &["ls-files", "-z"]).await?;
+    let scope = settings.source_files(&files)?;
     ensure!(
-        !files.lines().any(private_target),
+        !files.split('\0').any(|path| private_target(path) && !(scope.is_some()
+            && matches!(path, ".env.example" | ".env.sample" | ".env.template"))),
         "HELPERS_REPO contains a private recording target"
     );
+    core.trace.write(|| json!({"kind":"coding_source_scope", "swarm_id":parent(run),
+        "explicit":scope.is_some(), "file_count":scope.as_ref().map(Vec::len)
+            .unwrap_or_else(|| files.split('\0').filter(|p| !p.is_empty()).count())}));
 
     ensure!(
         git(repo, &["rev-parse", "HEAD"]).await? == base,
@@ -353,6 +379,7 @@ async fn prepare(core: &Core, run: &Run) -> anyhow::Result<(PathBuf, Vec<Work>)>
             branch,
             path,
             brief,
+            files: scope.clone(),
         });
     }
     Ok((folder, jobs))

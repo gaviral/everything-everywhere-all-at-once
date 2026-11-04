@@ -1,6 +1,7 @@
 import { lazy, StrictMode, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import { PhoneRemoteHost, RememberedRemote } from "./remote/Host";
 import { Crash } from "./Crash";
 import { REMOTE } from "./remote/flag";
 import { Room } from "./room";
@@ -21,8 +22,9 @@ if (REMOTE) document.documentElement.classList.add("shell2");
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <Crash>
+      {!REMOTE && <RememberedRemote />}
       <Room>
-        {REMOTE ? <Suspense fallback={null}><Remote /></Suspense> : <App />}
+        {REMOTE ? <Suspense fallback={null}><Remote /></Suspense> : <PhoneRemoteHost><App /></PhoneRemoteHost>}
       </Room>
     </Crash>
   </StrictMode>,

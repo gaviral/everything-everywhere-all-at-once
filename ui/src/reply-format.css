@@ -1,0 +1,12 @@
+.reply-format { padding: 1rem; border-top: 1px solid var(--line, #8886); font-size: 1rem; line-height: 1.45; overflow-wrap: anywhere; }
+.reply-format h3 { margin: 0 0 .5rem; }
+.reply-format label { display: grid; gap: .35rem; margin: .8rem 0; }
+.reply-format input, .reply-format select, .reply-format textarea, .reply-format button { font: inherit; color: inherit; background: var(--surface, Canvas); border: 1px solid var(--line, #888); border-radius: .4rem; min-height: 44px; max-width: 100%; padding: .5rem; box-sizing: border-box; }
+.reply-format textarea { width: 100%; resize: vertical; }
+.reply-format .reply-format-toggle { display: flex; align-items: center; gap: .5rem; }
+.reply-format-toggle input { width: 1.3rem; min-height: 1.3rem; }
+.reply-format summary, .formatted-reply summary { cursor: pointer; min-height: 44px; padding-block: .6rem; box-sizing: border-box; }
+.reply-format :focus-visible, .formatted-reply :focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+.formatted-reply { max-height: min(35dvh, 24rem); overflow: auto; padding: .75rem 1rem; border: 1px solid var(--line, #8886); border-radius: .6rem; background: var(--surface, Canvas); color: var(--ink, CanvasText); overflow-wrap: anywhere; pointer-events: auto; }
+.formatted-reply p { white-space: pre-wrap; margin: .25rem 0; }
+@media (prefers-reduced-motion: reduce) { .reply-format *, .formatted-reply * { scroll-behavior: auto; } }

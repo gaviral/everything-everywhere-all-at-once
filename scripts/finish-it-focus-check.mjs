@@ -58,7 +58,8 @@ const core = await standInCore(() => [{ type: "snapshot", world: shown }], {
 const composer = '#type-a-thought';
 const finish = '.pullback-actions button:first-child';
 function visiblePoint(id) {
-  const canvas = document.querySelector('.spine-frame');
+  // The Canvas stays mounted behind Cards; measure the active view's point.
+  const canvas = document.documentElement.dataset.view === 'cards' ? null : document.querySelector('.spine-frame');
   const el = document.querySelector(canvas ? `.react-flow__node[data-id="p:${id}"] .spine-text` : `#point-${id}`);
   if (!el?.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return false;
   const r = el.getBoundingClientRect();

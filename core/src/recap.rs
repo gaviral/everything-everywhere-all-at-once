@@ -107,10 +107,20 @@ pub fn default_period(world: &World, now: u64) -> Period {
 
 /// The sheet's progress goes to whoever asked; the recap itself is saved to the shared map.
 pub fn request(core: Arc<Core>, speaker: String, period: Period) {
+    request_scoped(core, speaker, period, None);
+}
+
+/// A taught recap keeps the ordinary budget/model path; revoked connection tokens reject late work.
+pub(crate) fn request_scoped(core: Arc<Core>, speaker: String, period: Period, token: Option<Arc<std::sync::atomic::AtomicBool>>) {
     tokio::spawn(async move {
+        let allowed = || token.as_ref().is_none_or(|t| t.load(std::sync::atomic::Ordering::SeqCst));
+        let publication = token.as_ref().map(|_| core.alias_windows.lock().unwrap());
+        if !allowed() { return; }
         // The saved recap goes out first, before waiting on a draft being made: it is the sheet's first content.
         state(&core, &speaker, period, true, "", core.snapshot().recaps.iter().find(|r| r.period == period).cloned());
+        drop(publication);
         let _guard = core.recap.gate.lock().await;
+        if !allowed() { return; }
         let since = slice(&core.snapshot(), period, crate::now_ms()).since_ms;
         // Placement is already in progress; don't pay for a second placement call,
         // or summarize a thought on the provisional branch it may soon leave. Without a key that works now (none,
@@ -125,6 +135,9 @@ pub fn request(core: Arc<Core>, speaker: String, period: Period) {
             let look = until.min(tokio::time::Instant::now() + Duration::from_millis(250));
             if let Ok(Err(tokio::sync::broadcast::error::RecvError::Closed)) = tokio::time::timeout_at(look, changes.recv()).await { break; }
         }
+        if !allowed() { return; }
+        let publication = token.as_ref().map(|_| core.alias_windows.lock().unwrap());
+        if !allowed() { return; }
         let world = core.snapshot();
         if can_place() && placing(&world, since, crate::now_ms()) {
             state(&core, &speaker, period, false, "A thought is still finding its topic. Try again in a moment.", None);
@@ -137,7 +150,11 @@ pub fn request(core: Arc<Core>, speaker: String, period: Period) {
             return;
         }
         drop(world);
+        drop(publication);
+        if !allowed() { return; }
         let answer = if source.threads.is_empty() { Ok(Answer::default()) } else { generate(&core, &source, false).await };
+        let _publication = token.as_ref().map(|_| core.alias_windows.lock().unwrap());
+        if !allowed() { return; }
         match answer {
             Ok(answer) => {
                 let recap = finish(source, answer, source_key);

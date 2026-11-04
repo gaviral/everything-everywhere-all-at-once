@@ -13,6 +13,13 @@ export function useShellCountdownPlacement(enabled: boolean) {
       const px = `${value}px`;
       if (root.style.getPropertyValue(name) !== px) root.style.setProperty(name, px);
     };
+    // The map and gallery end above the lowest controls, so words never peek between them.
+    const clearance = () => {
+      const covers = Array.from(document.querySelectorAll<HTMLElement>(".shell-stage, .shell-bl, .spine-corner, .spine-corner-row, .countdown-card"))
+        .map(el => el.getBoundingClientRect()).filter(r => r.width && r.height);
+      const bottom = Math.max(0, innerHeight - Math.min(innerHeight, ...covers.map(r => r.top)) + 12);
+      publish("--shell-content-bottom", bottom);
+    };
     let frame = 0;
     let observed: Element[] = [];
     const schedule = () => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; measure(); }); };
@@ -35,7 +42,7 @@ export function useShellCountdownPlacement(enabled: boolean) {
         }
         observed = elements;
       }
-      if (!countdown || !card) { clear(); return; }
+      if (!countdown || !card) { clear(); clearance(); return; }
       const styles = getComputedStyle(root);
       const gap = parseFloat(styles.getPropertyValue("--shell-corner-gap"));
       const edge = parseFloat(styles.getPropertyValue("--shell-edge"));
@@ -68,6 +75,7 @@ export function useShellCountdownPlacement(enabled: boolean) {
       publish(names[1], innerHeight - bottom);
       publish(names[2], editorRoom);
       publish(names[3], gap - (editorRoom - room));
+      clearance();
     };
     refresh.current = measure;
     const mounts = new MutationObserver(schedule);
@@ -81,6 +89,7 @@ export function useShellCountdownPlacement(enabled: boolean) {
       refresh.current = () => {};
       cancelAnimationFrame(frame);
       mounts.disconnect(); resize.disconnect(); positions.disconnect();
+      root.style.removeProperty("--shell-content-bottom");
       window.removeEventListener("resize", schedule);
       window.removeEventListener("scroll", schedule, true);
       window.visualViewport?.removeEventListener("resize", schedule);

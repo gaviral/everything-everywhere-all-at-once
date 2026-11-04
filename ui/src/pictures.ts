@@ -91,6 +91,141 @@ function remember(key: string, slot: Slot) {
   if (shownFrom.size > SHOWN_MAX) shownFrom.delete(shownFrom.keys().next().value!);
 }
 
+// The core writes the large copy beside the small one. Older pictures have just one copy.
+export const palaceCopy = (picture: string) => picture.replace(/-small\.webp$/, "-palace.webp");
+
+const WARM_MAX = 6;
+const WARM_BYTES = 16 * 1024 * 1024;
+const warmImages = new Map<string, { image: HTMLImageElement; bytes: number }>();
+
+function forgetWarm(src: string) {
+  warmImages.delete(src);
+  // Only the un-retried single-source entry belongs to the warmer.
+  if (shownFrom.get(src)?.src === src) shownFrom.delete(src);
+}
+
+function warmStart(sources: string[]) {
+  const warmed = sources.findIndex((src) => warmImages.has(picturePath(src) ?? src));
+  const slot = resume(sources, warmed >= 0 ? { index: warmed, fetch: 0 } : shownFrom.get(sources.join("\n")));
+  const src = source(slot);
+  const warmKey = src && (picturePath(src) ?? src);
+  const kept = warmKey && warmImages.get(warmKey);
+  if (!kept) return { slot, instant: false };
+  warmImages.delete(warmKey!);
+  warmImages.set(warmKey!, kept); // a visible use is an LRU touch too
+  return { slot: decoded(slot), instant: true };
+}
+
+type PictureTopic = { id: string; picture: string | null };
+
+/** Active first, then the two closest topics by map index; ties go to the earlier topic.
+ * Only existing same-origin image paths are eligible, never a provider or arbitrary endpoint. */
+export function readyPictureSources(threads: readonly PictureTopic[], active: string | null) {
+  const index = threads.findIndex((thread) => thread.id === active);
+  if (index < 0) return [];
+  const nearby = threads.map((thread, at) => ({ thread, at }))
+    .sort((a, b) => Math.abs(a.at - index) - Math.abs(b.at - index) || a.at - b.at).slice(0, 3);
+  return [...new Set(nearby.flatMap(({ thread }) => thread.picture ? [thread.picture, palaceCopy(thread.picture)] : [])
+    .map(picturePath).filter((src): src is string => src !== null))];
+}
+
+function picturePath(src: string): string | null {
+  try {
+    const url = new URL(src, location.href);
+    return url.origin === location.origin && url.pathname.startsWith("/images/") && !url.search && !url.hash
+      && !url.username && !url.password ? url.pathname : null;
+  } catch { return null; }
+}
+
+type DataConnection = EventTarget & { saveData?: boolean };
+
+/** This hook owns all warm work. Off means no listeners, timer, requests or retained images.
+ * Image.decode uses the same URL as the visible slot, so Chrome can reuse its decoded source at first paint.
+ * Each idle pass attempts a URL once; failed URLs wait for visible-slot retries or a new enabled visit. */
+export function useReadyPictures(enabled: boolean, threads: readonly PictureTopic[], active: string | null, partial: string, connected: boolean) {
+  const plan = JSON.stringify(enabled ? readyPictureSources(threads, active) : []);
+  const latest = useRef({ plan, partial, connected });
+  latest.current = { plan, partial, connected };
+  const refresh = useRef<(() => void) | null>(null);
+  useLayoutEffect(() => { refresh.current?.(); }, [plan, active, partial, connected]);
+  useEffect(() => {
+    if (!enabled) return;
+    const connection = (navigator as Navigator & { connection?: DataConnection }).connection;
+    const tried = new Set<string>();
+    const failures = new Set<string>();
+    const running = new Map<string, () => void>();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let disposed = false;
+    let idle = false;
+    let epoch = 0;
+    const allowed = () => !disposed && document.visibilityState === "visible" && latest.current.connected
+      && !latest.current.partial && !connection?.saveData;
+    const sources = (): string[] => JSON.parse(latest.current.plan);
+    const pump = () => {
+      if (!idle || !allowed()) return;
+      for (const src of sources()) {
+        if (running.size >= 2) break;
+        if (running.has(src) || tried.has(src) || warmImages.has(src)) continue;
+        tried.add(src);
+        const generation = epoch;
+        const image = new Image();
+        image.decoding = "async";
+        image.fetchPriority = "low";
+        let cancelled = false;
+        const cancel = () => { cancelled = true; image.removeAttribute("src"); };
+        running.set(src, cancel);
+        image.src = src;
+        image.decode().then(() => {
+          if (cancelled || generation !== epoch || !allowed() || !sources().includes(src)) return;
+          const bytes = image.naturalWidth * image.naturalHeight * 4;
+          if (!bytes || bytes > WARM_BYTES) return;
+          let total = [...warmImages.values()].reduce((sum, entry) => sum + entry.bytes, 0);
+          while (warmImages.size >= WARM_MAX || total + bytes > WARM_BYTES) {
+            const oldest = warmImages.keys().next().value!;
+            total -= warmImages.get(oldest)!.bytes;
+            forgetWarm(oldest);
+          }
+          warmImages.set(src, { image, bytes });
+          remember(src, decoded(start([src])));
+        }, () => {
+          if (!cancelled) failures.add(src); // only visible slots retry failed URLs
+        })
+          .finally(() => {
+            // A cancelled decode can settle after a new job for this URL has started.
+            if (running.get(src) === cancel) { running.delete(src); pump(); }
+          });
+      }
+    };
+    const reset = () => {
+      clearTimeout(timer);
+      idle = false;
+      epoch++;
+      tried.clear();
+      for (const src of failures) tried.add(src);
+      for (const cancel of running.values()) cancel();
+      running.clear();
+      // Replaced pictures may finish after a map change: neither their reference nor bookkeeping survives.
+      const current = new Set(sources());
+      for (const src of warmImages.keys()) if (!current.has(src)) forgetWarm(src);
+      if (allowed() && current.size) timer = setTimeout(() => { idle = true; pump(); }, 1_000);
+    };
+    refresh.current = reset;
+    document.addEventListener("visibilitychange", reset);
+    connection?.addEventListener("change", reset);
+    reset();
+    return () => {
+      disposed = true;
+      refresh.current = null;
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", reset);
+      connection?.removeEventListener("change", reset);
+      for (const cancel of running.values()) cancel();
+      running.clear();
+      for (const src of warmImages.keys()) forgetWarm(src);
+    };
+  }, [enabled]);
+}
+
 const backListeners = new Set<() => void>();
 
 /** Called by the connection when the core answers again after a disconnect. */
@@ -104,9 +239,9 @@ export function coreBack() {
  *  before it is painted (`decoding="sync"`). Give the <img> `key={img.src}`, so each fetch is a new element. */
 export function usePicture(sources: string[]) {
   const key = sources.join("\n");
-  const [state, setState] = useState(() => ({ key, slot: resume(sources, shownFrom.get(key)), instant: false }));
+  const [state, setState] = useState(() => ({ key, ...warmStart(sources) }));
   // A new picture (or none) starts over, in this same render.
-  const current = state.key === key ? state : { key, slot: resume(sources, shownFrom.get(key)), instant: false };
+  const current = state.key === key ? state : { key, ...warmStart(sources) };
   if (current !== state) setState(current);
   const { slot, instant } = current;
   const src = source(slot);

@@ -76,7 +76,8 @@ export function useFindJump(found: Found | null, world: World, { setView, setQue
         if (!hadTabindex) target.setAttribute("tabindex", "-1");
         target.scrollIntoView({ behavior: reducedMotion ? "instant" : "smooth", block: "center" });
         // Still typing (the composer, search): focus stays there, or the next Backspace deletes the found point.
-        if (!found.preserveFocus && !typingIn(document.activeElement)) target.focus({ preventScroll: true });
+        // Open original can already have focused its exact text control; keep that descendant and its focus ring.
+        if (!found.preserveFocus && !typingIn(document.activeElement) && !target.contains(document.activeElement)) target.focus({ preventScroll: true });
         if (!hadTabindex) target.addEventListener("blur", () => target?.removeAttribute("tabindex"), { once: true });
         // The one "look here" highlight (Attention.tsx), for as long as reading it takes; a thread's is on its head.
         const title = currentWorld.current.threads.find((thread) => thread.id === id)?.title ?? "";

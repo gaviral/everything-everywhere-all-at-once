@@ -98,10 +98,16 @@ Browser, one page per window (ui/src)
   Guide.tsx      another participant's ring and short arrow at a `data-guide` part, captions above the input box and held cards; projects held cards into the shell's stack and captions into #shell-caption, with floating placement in the legacy layout
   guide-core.ts  this window's transient point, caption and held-question rules, pauses and local feature hints (docs/guide.md, held by `scripts/guide-check.mjs`)
   PartnerStatus.tsx optional partner state and Cancel beside the input box and in Talk
+  ReplyFormat.tsx local reply-format preferences, matching save acknowledgements and mechanical sample checks
+  VoicePolicyComparison.tsx opt-in comparison of explicit turns and a started conversation, with separate microphone and reply controls
+  RecoveryComparison.tsx visit-local Card and Compact presentations of the same named return action
+  TextEditReview.tsx explicit point-edit proposals, original-text comparison, save acknowledgements and Undo
   partner.ts     transient partner state, disconnect reset and late-caption gating
+  speech-voice.ts local browser voice capability; excludes remote and unknown voices, with quiet text fallback
   page-speech.ts  speaks a flagged caption or AI reply in this page (speechSynthesis), so the browser's echo cancellation keeps it out of the mic; stops when a person starts talking
       |  /ws: JSON both ways, audio frames up      POST /import: an export file (host only)
 Core, one process (core/src: axum, tokio)
+  storage.rs     validates and resolves platform map-directory locations without consulting environment files or services
   main.rs        Core state, the gate, one session per window, voice commands, "where was I?"; /room gives a member the code and invite link to share (invite())
   data_lock.rs   startup takes a nonblocking exclusive OS lock on .core.lock before opening the journal; main keeps the handle while serving, and the sidecar stays after exit
   world.rs       World, Change, the journal

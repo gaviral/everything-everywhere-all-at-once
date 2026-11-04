@@ -2,26 +2,36 @@
 // views, listening, recap, import and export, in the Catalog's one list. A switch acts at once and only in this browser;
 // other windows of the browser follow. Cards, Pictures, import and export start off: none is part of a first visit.
 import { useSyncExternalStore } from "react";
+import { voicePolicy } from "../talk/call-core";
 import { talkOn, watchTalk } from "../talk-preset";
 import type { BrickKind } from "../bricks/contract";
+import { speechAvailable, watchSpeechAvailability } from "../speech-voice";
 
-export type BuiltIn = { id: "full-content" | "canvas-tools" | "terse" | "helpers" | "conversation-spine" | "email" | "partner" | "listening" | "recap" | "import" | "export" | "cards" | "pictures" | "semantic-zoom" | "bring-here" | "rotate-canvas" | "compare-phone-reading"; kind: BrickKind; defaultOn: boolean };
+export type BuiltIn = { id: "built-in-speech" | "phone-remote" | "reply-format" | "review-text-edits" | "compare-return-controls" | "voice-policy-comparison" | "reuse-explanations" | "warm-pictures" | "full-content" | "canvas-tools" | "terse" | "helpers" | "conversation-spine" | "email" | "partner" | "listening" | "recap" | "import" | "export" | "cards" | "pictures" | "semantic-zoom" | "bring-here" | "rotate-canvas" | "compare-phone-reading"; kind: BrickKind; defaultOn: boolean };
 
 export const BUILT_INS: readonly BuiltIn[] = [
+  { id: "reply-format", kind: "panel", defaultOn: false },
   { id: "full-content", kind: "panel", defaultOn: false },
   { id: "canvas-tools", kind: "panel", defaultOn: false },
   { id: "terse", kind: "view", defaultOn: false },
   { id: "bring-here", kind: "panel", defaultOn: false },
+  { id: "voice-policy-comparison", kind: "input", defaultOn: false },
+  { id: "compare-return-controls", kind: "card", defaultOn: false },
+  { id: "review-text-edits", kind: "panel", defaultOn: false },
   { id: "conversation-spine", kind: "view", defaultOn: false },
   { id: "email", kind: "input", defaultOn: true },
   { id: "helpers", kind: "input", defaultOn: true },
+  { id: "reuse-explanations", kind: "input", defaultOn: false },
   { id: "partner", kind: "input", defaultOn: false },
+  { id: "built-in-speech", kind: "input", defaultOn: true },
   // The views beside the Canvas: off until switched on; each then has its Show.
   { id: "cards", kind: "view", defaultOn: false },
   { id: "pictures", kind: "view", defaultOn: false },
   { id: "compare-phone-reading", kind: "panel", defaultOn: false },
+  { id: "warm-pictures", kind: "input", defaultOn: false },
   { id: "semantic-zoom", kind: "panel", defaultOn: false },
   { id: "rotate-canvas", kind: "panel", defaultOn: false },
+  { id: "phone-remote", kind: "input", defaultOn: false },
   { id: "listening", kind: "input", defaultOn: true },
   { id: "import", kind: "input", defaultOn: false },
   { id: "recap", kind: "panel", defaultOn: true },
@@ -29,7 +39,7 @@ export const BUILT_INS: readonly BuiltIn[] = [
 ];
 
 let helpersAvailable = false;
-export const featureAvailable = (id: string) => id !== "helpers" || helpersAvailable;
+export const featureAvailable = (id: string) => (id !== "helpers" || helpersAvailable) && (id !== "built-in-speech" || speechAvailable());
 export function setHelpersAvailable(value: boolean) { if (helpersAvailable !== value) { helpersAvailable = value; changed(); } }
 
 const STORE = "e2a2o.features";
@@ -47,13 +57,14 @@ const browser = typeof window !== "undefined";
 let switches: Switches = browser ? read() : {};
 let on = onOf(switches);
 const watchers = new Set<() => void>();
-const changed = () => { on = onOf(switches); for (const watcher of watchers) watcher(); };
+const changed = () => { on = onOf(switches); voicePolicy.configure(on.has("voice-policy-comparison")); for (const watcher of watchers) watcher(); };
 if (browser) window.addEventListener("storage", (event) => { if (event.key === STORE) { switches = read(); changed(); } });
 
 watchTalk(changed);
+watchSpeechAvailability(changed);
 
 function onOf(kept: Switches): ReadonlySet<BuiltIn["id"]> {
-  if (talkOn()) return new Set(["listening"]);
+  if (talkOn()) return new Set(["listening", ...(speechAvailable() && (kept["built-in-speech"] ?? true) ? ["built-in-speech" as const] : [])]);
   return new Set(BUILT_INS.filter((b) => featureAvailable(b.id) && (kept[b.id] ?? b.defaultOn)).map((b) => b.id));
 }
 
@@ -69,4 +80,8 @@ export function switchBuiltIn(id: BuiltIn["id"], value: boolean) {
 }
 
 export const builtInOn = (id: BuiltIn["id"]) => on.has(id);
+/** Browser choice before the Talk preset or availability policy is applied. */
+export const builtInChoice = (id: BuiltIn["id"]) => read()[id] ?? BUILT_INS.find((b) => b.id === id)!.defaultOn;
 export const watchBuiltIns = (watcher: () => void) => { watchers.add(watcher); return () => { watchers.delete(watcher); }; };
+
+voicePolicy.configure(on.has("voice-policy-comparison"));

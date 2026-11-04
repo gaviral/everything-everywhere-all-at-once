@@ -57,7 +57,7 @@ try {
     };
     addEventListener('error',e=>{if(!e.message.startsWith('ResizeObserver')) errors.push(e.message)});
     Object.defineProperty(window,'speechSynthesis',{configurable:true,value:Object.assign(new EventTarget(),{
-      getVoices:()=>[{name:'Test English',lang:'en-US',default:true}],
+      getVoices:()=>[{name:'Test English',lang:'en-US',default:true,localService:true}],
       speak:u=>spoken.push(u.text),cancel:()=>{}
     })});
     window.SpeechSynthesisUtterance=class {constructor(text){this.text=text}};

@@ -112,11 +112,14 @@ export default function Keys({ map, actions }: BrickProps) {
       const direction = directions[event.key];
       const current = cursor.current;
       if (!direction && event.key !== "?" && event.key !== "Escape" && event.key !== "Enter") return;
+      if (path.some((el) => el instanceof Element && el.closest(".shell-rail"))) return;
       // Nothing of the brick's is up: Esc stays the page's (it folds the quiet threads, closes the ? list).
       if (event.key === "Escape" && !current && !hint) return;
       if (event.key === "Enter" && (!current?.pointId || path.some((el) => el instanceof HTMLElement && el.matches(CONTROL)))) return;
       // The Palace and view bricks move with their own arrows; the keys are the map's.
-      if (direction && document.querySelector("main.palace, main.brick-view")) return;
+      // A retained Canvas can be hidden behind Cards. Only a visible alternate view owns its arrows.
+      if (direction && [...document.querySelectorAll("main.palace, main.brick-view")]
+        .some(view => view.checkVisibility({ checkVisibilityCSS: true }))) return;
       // Capture before the app's existing j/k/? handlers so each key acts once.
       event.preventDefault();
       event.stopImmediatePropagation();

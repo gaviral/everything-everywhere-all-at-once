@@ -60,9 +60,16 @@ const measure = (arrivals = []) => `(() => {
   const stage = document.querySelector('[data-slot="stage"]')?.getBoundingClientRect();
   const rail = document.querySelector('[data-slot="rail"]')?.getBoundingClientRect();
   const dock = parseFloat(getComputedStyle(frame).getPropertyValue("--dock-height")) || 0;
-  const area = { left: f.left, top: f.top,
+  // The camera reserves the measured toolbar/Talk band as well as the bottom input.
+  // A point behind that band is still unseen, even if it lies inside the outer frame.
+  const topCovers = [...document.querySelectorAll('[data-slot="top-left"], [data-slot="top-right"], .talk-pill, .spine-rotation')]
+    .map(e => e.getBoundingClientRect()).filter(r => r.width > 0 && r.height > 0);
+  const top = Math.max(f.top, ...topCovers.map(r => r.bottom + 8));
+  const controlBand = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--shell-content-bottom")) || 0;
+  const bottom = Math.min(f.height - controlBand, stage?.height ? stage.top - f.top - 8 : f.height - dock);
+  const area = { left: f.left, top,
     right: f.left + Math.max(160, rail?.width && rail.left > f.left + f.width / 2 ? rail.left - f.left - 8 : f.width),
-    bottom: f.top + Math.max(120, stage?.height ? Math.min(f.height, stage.top - f.top - 8) : f.height - dock) };
+    bottom: f.top + Math.max(top - f.top + 120, bottom) };
   const zoom = new DOMMatrix(getComputedStyle(document.querySelector(".react-flow__viewport")).transform).a;
   const landed = ${JSON.stringify(arrivals)}.map((arrival) => {
     const node = document.querySelector('.react-flow__node[data-id="p:' + arrival.id + '"]');

@@ -19,7 +19,7 @@ globalThis.location = new URL("http://localhost:4321/");
 const server = await uiServer();
 try {
   const { apply } = await server.ssrLoadModule("/src/core.ts");
-  const EMPTY = { recaps: [], threads: [], thoughts: [], active: null, active_by: {}, suggestions: [], actions: [], merged: {}, proposals: [], apps: [], apps_seeded: false, notes: {} };
+  const EMPTY = { questions: [], recaps: [], threads: [], thoughts: [], active: null, active_by: {}, suggestions: [], actions: [], merged: {}, proposals: [], apps: [], apps_seeded: false, notes: {} };
   const plain = (x) => JSON.parse(JSON.stringify(x));
   const sorted = (o) => (Array.isArray(o) ? o.map(sorted) : o && typeof o === "object" ? Object.fromEntries(Object.keys(o).sort().map((k) => [k, sorted(o[k])])) : o);
   const same = (a, b) => JSON.stringify(sorted(plain(a))) === JSON.stringify(sorted(plain(b)));
@@ -29,12 +29,13 @@ try {
     let mirror = EMPTY;
     // Every field the core sends, as the window holds it (a window without notes, places, margin notes or AI
     // participants yet holds none).
-    const none = { action_estimates: [], captions: [], notes: {}, positions: {}, anchors: {}, ai: [] };
+    const none = { action_estimates: [], aliases: [], recipe_saves: {}, captions: [], notes: {}, positions: {}, anchors: {}, ai: [] };
     const agree = (core, at) => {
       for (const key of Object.keys(core)) {
         assert.deepEqual(sorted(plain(mirror[key] ?? none[key] ?? null)), sorted(plain(core[key] ?? null)), `${name}: the window's ${key} differs from the core's ${at}`);
       }
     };
+    if (name === "every") assert.ok(changes.some(c => c.type === "point_edited"), "point edits must be covered by the core mirror fixture");
     changes.forEach((change, i) => {
       mirror = apply(mirror, change);
       assert.ok(mirror && Array.isArray(mirror.threads), `${name}: change ${i} (${change.type}) left the window with no map`);

@@ -4,8 +4,8 @@
 .playground button, .playground select, .playground input { font: inherit; color: inherit; }
 .playground-bar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 12px 24px; border-bottom: 1px solid var(--line); background: var(--bg); font-size: 13px; }
 .playground-bar > strong { margin-right: 8px; }
-.playground-bar label { display: flex; align-items: center; gap: 6px; color: var(--muted); }
-.playground-bar select { min-height: 34px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); }
+.playground-bar label { min-width: 0; max-width: 100%; display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.playground-bar select { min-width: 0; flex: 1 1 auto; min-height: 34px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); }
 .playground-bar button { min-height: 34px; padding: 4px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); cursor: pointer; }
 .playground-bar :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .playground-about { margin: 0; padding: 10px 24px; color: var(--muted); font-size: 13px; }

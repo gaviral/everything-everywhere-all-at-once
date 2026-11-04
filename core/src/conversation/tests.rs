@@ -16,18 +16,25 @@ struct Fixture {
 }
 impl Fixture {
     async fn new(status: u16, text: &str, delay_ms: u64, key: bool) -> Self {
+        Self::sequence(status, vec![text.to_string()], delay_ms, key).await
+    }
+    async fn sequence(status: u16, replies: Vec<String>, delay_ms: u64, key: bool) -> Self {
+        Self::responses(status, replies.into_iter().map(|reply| json!({"choices":[{"message":{"content":reply}}]})).collect(), delay_ms, key).await
+    }
+    async fn responses(status: u16, replies: Vec<Value>, delay_ms: u64, key: bool) -> Self {
         let seen = Arc::new(Mutex::new(Vec::new()));
-        let (calls, reply) = (seen.clone(), text.to_string());
+        let (calls, replies) = (seen.clone(), Arc::new(replies));
         let router = Router::new().route(
             "/chat",
             post(move |Json(body): Json<Value>| {
-                let (calls, reply) = (calls.clone(), reply.clone());
+                let (calls, replies) = (calls.clone(), replies.clone());
                 async move {
-                    calls.lock().unwrap().push(body);
+                    let index = { let mut calls = calls.lock().unwrap(); let index = calls.len(); calls.push(body); index };
+                    let reply = replies[index.min(replies.len()-1)].clone();
                     tokio::time::sleep(Duration::from_millis(delay_ms)).await;
                     (
                         axum::http::StatusCode::from_u16(status).unwrap(),
-                        Json(json!({"choices": [{"message": {"content": reply}}]})),
+                        Json(reply),
                     )
                 }
             }),
@@ -39,8 +46,9 @@ impl Fixture {
         let server = tokio::spawn(async move {
             axum::serve(listener, router).await.unwrap();
         });
-        let path =
-            std::env::temp_dir().join(format!("e2a2o-partner-{}.jsonl", uuid::Uuid::new_v4()));
+        let directory = std::env::temp_dir().join(format!("e2a2o-partner-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("journal.jsonl");
         let (journal, _) = Journal::open(&path).unwrap();
         let core = Arc::new(Core {
             key: key.then(|| "fake".into()),
@@ -61,7 +69,7 @@ impl Fixture {
 impl Drop for Fixture {
     fn drop(&mut self) {
         self.server.abort();
-        let _ = std::fs::remove_file(&self.path);
+        let _ = std::fs::rename(&self.path, self.path.with_file_name("journal.finished.jsonl"));
     }
 }
 async fn state(updates: &mut broadcast::Receiver<Outgoing>, wanted: &str) {
@@ -711,4 +719,216 @@ async fn mixed_turn_commands_keep_their_order_and_only_remaining_words_reach_met
             }
         }
     }
+}
+
+
+fn c10_preferences() -> Format { Format { max_words:40, bullets:true, point_first:true } }
+fn c10_answer(display: &str, speech: &str) -> String { json!({"displayText":display,"speakText":speech}).to_string() }
+async fn c10_reply(updates: &mut broadcast::Receiver<Outgoing>) -> ServerMsg {
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            let msg = updates.recv().await.unwrap().message;
+            if matches!(msg, ServerMsg::PartnerReply { .. }) { return msg; }
+        }
+    }).await.unwrap()
+}
+fn c10_enable(f: &Fixture) -> Here {
+    let here = enable(&f.core, "you", 1);
+    format_switch(&f.core, "you", 1, true);
+    format_set(&f.core, "you", 1, "settings-1".into(), 0, c10_preferences());
+    here
+}
+#[test]
+fn c10_style_mechanical_rules_and_structured_bounds() {
+    let format = c10_preferences();
+    assert_eq!(Format::default().max_words,60);
+    assert!(check_format("- Start with one step.\n• Then check it.", &format).is_empty());
+    assert!(check_format("Sure, here is an answer.", &format).contains(&"line prefix shape"));
+    for p in PREAMBLES { assert!(check_format(&format!("- {p}, try this."), &format).contains(&"no preamble")); }
+    assert!(check_format("- Surely this fits.", &format).is_empty());
+    assert!(check_format(&format!("- {}", "word ".repeat(41)), &format).contains(&"word count"));
+    for prefix in ["- ","• ","* ","# ","> ","1. ","2) "] {
+        assert!(check_format(&format!("{prefix}Try this."), &Format::default()).contains(&"line prefix shape"));
+    }
+    assert!(!inspect(&c10_answer("- Try this.","One. Two. Three. Four."),&format).2.is_empty());
+    assert!(!inspect(&c10_answer("- Try this.",&"word ".repeat(61)),&format).2.is_empty());
+    assert!(!inspect(&c10_answer("- Try this.",&"x".repeat(401)),&format).2.is_empty());
+    assert!(!inspect(&c10_answer("- Try this.","- Do not speak bullets."),&format).2.is_empty());
+    assert!(!inspect("unstructured answer",&format).2.is_empty());
+}
+#[tokio::test]
+async fn c10_style_one_counted_repair_no_early_publication() {
+    let original = format!("Sure, {}", "background ".repeat(70));
+    let f = Fixture::sequence(200, vec![c10_answer(&original,"Start small."), c10_answer("- Start with one step.\n- Check the result.","Start with one step. Check the result.")],80,true).await;
+    let _here=c10_enable(&f);
+    let mut updates=f.core.updates.subscribe();
+    assert!(request(&f.core,"you",1,"What should the sample team try?"));
+    called(&f,2).await;
+    let early:Vec<_>=std::iter::from_fn(||updates.try_recv().ok()).collect();
+    assert!(!early.iter().any(|o|matches!(o.message,ServerMsg::PartnerReply {..}|ServerMsg::Guide {..})),"unchecked original must never publish");
+    let ServerMsg::PartnerReply { display_text,speak_text,available_answer, .. }=c10_reply(&mut updates).await else {panic!()};
+    assert!(check_format(&display_text,&c10_preferences()).is_empty());
+    assert_eq!(speak_text,bounded(&speak_text));
+    assert!(available_answer.is_none());
+    assert_eq!(f.seen.lock().unwrap().len(),2);
+    assert_eq!(f.core.service.calls(crate::now_ms()).used,2,"both calls counted");
+    let calls=f.seen.lock().unwrap();
+    let first=calls[0]["messages"].as_array().unwrap();
+    let repair=calls[1]["messages"].as_array().unwrap();
+    assert_eq!(&repair[..first.len()],first,"same bounded source context");
+    assert!(repair.last().unwrap()["content"].as_str().unwrap().contains("word count"));
+    assert!(!std::fs::read_to_string(&f.path).unwrap().contains(&original));
+}
+#[tokio::test]
+async fn c10_style_second_failure_discloses_original_and_baseline_is_one_call() {
+    let original="Sure, an available answer with uncertainty.";
+    let f=Fixture::new(200,&c10_answer(original,"A short answer."),1,true).await;
+    let here=c10_enable(&f);
+    let mut updates=f.core.updates.subscribe();
+    request(&f.core,"you",1,"Why this sample?");
+    let ServerMsg::PartnerReply { display_text,speak_text,available_answer,.. }=c10_reply(&mut updates).await else {panic!()};
+    assert_eq!(display_text,"Could not fit your format");
+    assert_eq!(available_answer.as_deref(),Some(original));
+    assert_eq!(speak_text,bounded(&speak_text));
+    assert_eq!(f.seen.lock().unwrap().len(),2);
+    assert!(f.core.snapshot().captions.is_empty());
+    drop(here);
+    let base=Fixture::new(200,"A baseline answer.",1,true).await;
+    let _here=enable(&base.core,"you",1);
+    let mut updates=base.core.updates.subscribe();
+    request(&base.core,"you",1,"Why baseline?");
+    state(&mut updates,"idle").await;
+    assert_eq!(base.seen.lock().unwrap().len(),1);
+    assert_eq!(base.core.snapshot().captions[0].text,"A baseline answer.");
+}
+#[tokio::test]
+async fn c10_style_opt_in_revision_reset_and_speaker_isolation() {
+    let f=Fixture::new(200,"unused",1,true).await;
+    format_switch(&f.core,"you",1,true);
+    assert!(!format_enabled(&f.core,"you",1));
+    let _here=enable(&f.core,"you",1);
+    format_set(&f.core,"you",1,"no-opt-in".into(),0,c10_preferences());
+    assert!(!format_enabled(&f.core,"you",1));
+    format_switch(&f.core,"you",1,true);
+    format_set(&f.core,"you",1,"save".into(),0,c10_preferences());
+    format_set(&f.core,"you",1,"save".into(),0,c10_preferences()); // explicit same identity is idempotent
+    format_set(&f.core,"you",1,"stale".into(),0,Format::default());
+    { let s=f.core.conversation.speakers.lock().unwrap(); assert_eq!(s["you"].format,c10_preferences()); assert_eq!(s["you"].format_revision,1); }
+    let other=enable(&f.core,"guest",2);
+    format_switch(&f.core,"guest",2,true);
+    assert_eq!(f.core.conversation.speakers.lock().unwrap()["guest"].format,Format::default());
+    format_switch(&f.core,"you",1,false);
+    assert_eq!(f.core.conversation.speakers.lock().unwrap()["you"].format,Format::default());
+    drop(other);
+    assert!(!format_enabled(&f.core,"guest",2));
+    assert!(f.seen.lock().unwrap().is_empty());
+}
+#[tokio::test]
+async fn c10_style_off_cancel_disconnect_and_new_question_discard_late_repair() {
+    for action in ["off","cancel","disconnect","newer"] {
+        let f=Fixture::sequence(200,vec![c10_answer("Sure, preamble.","Start here."),c10_answer("- A late repair.","A late repair.")],80,true).await;
+        let here=c10_enable(&f);
+        let mut updates=f.core.updates.subscribe();
+        request(&f.core,"you",1,"Why first?");
+        called(&f,2).await;
+        match action {
+            "off"=>format_switch(&f.core,"you",1,false),
+            "cancel"=>cancel(&f.core,"you"),
+            "disconnect"=>drop(here),
+            _=>{ request(&f.core,"you",1,"Why newer?"); }
+        }
+        tokio::time::sleep(Duration::from_millis(220)).await;
+        let replies:Vec<_>=std::iter::from_fn(||updates.try_recv().ok()).filter(|o|matches!(o.message,ServerMsg::PartnerReply {..})).collect();
+        assert_eq!(replies.len(),usize::from(action=="newer"),"{action}");
+        if action=="newer" { assert_eq!(f.core.conversation.speakers.lock().unwrap()["you"].history[0].0,"Why newer?"); }
+    }
+}
+#[tokio::test]
+async fn c10_style_provider_failures_never_repair() {
+    for status in [401,403,429,500] {
+        let f=Fixture::new(status,"refused",1,true).await;
+        let _here=c10_enable(&f);
+        let mut updates=f.core.updates.subscribe();
+        request(&f.core,"you",1,"Why this sample?");
+        state(&mut updates,"error").await;
+        assert_eq!(f.seen.lock().unwrap().len(),1,"{status}");
+    }
+}
+#[tokio::test(start_paused=true)]
+async fn c10_style_total_deadline_includes_first_call_and_repair() {
+    let f=Fixture::new(200,&c10_answer("Sure, a preamble.","Start here."),12000,true).await;
+    let _here=c10_enable(&f);
+    let mut updates=f.core.updates.subscribe();
+    request(&f.core,"you",1,"Why this sample?");
+    called(&f,1).await;
+    tokio::time::advance(Duration::from_secs(12)).await;
+    called(&f,2).await;
+    tokio::time::advance(Duration::from_secs(9)).await;
+    let ServerMsg::PartnerReply { available_answer,.. }=c10_reply(&mut updates).await else {panic!()};
+    assert!(available_answer.is_some());
+    assert_eq!(f.seen.lock().unwrap().len(),2);
+}
+
+#[tokio::test]
+async fn c10_style_content_refusal_is_not_a_repair_candidate() {
+    for response in [json!({"choices":[{"message":{"refusal":"Cannot answer", "content":"Refused."}}]}),
+        json!({"choices":[{"finish_reason":"content_filter","message":{"content":"Filtered."}}]})] {
+        let f=Fixture::responses(200,vec![response],1,true).await;
+        let _here=c10_enable(&f);
+        let mut updates=f.core.updates.subscribe();
+        request(&f.core,"you",1,"Why this sample?");
+        state(&mut updates,"error").await;
+        assert_eq!(f.seen.lock().unwrap().len(),1);
+    }
+}
+#[tokio::test]
+async fn c10_style_websocket_requires_own_opt_in_and_clears_on_disconnect() {
+    use futures_util::{SinkExt,StreamExt};
+    use tokio_tungstenite::tungstenite::Message;
+    let f=Fixture::sequence(200,vec![c10_answer("Sure, preamble.","Start here."),c10_answer("- Start with one step.","Start with one step.")],10,true).await;
+    let routes=Router::new().route("/ws",axum::routing::get(crate::connect))
+        .layer(axum::middleware::from_fn_with_state(f.core.clone(),crate::gate)).with_state(f.core.clone());
+    let listener=TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address=listener.local_addr().unwrap();
+    assert!(![4360,4399].contains(&address.port()));
+    let server=tokio::spawn(async move { axum::serve(listener,routes.into_make_service_with_connect_info::<crate::Link>()).await.unwrap(); });
+    let (mut a,_)=tokio_tungstenite::connect_async(format!("ws://{address}/ws")).await.unwrap();
+    let (mut b,_)=tokio_tungstenite::connect_async(format!("ws://{address}/ws")).await.unwrap();
+    // Preference operations alone never activate the feature.
+    for msg in [json!({"type":"partner","on":true}),json!({"type":"reply_format_set","request_id":"forged","observed_revision":0,"preferences":c10_preferences()}),json!({"type":"reply_format","on":true})] {
+        a.send(Message::Text(msg.to_string().into())).await.unwrap();
+    }
+    let mut read_state=false;
+    tokio::time::timeout(Duration::from_secs(3),async {
+        while let Some(Ok(Message::Text(text)))=a.next().await {
+            let v:Value=serde_json::from_str(&text).unwrap();
+            if v["type"]=="reply_format_state" { assert_eq!(v["preferences"]["maxWords"],60); assert_eq!(v["revision"],0); read_state=true; break; }
+        }
+    }).await.unwrap();
+    assert!(read_state);
+    a.send(Message::Text(json!({"type":"reply_format_set","request_id":"valid","observed_revision":0,"preferences":c10_preferences()}).to_string().into())).await.unwrap();
+    a.send(Message::Text(json!({"type":"text","text":"What should the sample team try?","id":uuid::Uuid::new_v4().to_string()}).to_string().into())).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(3),async {
+        while let Some(Ok(Message::Text(text)))=a.next().await {
+            let v:Value=serde_json::from_str(&text).unwrap();
+            if v["type"]=="partner_reply" { assert_eq!(v["displayText"],"- Start with one step."); assert_eq!(v["speakText"],"Start with one step."); return; }
+        }
+        panic!("missing formatted reply");
+    }).await.unwrap();
+    assert_eq!(f.seen.lock().unwrap().len(),2);
+    // A sibling socket with the same speaker cannot receive either preference or reply events without opt-in.
+    b.send(Message::Text(json!({"type":"heartbeat","id":"drain"}).to_string().into())).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(3),async {
+        while let Some(Ok(Message::Text(text)))=b.next().await {
+            let v:Value=serde_json::from_str(&text).unwrap();
+            assert!(v["type"]!="partner_reply" && v["type"]!="reply_format_state");
+            if v["type"]=="heartbeat" && v["id"]=="drain" { return; }
+        }
+    }).await.unwrap();
+    a.close(None).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(3),async {
+        while !f.core.conversation.speakers.lock().unwrap().is_empty() { tokio::task::yield_now().await; }
+    }).await.unwrap();
+    b.close(None).await.unwrap();
+    server.abort();
 }

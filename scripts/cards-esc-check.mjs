@@ -53,7 +53,8 @@ const DEMO = [
   ["Add to Reminders", 'button[aria-label="Add Transfer rent to landlord to Reminders"]'],
   ["a ✦ proposal's Rename", 'button[aria-label="Rename: Rename to “Rent payment”?"]'],
   ["an idea's Keep", 'button[aria-label="Keep suggestion: Set up autopay"]'],
-  ["Did you mean …? Yes", ".did-you-mean button:not(.quiet)"],
+  // The Canvas remains mounted behind Cards; inspect the correction in the shown view.
+  ["Did you mean …? Yes", 'main[aria-label="Cards"] .did-you-mean button:not(.quiet)'],
 ];
 const KEYS = { c: ["c", "KeyC", 67, "c"], y: ["y", "KeyY", 89, "y"], m: ["m", "KeyM", 77, "m"], Escape: ["Escape", "Escape", 27] };
 let browser = null;
@@ -110,7 +111,7 @@ try {
       const tap = async (selector, what) => { await tapAt(await reach(selector, what)); await sleep(150); };
       const state = () => evaluate(`({
         view: document.documentElement.dataset.view, rail: !!document.querySelector('[data-slot="rail"]'),
-        cards: !!document.querySelector('main[aria-label="Cards"]'), canvas: !!document.querySelector('.spine-frame'),
+        cards: !!document.querySelector('main[aria-label="Cards"]'), canvas: !!document.querySelector('.spine-frame')?.checkVisibility({ checkVisibilityCSS: true, checkOpacity: true }),
         back: !!document.querySelector('.shell-bl'), tab: document.querySelector('[data-slot="rail"] [role="tab"][aria-selected="true"]')?.dataset.tab ?? null })`);
       const settles = async (want, what, ms = 3000) => {
         let at = await state();

@@ -1,0 +1,11 @@
+.repeat-thoughts-card { padding: .7rem; border: 1px solid currentColor; border-radius: .7rem; color: var(--ink); background: var(--card); max-height: 42dvh; overflow-y: auto; overflow-wrap: anywhere; }
+.repeat-thoughts-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .4rem; }
+.repeat-thoughts-sources { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; }
+.repeat-thoughts-source { margin: .5rem 0; padding: .4rem; border-inline-start: 2px solid currentColor; }
+.repeat-thoughts-source p { margin: .3rem 0; white-space: pre-wrap; }
+.repeat-thoughts-time { font-size: .85em; }
+.repeat-thoughts-actions { display: flex; flex-wrap: wrap; gap: .4rem; position: sticky; bottom: -.7rem; background: var(--card); padding: .35rem 0; }
+.repeat-thoughts-card button { font: inherit; min-height: 2.75rem; white-space: normal; }
+.repeat-thoughts-card button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.repeat-thoughts-status { margin: .4rem 0 0; }
+@media (max-width: 600px) { .repeat-thoughts-sources { grid-template-columns: minmax(0, 1fr); } }

@@ -246,7 +246,7 @@ try {
       await live(rawMissing, "notice", hosted ? "Listening unavailable" : "No AI key");
       await live(ordinary); await live(ordinary);
       const refusal = keyWords(hosted, true, "notice");
-      await live(keyWords(false, true, "notice"), "error", hosted ? "Service error" : "AI key refused");
+      await live("The AI key was refused. Check MODEL_API_KEY in .env, then restart.", "error", hosted ? "Service error" : "AI key refused");
       await press("y");
       await railIs(true);
       const expected = [refusal, ordinary, ordinary, `“${landing.text}” → Community supper`, unrelated, missing];

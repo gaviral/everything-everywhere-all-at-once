@@ -457,7 +457,7 @@ try {
   // cards reflow.
   const before = (await tip()).y;
   await evaluate(`scrollBy({ top: -60, behavior: "instant" })`);
-  await sleep(120);
+  for (let frame = 0; frame < 60 && (await tip()).y <= before + 20; frame++) await sleep(50);
   assert.ok((await tip()).y > before + 20, `the arrow moves with the page (${before} → ${(await tip()).y})`);
   await lands(far, "scrolled toward the caption, what's left above it");
   await cdp("Emulation.setDeviceMetricsOverride", { width: 1100, height: 900, deviceScaleFactor: 1, mobile: false });

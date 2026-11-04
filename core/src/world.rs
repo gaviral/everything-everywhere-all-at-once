@@ -218,10 +218,89 @@ pub struct SpeechDraft {
     pub text: String,
 }
 
+/// Deliberately recorded by a person; never an approval of an external action.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Question {
+    pub id: String,
+    pub owner: String,
+    pub question: String,
+    pub thought_id: Option<String>,
+    pub answer: String,
+    pub status: String,
+    pub revision: u64,
+    pub updated_ms: u64,
+}
+
+impl World {
+    /// Validate against the world held by the commit gate. A create retry is read-only.
+    #[allow(clippy::too_many_arguments)]
+    pub fn question_save(&self, owner: &str, id: &str, text: &str, thought_id: &Option<String>, answer: &str, status: &str, expected: u64, now: u64) -> Result<Question, &'static str> {
+        if uuid::Uuid::parse_str(id).is_err() || id.len() != 36 { return Err("Question ID must be a UUID."); }
+        if text.trim().is_empty() || text.chars().count() > 280 { return Err("Question needs 1–280 characters."); }
+        if answer.chars().count() > 2000 { return Err("Answer allows at most 2,000 characters."); }
+        if !["open", "answered", "archived"].contains(&status) { return Err("Unknown question status."); }
+        let old = self.questions.iter().find(|q| q.id == id);
+        if let Some(q) = old {
+            if q.owner != owner { return Err("Only the person who saved this question can edit it."); }
+            if expected == 0 && q.question == text && q.thought_id == *thought_id && q.answer == answer && q.status == status { return Ok(q.clone()); }
+            if expected != q.revision { return Err("Question changed. Review the current record before saving again."); }
+        } else {
+            if expected != 0 { return Err("Question no longer exists."); }
+            if self.questions.len() >= 500 { return Err("This map has 500 saved questions. No records were removed."); }
+            if self.questions.iter().filter(|q| q.owner == owner).count() >= 100 { return Err("You have 100 saved questions on this map. No records were removed."); }
+        }
+        // A removed source stays attached as an ID; editing it must not lose the record.
+        if old.is_none_or(|q| q.thought_id != *thought_id) {
+            if let Some(source) = thought_id {
+                if !self.thoughts.iter().any(|t| &t.id == source && t.placed && t.thread_id.as_ref().is_some_and(|id| self.threads.iter().any(|thread| &thread.id == id))) {
+                    return Err("Source no longer on map. Save without linking it.");
+                }
+            }
+        }
+        let revision = expected.checked_add(1).ok_or("Question revision limit reached.")?;
+        Ok(Question { id: id.into(), owner: owner.into(), question: text.into(), thought_id: thought_id.clone(), answer: answer.into(), status: status.into(), revision, updated_ms: now })
+    }
+}
+
+/// Accepted point edits only; proposals never enter the world or journal.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct PointEdit {
+    pub request_id: String,
+    pub thought_id: String,
+    pub old_point: String,
+    pub new_point: String,
+    pub actor: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub undo_of: Option<String>,
+}
+
+/// Literal rules taught deliberately; topic IDs never follow merges.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum AliasTarget { OpenTopic { topic_id: String }, NextTopic, PreviousTopic, ShowRecap }
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct VoiceAlias {
+    pub id: String,
+    pub owner: String,
+    pub phrase: String,
+    pub target: AliasTarget,
+    pub revision: u64,
+    pub enabled: bool,
+    #[serde(default)] pub deleted: bool,
+    #[serde(default)] pub unavailable: bool,
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct World {
     #[serde(default)] pub action_estimates: Vec<ActionEstimate>,
     #[serde(default, skip_serializing)] pub estimate_receipts: std::collections::HashMap<(String, String), ActionEstimate>,
+    #[serde(default)] pub questions: Vec<Question>,
+    /// Rebuilt from accepted journal edits; request identities survive reconnect and restart.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub point_edits: Vec<PointEdit>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")] pub aliases: Vec<VoiceAlias>,
+    #[serde(default, skip_serializing)] pub alias_receipts: std::collections::HashMap<(String, String), String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")] pub pauses: Vec<Pause>,
     #[serde(default, skip_serializing)] pub returning: std::collections::HashMap<String, (String, usize)>,
     #[serde(default, skip_serializing)]
@@ -260,6 +339,8 @@ pub struct World {
     pub apps: Vec<crate::apps::MiniApp>,
     #[serde(default)]
     pub apps_seeded: bool,
+    #[serde(default)]
+    pub recipe_saves: std::collections::HashMap<String, crate::apps::RecipeReceipt>,
     #[serde(default)]
     pub recaps: Vec<crate::recap::Recap>,
     /// Thought id → what the placer read into it: the words it carries on, an assumption, why it went there (chunks.rs).
@@ -328,6 +409,9 @@ pub struct World {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Change {
     ActionEstimateSet { estimate: ActionEstimate },
+    QuestionSaved { question: Question },
+    PointEdited { request_id: String, thought_id: String, old_point: String, new_point: String, actor: String, #[serde(default, skip_serializing_if = "Option::is_none")] undo_of: Option<String> },
+    AliasChanged { alias: VoiceAlias, request_id: String, signature: String },
     CaptionAdded { caption: Caption },
     Paused { pause: Pause },
     PauseResolved { id: String, by_thought: String },
@@ -343,6 +427,7 @@ pub enum Change {
     AppRan { id: String, at_ms: u64 },
     AppOutput { id: String, sound: bool },
     AppsSeeded,
+    RecipeSaved { request_id: String, receipt: crate::apps::RecipeReceipt },
     ThoughtAdded { thought: Thought },
     ThreadAdded { thread: Thread },
     ThoughtPlaced {
@@ -603,6 +688,28 @@ impl World {
                     if existing.revision <= estimate.revision { *existing = estimate.clone(); }
                 } else { self.action_estimates.push(estimate.clone()); }
             }
+            Change::QuestionSaved { question } => {
+                if let Some(old) = self.questions.iter_mut().find(|q| q.id == question.id) { *old = question.clone(); }
+                else { self.questions.push(question.clone()); }
+            }
+            Change::PointEdited { request_id, thought_id, old_point, new_point, actor, undo_of } => {
+                let Some(t) = self.thoughts.iter().find(|t| &t.id == thought_id && t.placed && &t.point == old_point) else { return };
+                let thread = t.thread_id.clone();
+                // Source order, not equal text: an older point can have the same words as the latest.
+                let latest = thread.as_ref().and_then(|id| self.thoughts.iter().filter(|t| t.placed && t.thread_id.as_ref() == Some(id))
+                    .max_by_key(|t| t.at_ms)).is_some_and(|t| &t.id == thought_id);
+                self.thoughts.iter_mut().find(|t| &t.id == thought_id).unwrap().point = new_point.clone();
+                if latest {
+                    if let Some(th) = thread.and_then(|id| self.thread_mut(&id)) { th.last_point = new_point.clone(); }
+                }
+                if !self.point_edits.iter().any(|e| &e.actor == actor && &e.request_id == request_id) { self.point_edits.push(PointEdit { request_id: request_id.clone(), thought_id: thought_id.clone(), old_point: old_point.clone(), new_point: new_point.clone(), actor: actor.clone(), undo_of: undo_of.clone() }); }
+            }
+            Change::AliasChanged { alias, request_id, signature } => {
+                self.alias_receipts.insert((alias.owner.clone(), request_id.clone()), signature.clone());
+                if let Some(old) = self.aliases.iter_mut().find(|a| a.id == alias.id && a.owner == alias.owner) {
+                    if old.revision < alias.revision { *old = alias.clone(); }
+                } else { self.aliases.push(alias.clone()); }
+            }
             Change::CaptionAdded { caption } => {
                 if !self.captions.iter().any(|c| c.id == caption.id && c.by == caption.by) {
                     self.captions.push(caption.clone());
@@ -636,6 +743,7 @@ impl World {
                 }
             }
             Change::AppsSeeded => self.apps_seeded = true,
+            Change::RecipeSaved { request_id, receipt } => { self.recipe_saves.entry(request_id.clone()).or_insert_with(|| receipt.clone()); },
             Change::ThoughtAdded { thought } => {
                 if !self.thoughts.iter().any(|t| t.id == thought.id) {
                     self.thoughts.push(thought.clone());
@@ -902,6 +1010,13 @@ impl World {
                 }
                 if let Some(p) = self.proposals.iter_mut().find(|p| &p.id == id) {
                     p.status = *status;
+                }
+            }
+        }
+            for alias in &mut self.aliases {
+            if let AliasTarget::OpenTopic { topic_id } = &alias.target {
+                if !alias.unavailable && !self.threads.iter().any(|t| &t.id == topic_id) {
+                    alias.enabled = false; alias.unavailable = true; alias.revision += 1;
                 }
             }
         }
@@ -1343,7 +1458,7 @@ fn put_back<T>(list: &mut Vec<T>, key: impl Fn(&T) -> &String, id: &str, before:
 
 #[cfg(test)]
 mod tests {
-    use super::{Change, Thought, World};
+    use super::{Question, Change, Thought, World};
 
     #[test]
     fn a_partial_last_line_doesnt_swallow_the_next_change() {
@@ -1844,6 +1959,28 @@ mod tests {
 
     /// A talk in two voices that uses every kind of change, with the fields added since the first journals
     /// (rooms, sure fixes, apps, recaps) set away from their defaults, so a field that doesn't survive shows.
+    #[test]
+    fn f7_questions_bounds_caps_missing_source_and_legacy() {
+        let mut world = World::default();
+        let id = "00000000-0000-4000-8000-000000000009";
+        let save = |w: &World, text: &str, source: Option<String>, answer: &str, status: &str, expected| w.question_save("test", id, text, &source, answer, status, expected, 10);
+        assert!(save(&world, " ", None, "", "open", 0).is_err());
+        assert!(save(&world, &"x".repeat(281), None, "", "open", 0).is_err());
+        assert!(save(&world, "Q", None, &"x".repeat(2001), "open", 0).is_err());
+        assert!(save(&world, "Q", None, "", "unknown", 0).is_err());
+        assert!(save(&world, "Q", Some("missing".into()), "", "open", 0).is_err());
+        let q = save(&world, &"🌳".repeat(280), None, &"a".repeat(2000), "answered", 0).unwrap();
+        world.apply(&Change::QuestionSaved { question: q.clone() });
+        world.questions[0].thought_id = Some("removed-source".into());
+        assert!(save(&world, "Q", Some("removed-source".into()), "A", "open", 1).is_ok());
+        world.questions = (0..100).map(|i| Question { id: format!("record-{i}"), ..q.clone() }).collect();
+        assert!(save(&world, "Q", None, "", "open", 0).unwrap_err().contains("100"));
+        world.questions = (0..500).map(|i| Question { id: format!("record-{i}"), owner: format!("speaker-{i}"), ..q.clone() }).collect();
+        assert!(save(&world, "Q", None, "", "open", 0).unwrap_err().contains("500"));
+        let legacy: World = serde_json::from_str(r#"{"threads":[],"thoughts":[],"active":null}"#).unwrap();
+        assert!(legacy.questions.is_empty());
+    }
+
     fn every_change() -> Vec<Change> {
         use crate::apps::{MiniApp, Prompt, Publisher, Watcher};
         let app = |id: &str, watcher| MiniApp {
@@ -1872,7 +2009,10 @@ mod tests {
             decided: false,
         };
         let changes = vec![
-            Change::AppsSeeded,
+            Change::QuestionSaved { question: Question { id: "00000000-0000-4000-8000-000000000001".into(), owner: "Ana".into(), question: "Which route?".into(), thought_id: None, answer: String::new(), status: "open".into(), revision: 1, updated_ms: 100 } },
+
+            Change::AliasChanged { alias: super::VoiceAlias { id: "fixture-rule".into(), owner: "you".into(), phrase: "violet doorway".into(), target: super::AliasTarget::NextTopic, revision: 1, enabled: true, deleted: false, unavailable: false }, request_id: "fixture-request".into(), signature: "fixture".into() },            Change::AppsSeeded,
+            Change::RecipeSaved { request_id: "recipe-1".into(), receipt: crate::apps::RecipeReceipt { fingerprint: "synthetic".into(), app_id: "app-volume".into() } },
             Change::AppRegistered { app: app("app-volume", Watcher::Volume { level: 0.2, seconds: 3 }) },
             Change::AppRegistered { app: app("app-timer", Watcher::Time { at_ms: 50, every_secs: 3600 }) },
             Change::AppEnabled { id: "app-volume".into(), enabled: false },
@@ -1905,6 +2045,7 @@ mod tests {
                 note: crate::chunks::Note { continues: "a".into(), assumed: String::new(), why: "names Muse Spark".into(), later: false },
             },
             Change::ThoughtRepointed { thought_id: "b".into(), point: "Ask Muse Spark about b".into() },
+            Change::PointEdited { request_id: "edit-b".into(), thought_id: "b".into(), old_point: "Ask Muse Spark about b".into(), new_point: "Ask about b".into(), actor: "you".into(), undo_of: None },
             Change::ThreadStatus { thread_id: "T1".into(), status: super::ThreadStatus::Dropped, speaker: "Ana".into() },
             Change::ThreadRenamed { thread_id: "T2".into(), title: "Budget".into() },
             Change::TagSuggested { thread_id: "T2".into(), tag: "#money".into() },
@@ -2123,8 +2264,10 @@ mod tests {
                 | Change::AppRemoved { .. }
                 | Change::AppRan { .. }
                 | Change::AppOutput { .. }
+                | Change::RecipeSaved { .. }
                 | Change::AppsSeeded
                 | Change::ThoughtAdded { .. }
+                | Change::QuestionSaved { .. }
                 | Change::TextReceived { .. }
                 | Change::Paused { .. } | Change::PauseResolved { .. } | Change::PauseChoice { .. } | Change::ReturnFocused { .. }
                 | Change::SpeechRecovered { .. }
@@ -2137,6 +2280,7 @@ mod tests {
                 | Change::ActiveChanged { .. }
                 | Change::StayChanged { .. }
                 | Change::ThreadRenamed { .. }
+                | Change::AliasChanged { .. }
                 | Change::ThreadMerged { .. }
                 | Change::ThreadRetitled { .. }
                 | Change::TitleChosen { .. }
@@ -2160,6 +2304,7 @@ mod tests {
                 | Change::ThoughtDecided { .. }
                 | Change::ThoughtNoted { .. }
                 | Change::ThoughtRepointed { .. }
+                | Change::PointEdited { .. }
                 | Change::ThreadRemoved { .. }
                 | Change::PutBack { .. }
                 | Change::Positioned { .. }
@@ -2181,7 +2326,7 @@ mod tests {
         let changes = every_change();
         let kinds: std::collections::HashSet<String> =
             changes.iter().map(|c| serde_json::to_value(c).unwrap()["type"].as_str().unwrap().to_string()).collect();
-        assert_eq!(kinds.len(), 58, "one of each kind of change");
+        assert_eq!(kinds.len(), 62, "one of each kind of change");
         for change in &changes {
             let json = serde_json::to_string(change).unwrap();
             let back: Change = serde_json::from_str(&json).unwrap_or_else(|e| panic!("{json} didn't read back: {e}"));

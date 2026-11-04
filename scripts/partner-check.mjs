@@ -16,7 +16,7 @@ try {
     localStorage.setItem('e2a2o.toured','1'); window.spoken=[]; window.cancelled=0; window.errors=[];
     addEventListener('error',e=>{if(!e.message.startsWith('ResizeObserver')) errors.push(e.message)});
     Object.defineProperty(window,'speechSynthesis',{configurable:true,value:Object.assign(new EventTarget(),{
-      getVoices:()=>[{name:'Test English',lang:'en-US',default:true}],
+      getVoices:()=>[{name:'Test English',lang:'en-US',default:true,localService:true}],
       speak:u=>{spoken.push(u);queueMicrotask(()=>u.onstart?.());},cancel:()=>cancelled++
     })});
     window.SpeechSynthesisUtterance=class {constructor(text){this.text=text}};

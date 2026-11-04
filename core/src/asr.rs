@@ -9,7 +9,7 @@ use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tokio_tungstenite::tungstenite::Message;
 
 mod sources;
@@ -75,13 +75,14 @@ async fn run_at(url: &str, core: Arc<Core>, speaker: String, mut audio: mpsc::Re
     let step = crate::model::STEP_IDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     core.listen_step(&speaker, step, MODEL, false);
 
-    // Audio out: first the primer (see `primer`), all at once, then the microphone, paced by itself; when the UI
-    // stops, end the stream. Words said meanwhile wait in the channel, behind the primer, so nothing is lost.
-    let writer = tokio::spawn(async move { relay(&mut sink, &mut audio).await });
+    // Bound every outbound frame by what the service has processed. The 4.8 s primer plus microphone audio
+    // queued during connection used to exceed the service's 5 s backlog cap before the first spoken word.
+    let (progress, processed) = watch::channel(0);
+    let writer = tokio::spawn(async move { relay(&mut sink, &mut audio, processed).await });
 
     // However the stream ends, the writer stops too: it holds the audio channel, and this window can
     // only start listening again once that closes. The caller says listening stopped.
-    let ended = hear(&core, &speaker, &mut stream, window).await;
+    let ended = hear_with_progress(&core, &speaker, &mut stream, window, Some(progress)).await;
     writer.abort();
     core.send_to(&speaker, ServerMsg::Partial { text: String::new() });
     core.listen_step(&speaker, step, MODEL, true);
@@ -89,7 +90,15 @@ async fn run_at(url: &str, core: Arc<Core>, speaker: String, mut audio: mpsc::Re
 }
 
 /// Reads the service's events until the stream ends, a spoken "stop listening", or a silence past `QUIET_MAX`.
+#[cfg(test)]
 pub(crate) async fn hear<S>(core: &Arc<Core>, speaker: &str, stream: &mut S, window: Option<u64>) -> anyhow::Result<()>
+where
+    S: futures_util::Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
+{
+    hear_with_progress(core, speaker, stream, window, None).await
+}
+
+async fn hear_with_progress<S>(core: &Arc<Core>, speaker: &str, stream: &mut S, window: Option<u64>, progress: Option<watch::Sender<u64>>) -> anyhow::Result<()>
 where
     S: futures_util::Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
 {
@@ -100,7 +109,13 @@ where
         };
         match next {
             // A sign of life only (`QUIET_MAX`).
-            Some(Ok(Message::Text(t))) if t.as_str().contains(r#""audioProgress""#) => {}
+            Some(Ok(Message::Text(t))) if t.as_str().contains(r#""audioProgress""#) => {
+                if let (Some(progress), Ok(event)) = (&progress, serde_json::from_str::<Value>(&t)) {
+                    if let Some(ms) = event["audioProcessedMs"].as_u64() {
+                        progress.send_modify(|latest| *latest = (*latest).max(ms));
+                    }
+                }
+            }
             // "Stop listening": nothing after it is heard, kept or sent on, even words the service still had.
             Some(Ok(Message::Text(t))) => {
                 if handle(core, speaker, &mut primer, t.as_str(), window) {
@@ -124,9 +139,8 @@ const FRAME_BYTES: usize = 2 * RATE * 80 / 1000;
 /// How long the primer runs, in the stream's own time: everything the service reports up to here is the primer's.
 /// Why this long: the service ends the primer's turn after about 3 s of quiet (it ended at 3.1–3.8 s in 7 runs), so
 /// it closes before the mic's audio begins; and the endpointer is quick only once a few seconds have passed since
-/// the first speech it heard (a first line ending 7.5 s after it: 0.4–0.7 s, n = 3). Under 5 s, the most the
-/// service accepts ahead of what it has processed (dev.meta.ai/docs/speech-to-text; 8.8 s ahead left every later
-/// line about 5 s late, n = 6); it processes the primer in about 0.5 s, and later lines came back as fast as before.
+/// the first speech it heard (a first line ending 7.5 s after it: 0.4–0.7 s, n = 3). This is audio duration, not
+/// permission to send it in one burst: `relay` bounds outstanding audio using processing acknowledgements.
 pub(crate) const PRIMER_MS: u64 = 4_800;
 /// The sound at its start: a vowel just long enough for the service to hear speech (a noise burst wasn't heard).
 const PRIMER_VOWEL_MS: usize = 500;
@@ -172,17 +186,30 @@ fn primer() -> Vec<u8> {
     pcm
 }
 
-/// Everything the service hears: the primer, then the microphone's frames until the UI stops, then the end.
-async fn relay<S: futures_util::Sink<Message> + Unpin>(sink: &mut S, audio: &mut mpsc::Receiver<Vec<u8>>) {
-    for frame in primer().chunks(FRAME_BYTES) {
-        if sink.send(Message::Binary(frame.to_vec().into())).await.is_err() {
-            return;
+/// Keep ample headroom below the provider's 5 s cap, including the primer and any queued microphone frames.
+const BACKLOG_MS: u64 = 1_600;
+
+/// Everything the service hears, in order. Waiting for progress never drops or reorders captured words.
+/// Chunks are bounded even when the browser delivers a larger frame or accumulated audio after a stall.
+async fn relay<S: futures_util::Sink<Message> + Unpin>(sink: &mut S, audio: &mut mpsc::Receiver<Vec<u8>>, mut processed: watch::Receiver<u64>) {
+    let mut sent = 0u64;
+    let mut send = async |bytes: &[u8]| {
+        for frame in bytes.chunks(FRAME_BYTES) {
+            let next = sent + frame.len() as u64;
+            while next > (processed.borrow().saturating_add(BACKLOG_MS)).saturating_mul(2 * RATE as u64) / 1000 {
+                // The reader also times out, but a closed/stalled progress channel must never strand a writer.
+                if !matches!(tokio::time::timeout(QUIET_MAX, processed.changed()).await, Ok(Ok(()))) {
+                    return false;
+                }
+            }
+            if sink.send(Message::Binary(frame.to_vec().into())).await.is_err() { return false; }
+            sent = next;
         }
-    }
+        true
+    };
+    if !send(&primer()).await { return; }
     while let Some(frame) = audio.recv().await {
-        if sink.send(Message::Binary(frame.into())).await.is_err() {
-            return;
-        }
+        if !send(&frame).await { return; }
     }
     let _ = sink.send(Message::Text(r#"{"type":"endStream"}"#.into())).await;
 }
@@ -308,6 +335,7 @@ fn handle(core: &Arc<Core>, speaker: &str, primer: &mut Primer, text: &str, wind
             if !words.trim().is_empty() && primer.sources.words(speaker, &event, &words, false).is_none() {
                 return false;
             }
+            primer.sources.checkpoint(core);
             // "Stop" stops a message counting down as it's said, not a turn's end later (messages.rs).
             crate::messages::heard(core, speaker, &words);
             crate::helpers::heard(core, speaker, &words);
@@ -361,11 +389,13 @@ fn sentence_case(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{handle, handshake, hear, primer, refused, relay, sentence_case, Primer, FRAME_BYTES, PRIMER_MS, PRIMER_VOWEL_MS, QUIET_MAX, RATE};
+    use super::{handle, handshake, hear, primer, refused, relay, sentence_case, Primer, BACKLOG_MS, FRAME_BYTES, PRIMER_MS, PRIMER_VOWEL_MS, QUIET_MAX, RATE};
     use crate::protocol::{ServerMsg, View};
     use crate::world::{Journal, World};
     use crate::Core;
     use std::sync::Arc;
+    use std::time::Duration;
+    use tokio::sync::{mpsc, watch};
 
     mod session;
     mod speech;
@@ -471,7 +501,8 @@ mod tests {
         tx.send(vec![2u8; FRAME_BYTES]).await.unwrap();
         drop(tx);
         let mut sent: Vec<Message> = Vec::new();
-        relay(&mut sent, &mut rx).await;
+        let (_progress, processed) = watch::channel(PRIMER_MS);
+        relay(&mut sent, &mut rx, processed).await;
         let binary: Vec<Vec<u8>> = sent.iter().filter_map(|m| match m { Message::Binary(b) => Some(b.to_vec()), _ => None }).collect();
         let primed: Vec<u8> = binary[..binary.len() - 2].concat();
         assert_eq!(primed, primer());

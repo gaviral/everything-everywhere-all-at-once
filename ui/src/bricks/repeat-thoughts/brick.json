@@ -1,0 +1,8 @@
+{
+  "id": "repeat-thoughts",
+  "name": "Recognize repeated thoughts",
+  "does": "Offer an earlier capture when your new thought uses nearly the same words.",
+  "kind": "card",
+  "defaultOn": false,
+  "demoSafe": false
+}

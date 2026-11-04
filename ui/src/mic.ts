@@ -4,6 +4,7 @@
 // Safari and Firefox run at the device's rate and the worklet resamples (ui/public/pcm-worklet.js, checked by
 // scripts/mic-check.mjs), since what their own resampling does to a mic at 24 kHz can't be checked here: Firefox
 // refuses a mic in a context at another rate, and Safari's has had bugs.
+import { voicePolicy } from "./talk/call-core";
 import { pageSpeaking, stopPageSpeech, watchPageSpeech } from "./page-speech";
 import { builtInOn, watchBuiltIns } from "./shell/features";
 
@@ -68,15 +69,19 @@ export function watchMicPermission(permissions: Pick<Permissions, "query"> | und
   return () => { stopped = true; if (status) status.onchange = null; };
 }
 
-export async function startMic(onFrame: (frame: ArrayBuffer) => void, onEnded?: () => void, signal?: AbortSignal): Promise<() => void> {
+export async function startMic(onFrame: (frame: ArrayBuffer) => void, onEnded?: () => void, signal?: AbortSignal, held?: () => boolean): Promise<() => void> {
   if (!navigator.mediaDevices?.getUserMedia || !window.AudioWorkletNode) {
     throw new MicUnavailable(window.isSecureContext === false
       ? "Live audio needs a secure page (https). Open the link that starts with https."
       : "Live audio isn't available in this browser. You can type below.");
   }
   // Defense at the capture boundary: a saved permission, core status or reconnect is never a gesture in this tab.
-  if (navigator.userActivation?.isActive === false) throw new MicUnavailable("Tap the mic to start listening.");
+  // Touch activation is normally recorded on release. A currently held Touchpad press is also an explicit
+  // request, even after the browser's short activation timer expires; ordinary mic callers retain the tap guard.
+  if (navigator.userActivation?.isActive === false && !held?.()) throw new MicUnavailable("Tap the mic to start listening.");
   signal?.throwIfAborted();
+  const policyGeneration = voicePolicy.snapshot().generation;
+  const comparison = voicePolicy.snapshot().enabled;
   // Before any await, so it counts as part of the click.
   let context = atRate();
   let stream: MediaStream | undefined;
@@ -118,12 +123,36 @@ export async function startMic(onFrame: (frame: ArrayBuffer) => void, onEnded?: 
     // If the browser explicitly refused echo cancellation, keep the original hard mute.
     const echoProtected = stream.getTracks().every((track) => track.getSettings?.().echoCancellation !== false);
     const captureState = () => {
-      bargeIn = muted && started && echoProtected && builtInOn("partner");
+      bargeIn = muted && started && echoProtected && builtInOn("partner") && !builtInOn("voice-policy-comparison");
       writer.port.postMessage({ muted, bargeIn, generation: ++generation, resumeBarge });
     };
-    unwatchSpeech = watchPageSpeech((speaking, audible) => { muted = speaking; started = audible; captureState(); });
+    let transition = 0;
+    unwatchSpeech = watchPageSpeech((speaking, audible) => {
+      const ticket = ++transition;
+      const wasMuted = muted;
+      muted = speaking; started = audible;
+      if (comparison && speaking) voicePolicy.capture("paused", policyGeneration);
+      if (comparison && !speaking && wasMuted) {
+        // Keep the gate closed until the still-owned device context is actually running.
+        muted = true;
+        if (voicePolicy.canResume(policyGeneration)) {
+          voicePolicy.capture("starting", policyGeneration);
+          void (context.state === "running" ? Promise.resolve() : context.resume()).then(() => {
+            if (ticket !== transition || signal?.aborted || pageSpeaking() || !voicePolicy.canResume(policyGeneration)) return;
+            if (context.state !== "running") { stop(); onEnded?.(); return; }
+            muted = false;
+            captureState();
+            voicePolicy.capture("open", policyGeneration);
+          }).catch(() => {
+            if (ticket !== transition || signal?.aborted || !voicePolicy.canResume(policyGeneration)) return;
+            stop(); onEnded?.();
+          });
+        }
+      }
+      captureState();
+    });
     unwatchSetting = watchBuiltIns(() => {
-      if (bargeIn !== (muted && started && echoProtected && builtInOn("partner"))) captureState();
+      if (bargeIn !== (muted && started && echoProtected && builtInOn("partner") && !builtInOn("voice-policy-comparison"))) captureState();
     });
     detachWriter = () => { accepting = false; generation++; writer.port.onmessage = null; writer.port.close(); };
     writer.port.onmessage = (event) => {
@@ -140,7 +169,7 @@ export async function startMic(onFrame: (frame: ArrayBuffer) => void, onEnded?: 
       }
       // A queued frame from before a pause/resume must stay silent even after speech ends.
       const { frame, generation: captured } = message;
-      if (pageSpeaking() || captured !== generation) new Int16Array(frame).fill(0);
+      if (pageSpeaking() || captured !== generation || (comparison && (voicePolicy.snapshot().generation !== policyGeneration || voicePolicy.snapshot().capture !== "open"))) new Int16Array(frame).fill(0);
       onFrame(frame);
     };
     source.connect(writer);

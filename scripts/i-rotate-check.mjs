@@ -90,7 +90,9 @@ try {
         .map(e => e.getBoundingClientRect()).filter(b => b.width && b.height).map(b => b.bottom + 8));
       const stage = document.querySelector('[data-slot="stage"]').getBoundingClientRect();
       const dock = parseFloat(getComputedStyle(document.querySelector('.spine-anchor')).getPropertyValue('--dock-height')) || 0;
-      const bottom = stage.height ? Math.min(r.bottom, stage.top - 8) : r.bottom - dock;
+      // Floating shell controls reserve a bottom band even when the stage is empty.
+      const controls = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--shell-content-bottom')) || 0;
+      const bottom = Math.min(r.bottom - controls, stage.height ? Math.min(r.bottom, stage.top - 8) : r.bottom - dock);
       return { x: (r.left + r.right) / 2, y: (top + Math.max(top + 120, bottom)) / 2 };
     })()`);
     const gesture = async (type, point, rotation, scale = 1) => evaluate(`(() => {
@@ -148,8 +150,8 @@ try {
     assert.deepEqual(world.threads, initial.threads, 'topic records unchanged');
     assert.deepEqual(Object.keys(world.positions), ['p2'], 'no incidental positions');
     assert.deepEqual(core.heard.filter(m => m.type === 'email'), [{ type: 'email', on: true }], 'one default email handshake');
-    assert.deepEqual(core.heard.filter(m => !(m.type === 'email' && m.on === true) && !['position', 'heartbeat', 'attention'].includes(m.type) && !(m.type === 'partner' && m.on === false)), [],
-      'no record writes beyond the explicit position (ordinary hover and partner-off handshake allowed)');
+    assert.deepEqual(core.heard.filter(m => !(m.type === 'email' && m.on === true) && !['position', 'heartbeat', 'attention'].includes(m.type) && !(['partner', 'voice_shortcuts', 'reply_format', 'agreement_switch', 'connections_switch'].includes(m.type) && m.on === false)), [],
+      'no record writes beyond the explicit position (ordinary hover and disabled per-window feature handshakes allowed)');
 
     if (process.env.SHOTS) {
       mkdirSync(process.env.SHOTS, { recursive: true });

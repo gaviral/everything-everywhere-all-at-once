@@ -3,16 +3,16 @@
 // of the page carries on. The playground (bricks/playground.tsx) mounts a brick the same way, against a sample map.
 import { Component, lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type LazyExoticComponent, type ReactNode } from "react";
 import type { ActedBy, BrickActions, BrickEvents, BrickInfo, BrickKind, BrickOn, BrickProps, MapSnapshot } from "./bricks/contract";
-import { BRICKS, brickEvents, landingWatcher, senders, snapshotOf, switchBrick, useBricksOn, type Brick } from "./bricks-core";
+import { BRICKS, brickEvents, captureSourcesOf, landingWatcher, senders, snapshotOf, isOn, switchBrick, useBricksOn, type Brick } from "./bricks-core";
 import { onReading } from "./apps-audio";
-import type { Thought, UsageSnapshot, World } from "./core";
+import type { Capture, Thought, UsageSnapshot, World } from "./core";
 import { hearFrom, watchPoint } from "./guide-core";
 import { placedBy, watchDecided } from "./route";
 import { moveToTopic, renameTopic } from "./topics-core";
 import { watchSpeaking } from "./talk/call-core";
 import { useReadPosition } from "./talk/read";
 import { useJobs } from "./work-jobs";
-import { useBuiltInsOn } from "./shell/features";
+import { builtInOn, useBuiltInsOn } from "./shell/features";
 import "./bricks.css";
 
 /** What every brick on the page is handed (contract.ts `BrickProps`, but its own brick.json): the map, `on`, and its
@@ -22,7 +22,7 @@ export type BrickHost = { map: MapSnapshot; on: BrickOn; actionsFor: (info: Bric
 /** The app's side of the actions (App.tsx, the playground): a brick's own, and for `hint`, the brick's name to show. A
  *  topic's rename or a move goes to the core by itself (topics-core.ts) unless the host answers it (the playground). */
 export type HostActions = Omit<BrickActions, "hint" | "renameTopic" | "moveToTopic" | "readThought"> & { hint(text: string, target: string | null, by: string): boolean }
-  & Partial<Pick<BrickActions, "renameTopic" | "moveToTopic">>;
+  & Partial<Pick<BrickActions, "renameTopic" | "moveToTopic">> & { recipesEnabled?: () => boolean };
 
 /** How long a landing whose model is still to be told waits for it (its route comes right after its changes, so a few
  *  milliseconds as a rule; this bounds a route lost to a reconnect). */
@@ -36,17 +36,19 @@ const MODEL_WAIT_MS = 1000;
  *  and who added it), your words as they change, the mic's loudness as the core is sent it (apps-audio.ts), what the
  *  guide points at and who has the floor in a call. `emit` is for the window's own events (App.tsx's notices and asks; it says how many heard one); a
  *  brick is handed only map, actions and on (BrickMount). */
-export function useBrickHost(world: World, revision: number, me: string, connected: boolean, rooms: ReadonlyMap<string, string>, partial: string, act: HostActions, destination?: BrickProps["destination"], usage: UsageSnapshot | null = null, placingUnavailable = false): BrickHost & Pick<ReturnType<typeof brickEvents>, "emit"> {
+export function useBrickHost(world: World, revision: number, me: string, connected: boolean, rooms: ReadonlyMap<string, string>, partial: string, act: HostActions, destination?: BrickProps["destination"], usage: UsageSnapshot | null = null, placingUnavailable = false, captureContext?: { mapKey: string | null; captures: readonly Capture[] }): BrickHost & Pick<ReturnType<typeof brickEvents>, "emit"> {
   const jobs = useJobs();
   const builtIns = useBuiltInsOn();
   const conversationSpine = builtIns.has("conversation-spine");
+  const reviewTextEdits = builtIns.has("review-text-edits");
   const comparePhoneReading = builtIns.has("compare-phone-reading");
   const terse = builtIns.has("terse");
   const partnerOn = builtIns.has("partner");
   const rotateCanvas = builtIns.has("rotate-canvas");
-  const snapshot = useMemo(() => snapshotOf(world, me, connected, rooms, partial, jobs, usage), [world, me, connected, rooms, partial, jobs, usage]);
+  const snapshot = useMemo(() => snapshotOf(world, me, connected, rooms, partial, jobs, usage, reviewTextEdits), [world, me, connected, rooms, partial, jobs, usage, reviewTextEdits]);
+  const captureSources = useMemo(() => captureSourcesOf(captureContext?.captures ?? []), [captureContext?.captures]);
   const reading = useReadPosition(snapshot);
-  const map = useMemo(() => ({ ...snapshot, readThrough: reading.mark, conversationSpine, comparePhoneReading, terse, partnerOn, rotateCanvas, placingUnavailable, pauses: world.pauses ?? [] }), [snapshot, reading.mark, conversationSpine, comparePhoneReading, terse, partnerOn, rotateCanvas, placingUnavailable, world.pauses]);
+  const map = useMemo(() => ({ ...snapshot, captureSources, visitKey: JSON.stringify([captureContext?.mapKey ?? revision, me]), readThrough: reading.mark, conversationSpine, comparePhoneReading, terse, partnerOn, rotateCanvas, placingUnavailable, pauses: world.pauses ?? [] }), [snapshot, captureSources, captureContext?.mapKey, revision, me, reading.mark, conversationSpine, comparePhoneReading, terse, partnerOn, rotateCanvas, placingUnavailable, world.pauses]);
   const read = useRef(reading.read);
   read.current = reading.read;
   const latest = useRef(act);
@@ -58,12 +60,21 @@ export function useBrickHost(world: World, revision: number, me: string, connect
     let actions = made.current.get(info.id);
     if (!actions) made.current.set(info.id, actions = {
       setActionEstimate: (request) => latest.current.setActionEstimate?.(request) ?? Promise.resolve({ request_id: request.request_id, ok: false, message: "Action estimates is unavailable.", estimate: null }),
+      exportRecipe: (app) => {
+        if (info.id !== "app-recipes" || !(isOn(info.id) || latest.current.recipesEnabled?.())) throw Error("App recipes is off.");
+        return latest.current.exportRecipe(app);
+      },
+      saveRecipe: (save) => info.id === "app-recipes" && (isOn(info.id) || latest.current.recipesEnabled?.()) ? latest.current.saveRecipe(save)
+        : Promise.resolve({ request_id: save.request_id, app_id: null, message: "App recipes is off." }),
       saveTextFile: (name, text, mime) => {
         if (typeof name !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._ -]{0,79}$/.test(name) || name.includes("..")
           || typeof text !== "string" || new TextEncoder().encode(text).length > 64 * 1024
-          || (mime !== "text/plain" && mime !== "text/markdown")) return false;
+          || (mime !== "text/plain" && mime !== "text/markdown" && !(info.id === "app-recipes" && (isOn(info.id) || latest.current.recipesEnabled?.()) && mime === "application/json" && name === "app-recipe.json" && new TextEncoder().encode(text).length <= 32 * 1024))) return false;
         try { return latest.current.saveTextFile(name, text, mime); } catch { return false; }
       },
+      saveQuestion: (input, receive) => latest.current.saveQuestion(input, receive),
+      reviewPoint: (ids, focus) => { if (builtInOn("review-text-edits")) latest.current.reviewPoint(ids, focus); },
+      voiceShortcut: request => latest.current.voiceShortcut(request),
       readThought: (id) => read.current(id),
       resume: (id, keyboard) => latest.current.resume?.(id, keyboard) ?? false,
       addThought: (text) => {
@@ -74,6 +85,7 @@ export function useBrickHost(world: World, revision: number, me: string, connect
       openPoint: (thread, thought) => latest.current.openPoint(thread, thought),
       openThread: (id) => latest.current.openThread(id),
       openThought: (id) => latest.current.openThought(id),
+      closeView: () => latest.current.closeView(),
       select: (id) => latest.current.select(id),
       notify: (text) => latest.current.notify(text),
       position: (id, x, y) => latest.current.position(id, x, y),

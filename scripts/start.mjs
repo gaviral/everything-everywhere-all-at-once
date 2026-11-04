@@ -9,7 +9,7 @@ import { spawnSync } from "node:child_process";
 import { accessSync, constants, existsSync, readFileSync, statSync } from "node:fs";
 import { createServer } from "node:net";
 import { createSocket } from "node:dgram";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const DEFAULT_PORT = 4321;
@@ -27,6 +27,18 @@ export function bundledCore(root, platform = process.platform, arch = process.ar
     accessSync(path, constants.X_OK);
     return path;
   } catch { return null; }
+}
+
+/** Ask the Rust boundary without reading keys, dotenv or opening sockets. The caller's cwd survives shell cd. */
+export function storageCommand(root, selected, operation, value, env = process.env) {
+  const args = [operation, ...(value ? [value] : [])];
+  const command = selected || "cargo";
+  const commandArgs = selected ? args : ["run", "--release", "--quiet", "--manifest-path", join(root, "core/Cargo.toml"), "--", ...args];
+  const result = spawnSync(command, commandArgs, { cwd: join(root, "core"), env, encoding: "utf8", timeout: 600_000 });
+  if (result.error || result.status !== 0) throw new Error(result.stderr?.trim() || result.error?.message || "Storage boundary refused startup");
+  const out = result.stdout.trim();
+  if (operation === "--data-path" && (!isAbsolute(out) || out.includes("\n"))) throw new Error("Core returned an invalid storage path");
+  return out;
 }
 
 /** dotenvy's QuotedLines: one logical line each, joined across newlines while a quote is open. */
@@ -202,6 +214,7 @@ export async function check(args, env, root, lan = lanIp) {
     return { code: 1, out: "", err: err.join("\n") };
   }
   const port = corePort(core);
+  if ([4360, 4399].includes(port)) return { code: 1, out: "", err: "This port is reserved; choose another PORT." };
   const { addresses, error } = coreAddresses(core, await lan());
   if (error) return { code: 1, out: "", err: [...err, error].join("\n") };
   for (const host of addresses) {
@@ -288,6 +301,13 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const path = bundledCore(root);
     if (path) console.log(path);
     process.exit(0);
+  }
+  if (["--data-path", "--seed-sample"].includes(args[0])) {
+    try {
+      const out = storageCommand(root, args[1], args[0], args[2]);
+      if (out) console.log(out);
+      process.exit(0);
+    } catch (error) { console.error(error.message); process.exit(1); }
   }
   // run.sh passes its one selection (including an empty source-build selection) through preflight.
   const selected = args[0] === "--selected-core" ? args.splice(0, 2)[1] : bundledCore(root);

@@ -1,0 +1,19 @@
+.text-edit-review { color: var(--ink, CanvasText); background: var(--card, Canvas); border: 1px solid var(--line, GrayText); border-radius: 14px; padding: 1rem; width: min(38rem, calc(100vw - 1.5rem)); max-height: min(82dvh, 52rem); overflow: auto; margin: auto; box-sizing: border-box; font-size: 1rem; line-height: 1.5; }
+.text-edit-review::backdrop { background: #0007; }
+.text-edit-review header, .text-edit-review footer { display: flex; align-items: center; justify-content: space-between; gap: .6rem; flex-wrap: wrap; }
+.text-edit-review header { position: static; top: auto; z-index: auto; padding: 0; background: none; margin: 0; }
+.text-edit-review header::after { content: none; }
+.text-edit-review h2 { font-size: 1.25em; margin: 0; }
+.text-edit-review h3 { font-size: 1em; margin: .7rem 0 .3rem; }
+.text-edit-review p { white-space: pre-wrap; overflow-wrap: anywhere; margin: .5rem 0; }
+.text-edit-review button, .suggest-point { font: inherit; cursor: pointer; min-height: 44px; padding: .4rem .7rem; color: inherit; background: var(--card, Canvas); border: 1px solid var(--line, GrayText); border-radius: 6px; }
+.text-edit-review button:disabled { opacity: .5; cursor: default; }
+.text-edit-review label { display: block; margin-top: .8rem; }
+.text-edit-review textarea { display: block; width: 100%; min-height: 6rem; box-sizing: border-box; font: inherit; color: inherit; background: var(--card, Canvas); resize: vertical; padding: .5rem; border: 1px solid var(--line, GrayText); border-radius: 6px; }
+.text-edit-review footer { position: static; background: var(--card, Canvas); padding: .75rem 0; border-top: 1px solid var(--line, GrayText); }
+.review-diff del { text-decoration: line-through; background: #db686833; }
+.review-diff ins { text-decoration: underline; background: #63b98933; }
+.review-source { display: block; width: 100%; text-align: left; margin: .5rem 0; }
+.review-source small { display: block; }
+.suggest-point { font-size: .8rem; }
+@media (prefers-reduced-motion: reduce) { .text-edit-review, .text-edit-review * { animation: none; transition: none; } }

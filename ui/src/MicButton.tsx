@@ -16,8 +16,10 @@ import "./micbutton.css";
 export type MicState = "capturing" | "reply-paused" | "failed" | "offline" | "off" | "starting" | "listening" | "hearing" | "paused" | "nokey" | "refused" | "resting" | "blocked";
 
 export function micState(s: { connected: boolean; capturing: boolean; starting: boolean; serviceOn: boolean;
-  playbackPaused?: boolean; failed?: boolean; words: boolean; paused: boolean; noKey: boolean; refused: boolean; resting?: boolean; blocked?: boolean }): MicState {
+  comparisonPaused?: boolean; comparisonStarting?: boolean; playbackPaused?: boolean; failed?: boolean; words: boolean; paused: boolean; noKey: boolean; refused: boolean; resting?: boolean; blocked?: boolean }): MicState {
   // Capturing comes first: the button never reads off while the browser is taking sound.
+  if (s.comparisonStarting) return "starting";
+  if (s.capturing && s.comparisonPaused) return "reply-paused";
   if (s.capturing && s.playbackPaused) return "reply-paused";
   if (s.capturing) return !s.serviceOn ? "capturing" : s.words ? "hearing" : "listening";
   if (s.starting) return "starting";

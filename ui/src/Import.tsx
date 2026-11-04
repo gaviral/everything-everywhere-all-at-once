@@ -33,7 +33,7 @@ type ImportCore = {
 const MAX_MB = 100;
 // Imports run on the laptop that runs the core (its key, its person's chats); another laptop in a room
 // gets no button, and the core refuses it anyway.
-const ON_THIS_MACHINE = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
+export const ON_THIS_MACHINE = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
 const RUNNING = new Set(["reading", "grouping", "adding"]);
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
