@@ -32,12 +32,13 @@ node -e 'const [a, b] = process.versions.node.split(".").map(Number); process.ex
 core="$(node scripts/start.mjs --bundled-core)" || exit 1
 if [ -z "$core" ]; then
   command -v cargo >/dev/null 2>&1 || { echo "Rust is needed: https://rustup.rs (install it, open a new terminal, run this again)." >&2; exit 1; }
+  echo "Checking map storage (first source build can take several minutes)..."
 fi
 # Rust is authoritative; validate before keys, network checks or any runtime writes.
 data="$(node scripts/start.mjs --data-path "$core" "${1:-}")" || exit 1
 E2A2O_DATA="$data"
 export E2A2O_DATA
-if [ -z "$MODEL_API_KEY" ] && [ ! -f .env ] && command -v security >/dev/null 2>&1; then
+if [ "${1:-}" != sample ] && [ -z "$MODEL_API_KEY" ] && [ ! -f .env ] && command -v security >/dev/null 2>&1; then
   MODEL_API_KEY="$(security find-generic-password -s "${KEYCHAIN_SERVICE:-e2a2o}" -a "${KEYCHAIN_ACCOUNT:-e2a2o}" -w 2>/dev/null || true)"
   export MODEL_API_KEY
 fi
