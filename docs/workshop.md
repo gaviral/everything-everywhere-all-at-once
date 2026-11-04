@@ -12,4 +12,4 @@ Set `E2A2O_HACKATHON_FILE` on the core to an external local JSON file. Refresh r
 {"schema":1,"updated":"Local update time","sections":[{"title":"Rules","items":["Event rule"]},{"title":"Dates","items":["Event date"]},{"title":"Rubric","items":["Scoring criterion"]},{"title":"What’s left","items":["Submission requirement to verify"]}]}
 ```
 
-The local exporter selects event facts from the working event document. The submission checklist lists requirements to verify; it does not infer completion. Missing, malformed or oversized data shows an unavailable state. No server path or parse excerpt reaches the page.
+The local exporter selects event facts from the working event document. Remaining items come from the local source’s open-items section; completion is not inferred. Missing, malformed or oversized data shows an unavailable state. No server path or parse excerpt reaches the page.
