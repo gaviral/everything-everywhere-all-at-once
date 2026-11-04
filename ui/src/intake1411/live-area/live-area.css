@@ -1,0 +1,21 @@
+.intake1411-live-area { color: #192b35; background: #f5f7f8; border: 1px solid #b8c8cf; border-radius: 16px; padding: clamp(16px, 3vw, 32px); font: 1rem/1.5 system-ui, sans-serif; overflow-wrap: anywhere; color-scheme: light; }
+.intake1411-live-area * { box-sizing: border-box; }
+.intake1411-live-area h2, .intake1411-live-area h3, .intake1411-live-area h4, .intake1411-live-area p { margin: 0; }
+.intake1411-live-area h2 { font-size: 1.5rem; }
+.intake1411-live-area h3 { font-size: 1.15rem; }
+.intake1411-live-area h4 { font-size: .85rem; color: #47616f; margin-bottom: 8px; }
+.intake1411-live-area button { font: inherit; min-height: 44px; border: 1px solid #627e8d; border-radius: 8px; background: #fff; padding: 8px 14px; cursor: pointer; color: #192b35; }
+.intake1411-live-area button:focus-visible { outline: 3px solid #0868c4; outline-offset: 3px; }
+.intake1411-live-area .la-header, .intake1411-live-area .la-row-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.intake1411-live-area .la-header p, .intake1411-live-area .la-identity { color: #47616f; }
+.intake1411-live-area .la-sources { margin: 20px 0; padding: 12px; background: #e3ecf0; border-radius: 8px; }
+.intake1411-live-area .la-rows { list-style: none; padding: 0; margin: 16px 0 0; display: grid; gap: 16px; }
+.intake1411-live-area .la-row { background: #fff; border: 1px solid #b8c8cf; border-radius: 10px; padding: 20px; min-width: 0; }
+.intake1411-live-area .la-row-heading > span { font-size: .85rem; background: #e3ecf0; padding: 4px 10px; border-radius: 6px; }
+.intake1411-live-area .la-identity { margin: 8px 0 16px; font-size: .9rem; }
+.intake1411-live-area .la-slots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+.intake1411-live-area .la-slot { min-width: 0; }
+.intake1411-live-area .la-freshness, .intake1411-live-area time { display: block; font-size: .85rem; margin-top: 8px; }
+.intake1411-live-area .la-freshness[data-freshness=current] { color: #21633e; }
+.intake1411-live-area .la-freshness[data-freshness=stale] { color: #874014; }
+@media (max-width: 650px) { .intake1411-live-area .la-slots { grid-template-columns: 1fr; } .intake1411-live-area .la-row { padding: 16px; } }
