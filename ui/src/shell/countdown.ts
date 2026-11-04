@@ -37,9 +37,10 @@ export function useShellCountdownPlacement(enabled: boolean) {
       const stage = document.querySelector<HTMLElement>(".shell-stage");
       const controls = document.querySelector<HTMLElement>(".shell-bl");
       const composer = document.querySelector<HTMLElement>(".shell-composer");
+      const captureBody = composer?.closest<HTMLElement>('[data-map-capture="active"]') ?? composer;
       const captureNode = composer?.closest<HTMLElement>(".react-flow__node");
       const canvasViewport = composer?.closest<HTMLElement>(".react-flow__viewport");
-      const elements = [countdown, card, editor, camera, camera?.parentElement, stage, controls, composer, captureNode, canvasViewport].filter((e): e is HTMLElement => !!e);
+      const elements = [countdown, card, editor, camera, camera?.parentElement, stage, controls, composer, captureBody, captureNode, canvasViewport].filter((e): e is HTMLElement => !!e);
       if (elements.length !== observed.length || elements.some((e, i) => e !== observed[i])) {
         resize.disconnect(); positions.disconnect();
         for (const element of elements) {
@@ -61,10 +62,10 @@ export function useShellCountdownPlacement(enabled: boolean) {
       const left = Math.max(x + edge, Math.min(cameraBox?.left ?? x + edge, x + width - edge - box.width));
       // A missing camera keeps a clear dock-relative position. Only horizontally intersecting controls lift it.
       let bottom = cameraBox?.top ?? stageBox?.top ?? y + height - edge;
-      for (const element of [stage, controls, composer]) {
+      for (const element of [stage, controls, captureBody]) {
         if (!element) continue;
         const r = element.getBoundingClientRect();
-        if (element === composer && (r.bottom <= y || r.top >= y + height)) continue;
+        if (element === captureBody && (r.bottom <= y || r.top >= y + height)) continue;
         if (r.width && r.height && r.left < left + box.width && r.right > left) bottom = Math.min(bottom, r.top);
       }
       bottom = Math.max(y + edge + box.height, Math.min(bottom - gap, y + height - edge));

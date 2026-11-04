@@ -15,7 +15,8 @@ const inputAndCardUsable = `(() => {
   const card = document.querySelector('.countdown-card');
   const composer = document.querySelector('.shell-composer');
   if (!input || !card || !composer) return false;
-  const field = input.getBoundingClientRect(), deadline = card.getBoundingClientRect(), form = composer.getBoundingClientRect();
+  const region = composer.closest('[data-map-capture="active"]') ?? composer;
+  const field = input.getBoundingClientRect(), deadline = card.getBoundingClientRect(), form = region.getBoundingClientRect();
   const inside = r => r.width > 0 && r.height > 0 && r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight;
   const separate = deadline.right <= form.left || form.right <= deadline.left || deadline.bottom <= form.top || form.bottom <= deadline.top;
   return input.checkVisibility() && card.checkVisibility() && inside(field) && inside(deadline) && separate
