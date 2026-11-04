@@ -139,7 +139,7 @@ html.shell2 .shell-composer {
 }
 html.shell2 .shell-composer:focus-within { border-color: color-mix(in srgb, var(--blue) 55%, var(--line-2)); }
 html.shell2 .shell-composer textarea {
-  flex: 1; min-width: 0; height: 22px; max-height: 22px; padding: 0; overflow: hidden; border: 0; outline: 0; resize: none; background: none;
+  flex: 1; min-width: 0; height: 22px; max-height: 22px; padding: 0; overflow-y: auto; border: 0; outline: 0; resize: none; background: none;
   color: var(--ink); font: inherit; font-size: 15px; line-height: 22px;
 }
 html.shell2 .shell-composer textarea::placeholder { color: var(--muted); }
