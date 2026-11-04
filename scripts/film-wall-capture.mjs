@@ -29,6 +29,15 @@ const all = [...bricks.sort((a, b) => a.id.localeCompare(b.id)), ...builtIns];
 const selected = process.env.FILM_FEATURES?.split(',');
 const report = { viewport: [1920, 1080], sample: 'student-week', microphone: 'denied', features: [] };
 const page = await openPage(url.href, 1920, 1080);
+async function saveReport() {
+  const name = selected ? `capture-${selected[0]}` : 'capture';
+  await writeFile(join(out, `${name}.json`), JSON.stringify(report, null, 2) + '\n');
+  const captured = report.features.filter(f => f.status === 'captured').length;
+  const skipped = report.features.filter(f => f.status === 'skipped');
+  await writeFile(join(out, selected ? `${name}.md` : 'README.md'),
+    `# Feature wall captures\n\n1920×1080; shipped student-week sample; fresh browser; microphone denied.\n\n${captured} captured; ${skipped.length} skipped.\n\n## Skipped\n\n` +
+    skipped.map(f => `- ${f.id}: ${f.reason}`).join('\n') + '\n');
+}
 async function until(expression, milliseconds = 15000) {
   const end = Date.now() + milliseconds;
   while (Date.now() < end) {
@@ -133,7 +142,7 @@ try {
       }
     } catch (error) { row.status = 'skipped'; row.reason = error.message; }
     report.features.push(row);
-    await writeFile(join(out, selected ? `capture-${selected[0]}.json` : 'capture.json'), JSON.stringify(report, null, 2) + '\n');
+    await saveReport();
     console.log(`${row.status} ${row.id}${row.reason ? `: ${row.reason}` : ''}`);
   }
 } finally { await page.close(); }

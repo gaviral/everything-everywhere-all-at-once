@@ -15,6 +15,8 @@ run('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'color=blue:s=320x180', '-fra
 const tiles = Array.from({ length: 122 }, (_, i) => i < 2 ? { clip, source: pathToFileURL(clip).href, loopSeconds: 1 } : { image: still, source: pathToFileURL(still).href });
 const shot = timeline({ shots: [{ kind: 'wall', seconds: 8, tiles }] }).shots[0];
 assert.equal(new Set(tiles.map((_, i) => JSON.stringify(wallPosition(i)))).size, 122);
+assert.deepEqual(wallPosition(64), { x: 8, y: 0 });
+assert.deepEqual(wallPosition(100), { x: 12, y: 4 });
 for (const [time, count] of [[0, 1], [1.6, 4], [3.2, 16], [4.96, 64], [6.56, 122]]) {
   assert.ok(Math.abs(wallFrame(122, time).visible - count) < 1e-6);
 }

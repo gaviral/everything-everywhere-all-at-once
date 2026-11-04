@@ -1,5 +1,8 @@
 // Nested quadrants put the first 1, 4, 16 and 64 frames in contiguous squares.
 export function wallPosition(index) {
+  // After the 8×8 reveal, add complete columns so the final rectangle has at
+  // most seven empty cells, rather than leaving an empty quadrant.
+  if (index >= 64) return { x: 8 + Math.floor((index - 64) / 8), y: (index - 64) % 8 };
   let x = 0, y = 0, bit = 1;
   while (index > 0) {
     x += (index & 1) * bit; index >>>= 1;
