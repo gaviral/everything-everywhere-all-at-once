@@ -202,10 +202,11 @@ try {
   assert(await until(`!!document.querySelector(".dot.ok, .dot.warn")`, 15000), "it reconnects");
   await settled();
 
-  // The queue exposes each card in arrival order. Check every card against
+  // The countdown interrupts the earlier notice; other cards then resume in arrival order.
+  // Check every card against
   // the same phone sizes, scroll positions, controls and Room panel.
   core.send({ type: "notice", message: "The mic stopped. Tap it to keep talking." }); core.send(SEND_CARD); core.send(MAP_CHANGE);
-  for (const [kind, selector] of [["notice", ".notice"], ["message", ".send-card"], ["map update", ".map-change"]]) {
+  for (const [kind, selector] of [["message", ".send-card"], ["notice", ".notice"], ["map update", ".map-change"]]) {
     assert(await until(`!!document.querySelector('${selector}')`, 5000), `${kind} takes its queue turn`);
     assert(await until('document.querySelectorAll(".notice, .send-card, .map-change").length === 1', 3000), `${kind}: only the current notice remains after the exit transition`);
     await evaluate(`document.querySelector('${selector} button').focus()`);
