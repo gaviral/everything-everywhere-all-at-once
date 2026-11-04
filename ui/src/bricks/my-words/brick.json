@@ -1,0 +1,8 @@
+{
+  "id": "my-words",
+  "name": "My words",
+  "does": "Prepare names and specialist terms for your next listening session.",
+  "kind": "card",
+  "defaultOn": false,
+  "demoSafe": true
+}
