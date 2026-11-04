@@ -9,7 +9,7 @@ const server = await uiServer({
     server.middlewares.use((req, res, next) => {
       if (req.url !== "/speech-check") return next();
       res.setHeader("Content-Type", "text/html");
-      res.end('<!doctype html><button class="guide-caption"><span>Claude says</span></button><button id="elsewhere">Elsewhere</button><textarea></textarea>');
+      res.end('<!doctype html><button class="guide-caption"><span>Partner says</span></button><button id="elsewhere">Elsewhere</button><textarea></textarea>');
     });
   } }],
 }, { port: Number(process.env.SPEECH_CHECK_PORT ?? 4620) });
@@ -32,7 +32,7 @@ try {
     window.voices = [];
     Object.defineProperty(window, "speechSynthesis", { configurable: true, value: Object.assign(new EventTarget(), {
       getVoices: () => voices, cancel: () => cancelled++,
-      speak: u => { if (window.throwSpeech) throw Error("voice failed"); spoken.push(u); },
+      speak: u => { if (window.throwSpeech) throw Error("voice failed"); spoken.push(u); u.onstart?.(); },
     }) });
     window.SpeechSynthesisUtterance = class { constructor(text) { this.text = text; } };
     const info = console.info;
@@ -46,7 +46,7 @@ try {
 
     // Exercise the real capture callback, with an identifiable non-silent PCM frame.
     window.NativeWorkletNode = window.AudioWorkletNode;
-    class Node { constructor() { this.port = { postMessage: state => { this.capture = state; } }; } connect(next) { return next; } disconnect() {} }
+    class Node { constructor() { this.port = { postMessage: state => { this.capture = state; }, close() {} }; } connect(next) { return next; } disconnect() {} }
     window.AudioContext = class {
       state = "running"; sampleRate = 24000; destination = {};
       audioWorklet = { addModule: async () => {} };
@@ -56,8 +56,9 @@ try {
     };
     window.AudioWorkletNode = class extends Node { constructor() { super(); window.writer = this; } };
     Object.defineProperty(navigator, "userActivation", { configurable: true, value: { isActive: true } });
+    window.echoProtected = true;
     Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: {
-      getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }),
+      getUserMedia: async () => ({ getTracks: () => [{ stop() {}, getSettings: () => ({ echoCancellation: echoProtected }) }] }),
     } });
     window.mic = await import("/src/mic.ts");
     window.stopMic = await mic.startMic(frame => { window.samples = [...new Int16Array(frame)]; });
@@ -100,7 +101,7 @@ try {
     send({ type: "change", change: { type: "thought_added", thought: { text: "An older Comment.", thread_id: "N1" } } });
     send({ type: "change", speak: true, change: { type: "thought_added", thought: { text: "The new Comment.", thread_id: "N1" } } });
     check(spoken.at(-1).text === "The new Comment.", "only the flagged new Comment speaks");
-    old.onend(); old.onerror();
+    old.onstart(); old.onend(); old.onerror();
     check(speech.pageSpeaking() && frameIs("0,0"), "late events cannot unpause replacement speech");
     send({ type: "call", people: [{ ai: true, speaking: true }, { ai: false, remote: true, speaking: true }] });
     check(speech.pageSpeaking(), "AI and remote activity do not cut off playback");
@@ -135,10 +136,36 @@ try {
     const beforeCommands = spoken.length;
     send(reply);
     check(spoken.length === beforeCommands && !speech.pageSpeaking(), "command speech defaults off");
+    send(caption);
+    check(!writer.capture.bargeIn, "local detection defaults off with the partner setting");
+    writer.port.onmessage({ data: { type: "barge", generation: writer.capture.generation } });
+    check(speech.pageSpeaking(), "disabled local evidence cannot interrupt legacy speech");
     features.switchBuiltIn("partner", true);
+    check(writer.capture.bargeIn, "the same setting arms local detection during started playback");
+    const detectionGeneration = writer.capture.generation;
+    writer.port.onmessage({ data: { type: "barge", generation: detectionGeneration - 1 } });
+    check(speech.pageSpeaking(), "stale local evidence cannot interrupt a replacement");
+    const beforeBarge = cancelled;
+    writer.port.onmessage({ data: { type: "barge", generation: detectionGeneration } });
+    check(!speech.pageSpeaking() && cancelled === beforeBarge + 1, "current local detection cancels browser speech once");
+    check(writer.capture.resumeBarge === detectionGeneration && !writer.capture.muted, "only the accepted generation can release its buffered onset");
+    writer.port.onmessage({ data: { type: "barge", generation: detectionGeneration } });
+    check(cancelled === beforeBarge + 1, "duplicate evidence cannot cancel again");
+    send(caption); const beforeOptOut = writer.capture.generation;
+    features.switchBuiltIn("partner", false);
+    check(!writer.capture.bargeIn && writer.capture.generation !== beforeOptOut, "opt-out immediately disarms and invalidates queued detection");
+    writer.port.onmessage({ data: { type: "barge", generation: beforeOptOut } });
+    check(speech.pageSpeaking(), "queued evidence after opt-out is ignored");
+    speech.stopPageSpeech(); features.switchBuiltIn("partner", true);
+    voices = []; send(caption);
+    check(!writer.capture.bargeIn, "waiting for a voice never learns silence as a playback residual");
+    voices = installed; speechSynthesis.dispatchEvent(new Event("voiceschanged"));
+    check(writer.capture.bargeIn, "voice start arms a fresh playback calibration");
+    speech.stopPageSpeech();
+    const beforeQuiet = spoken.length;
     send({ ...reply, speak: false });
     send({ type: "notice", speak: true, message: "Routine notification" });
-    check(spoken.length === beforeCommands, "unflagged commands and ordinary notices stay silent");
+    check(spoken.length === beforeQuiet, "unflagged commands and ordinary notices stay silent");
     voices = installed; send(reply);
     check(spoken.at(-1).text === reply.text, "opted-in command uses shared speech channel");
     speech.stopPageSpeech(); features.switchBuiltIn("partner", false);
@@ -211,7 +238,96 @@ try {
       writer.disconnect(); writer.port.close();
     }
   })()`);
-  console.log(`page speech checks passed in headless Chrome on :${port} (async and late voices, full speaking time, late frames, real worklet at 24/44.1/48 kHz, end, error, timeout, replacement, Space, Esc, caption click)`);
+  // End to end: native worklet evidence -> real mic.ts callback -> fake TTS cancellation -> native onset release.
+  // Offline sources only; the silent worklet output never reaches real speakers.
+  await evaluate(`(async () => {
+    features.switchBuiltIn("partner", true);
+    // Offline rendering can outrun queued state messages. Add a test-only acknowledgement to the unchanged
+    // state handler and wait for it before starting the source, so 40 ms means 40 ms of armed capture.
+    const workletSource = await (await fetch("/pcm-worklet.js")).text();
+    const marker = "this.resetProbe();\\n      // Normal end";
+    check(workletSource.includes(marker), "state readiness instrumentation matches the worklet");
+    const workletURL = URL.createObjectURL(new Blob([workletSource.replace(marker,
+      "this.resetProbe(); this.port.postMessage({ type: 'state-ready', generation: this.generation });\\n      // Normal end")], { type: "text/javascript" }));
+    try {
+      for (const rate of [24000, 44100, 48000]) for (const scenario of ["normal", "early", "very-early", "pause", "variable-echo"]) {
+        const context = new OfflineAudioContext(1, Math.round(rate * 1.2), rate);
+        await context.audioWorklet.addModule(workletURL);
+        const native = new NativeWorkletNode(context, "pcm-writer");
+        const captured = [], events = [];
+        const stop = await mic.startMic(frame => captured.push([...new Int16Array(frame)]));
+        const bridge = writer;
+        bridge.port.postMessage = state => { bridge.capture = state; native.port.postMessage(state); };
+        let acknowledge;
+        const armed = new Promise(resolve => { acknowledge = resolve; });
+        native.port.onmessage = ({ data }) => {
+          if (data.type === "state-ready") {
+            if (data.generation === bridge.capture.generation) acknowledge();
+            return;
+          }
+          events.push(data); bridge.port.onmessage?.({ data });
+        };
+        native.port.postMessage(bridge.capture);
+        send(caption);
+        let armTimeout;
+        try {
+          await Promise.race([armed, new Promise((_, reject) => {
+            armTimeout = setTimeout(() => reject(Error("worklet state not ready")), 1000);
+          })]);
+        } finally { clearTimeout(armTimeout); }
+        const playbackGeneration = bridge.capture.generation;
+        const before = cancelled;
+        const source = context.createBufferSource();
+        source.buffer = context.createBuffer(1, Math.round(rate * 1.2), rate);
+        const input = source.buffer.getChannelData(0);
+        for (let i = 0; i < input.length; i++) {
+          const t = i / rate;
+          const quiet = t < (scenario === "very-early" ? 0.04 : scenario === "early" ? 0.10 : scenario === "variable-echo" ? 0.30 : 0.48)
+            || (scenario === "pause" && t >= 0.60 && t < 0.68);
+          input[i] = (quiet ? 0.004 : scenario === "variable-echo" ? 0.025 : 0.12) * Math.sin(2 * Math.PI * 600 * t);
+        }
+        source.connect(native).connect(context.destination); source.start();
+        const paused = context.suspend(scenario.includes("early") ? 0.45 : scenario === "pause" ? 0.90 : 0.70);
+        const rendered = context.startRendering();
+        await paused;
+        if (scenario === "variable-echo") {
+          await context.resume(); await rendered;
+          for (let n = 0; n < 100 && captured.length < 15; n++) await new Promise(resolve => setTimeout(resolve, 10));
+          check(captured.length >= 15, rate + ": variable echo was processed");
+          check(speech.pageSpeaking() && cancelled === before, rate + ": variable echo cannot cancel playback");
+          check(events.every(e => e.type !== "barge"), rate + ": variable echo creates no evidence");
+          check(captured.every(f => f.every(s => s === 0)), rate + ": variable echo stays out of ASR");
+          speech.stopPageSpeech(); stop(); native.disconnect(); native.port.close();
+          continue;
+        }
+        for (let n = 0; n < 100 && speech.pageSpeaking(); n++) await new Promise(resolve => setTimeout(resolve, 10));
+        check(!speech.pageSpeaking() && cancelled === before + 1, rate + "/" + scenario + ": local PCM cancels spoken reply; "
+          + JSON.stringify({ barges: events.filter(e => e.type === "barge"), frames: captured.length, state: bridge.capture }));
+        check(bridge.capture.resumeBarge === playbackGeneration, rate + ": mic acknowledges only this reply");
+        check(captured.length > 0 && captured.every(f => f.every(s => s === 0)), rate + ": ASR stays silent before acknowledgement");
+        await context.resume(); await rendered;
+        for (let n = 0; n < 100 && captured.filter(f => f.some(s => s !== 0)).length < 8; n++) await new Promise(resolve => setTimeout(resolve, 10));
+        const audible = captured.filter(f => f.some(s => s !== 0));
+        check(audible.length >= 8, rate + ": onset and continuous correction reach ASR");
+        const onset = audible.flat().findIndex(s => Math.abs(s) > 1500);
+        check(onset >= 0 && onset <= 960, rate + ": first speech onset is preserved with short preroll");
+        check(events.filter(e => e.type === "barge").length === 1, rate + ": single local interruption");
+        stop(); native.disconnect(); native.port.close();
+      }
+    } finally { URL.revokeObjectURL(workletURL); }
+    window.echoProtected = false;
+    const stop = await mic.startMic(() => {});
+    send(caption);
+    check(!writer.capture.bargeIn, "explicit AEC refusal retains hard mute");
+    speech.stopPageSpeech(); stop(); window.echoProtected = true;
+    const abort = new AbortController();
+    await mic.startMic(() => {}, undefined, abort.signal);
+    send(caption); const abandoned = writer;
+    abort.abort();
+    check(abandoned.port.onmessage === null, "abort detaches queued local evidence");
+    speech.stopPageSpeech(); features.switchBuiltIn("partner", false);
+  })()`);
+  console.log(`page speech checks passed in headless Chrome on :${port} (local interruption opt-in and generation handshake; async voices, late frames, real worklet at 24/44.1/48 kHz, cancellation and cleanup)`);
 } finally {
   await browser?.close();
   await server.close();

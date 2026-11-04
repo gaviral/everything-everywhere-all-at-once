@@ -1,4 +1,4 @@
-// Live bridge replies play in this browser; its microphone sends silence until playback finishes.
+// Live replies play in this browser; capture stays silent unless an opted-in local interruption is confirmed.
 // No snapshot playback: only flagged live replies, captions and newly added AI thoughts speak.
 import { builtInOn } from "./shell/features";
 import { slowReadMs } from "./notice-rules";
@@ -15,26 +15,28 @@ type SpeechMessage = {
 };
 
 let utterance: SpeechSynthesisUtterance | null = null;
+let started = false;
 let cleanup: (() => void) | null = null;
 let loggedVoice = false;
-const speakingListeners = new Set<(speaking: boolean) => void>();
+const speakingListeners = new Set<(speaking: boolean, started: boolean) => void>();
 
 // Ask early: some browsers populate their installed voices asynchronously.
 if (typeof window !== "undefined") window.speechSynthesis?.getVoices();
 
 export const pageSpeaking = () => utterance !== null;
 
-export function watchPageSpeech(listener: (speaking: boolean) => void): () => void {
+export function watchPageSpeech(listener: (speaking: boolean, started: boolean) => void): () => void {
   speakingListeners.add(listener);
-  listener(pageSpeaking());
+  listener(pageSpeaking(), started);
   return () => { speakingListeners.delete(listener); };
 }
 
 function finish() {
   utterance = null;
+  started = false;
   cleanup?.();
   cleanup = null;
-  speakingListeners.forEach((listener) => listener(false));
+  speakingListeners.forEach((listener) => listener(false, false));
 }
 
 /** Disconnecting or a human taking the floor cuts off this page's reply, including queued speech. */
@@ -64,10 +66,15 @@ export function hearPageSpeech(data: unknown) {
   const next = new SpeechSynthesisUtterance(text);
   // A little quicker than normal speech, without rushing the words while walking.
   next.rate = 1.12;
+  next.onstart = () => {
+    if (utterance !== next) return;
+    started = true;
+    speakingListeners.forEach((listener) => listener(true, true));
+  };
   next.onend = () => { if (utterance === next) finish(); };
   next.onerror = () => { if (utterance === next) stopPageSpeech(); };
   utterance = next;
-  speakingListeners.forEach((listener) => listener(true));
+  speakingListeners.forEach((listener) => listener(true, false));
   const synth = window.speechSynthesis;
   const speak = () => {
     if (utterance !== next) return;

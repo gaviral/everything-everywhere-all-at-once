@@ -4,7 +4,8 @@
 // Safari and Firefox run at the device's rate and the worklet resamples (ui/public/pcm-worklet.js, checked by
 // scripts/mic-check.mjs), since what their own resampling does to a mic at 24 kHz can't be checked here: Firefox
 // refuses a mic in a context at another rate, and Safari's has had bugs.
-import { pageSpeaking, watchPageSpeech } from "./page-speech";
+import { pageSpeaking, stopPageSpeech, watchPageSpeech } from "./page-speech";
+import { builtInOn, watchBuiltIns } from "./shell/features";
 
 export const RATE = 24000;
 
@@ -80,9 +81,11 @@ export async function startMic(onFrame: (frame: ArrayBuffer) => void, onEnded?: 
   let context = atRate();
   let stream: MediaStream | undefined;
   let unwatchSpeech = () => {};
+  let unwatchSetting = () => {};
+  let detachWriter = () => {};
   // Abort also closes tracks while the worklet loads; getUserMedia itself cannot be cancelled, so check again
   // as soon as its promise resolves and stop any late stream before connecting it.
-  const cancel = () => { unwatchSpeech(); stream?.getTracks().forEach((track) => track.stop()); context.onstatechange = null; if (context.state !== "closed") void context.close(); };
+  const cancel = () => { unwatchSpeech(); unwatchSetting(); detachWriter(); stream?.getTracks().forEach((track) => track.stop()); context.onstatechange = null; if (context.state !== "closed") void context.close(); };
   signal?.addEventListener("abort", cancel, { once: true });
   try {
     stream = await navigator.mediaDevices.getUserMedia({
@@ -106,10 +109,32 @@ export async function startMic(onFrame: (frame: ArrayBuffer) => void, onEnded?: 
     signal?.throwIfAborted();
     const writer = new AudioWorkletNode(context, "pcm-writer");
     let generation = 0;
-    unwatchSpeech = watchPageSpeech((muted) => writer.port.postMessage({ muted, generation: ++generation }));
+    let muted = false, started = false, bargeIn = false;
+    let resumeBarge: number | undefined;
+    // If the browser explicitly refused echo cancellation, keep the original hard mute.
+    const echoProtected = stream.getTracks().every((track) => track.getSettings?.().echoCancellation !== false);
+    const captureState = () => {
+      bargeIn = muted && started && echoProtected && builtInOn("partner");
+      writer.port.postMessage({ muted, bargeIn, generation: ++generation, resumeBarge });
+    };
+    unwatchSpeech = watchPageSpeech((speaking, audible) => { muted = speaking; started = audible; captureState(); });
+    unwatchSetting = watchBuiltIns(() => {
+      if (bargeIn !== (muted && started && echoProtected && builtInOn("partner"))) captureState();
+    });
+    detachWriter = () => { writer.port.onmessage = null; writer.port.close(); };
     writer.port.onmessage = (event) => {
+      const message = event.data as { type: "barge"; generation: number }
+        | { type?: undefined; frame: ArrayBuffer; generation: number };
+      if (message.type === "barge") {
+        // Only this playback may release its private onset buffer. End/replacement/opt-out discard it.
+        if (!bargeIn || !builtInOn("partner") || !pageSpeaking() || message.generation !== generation) return;
+        resumeBarge = generation;
+        stopPageSpeech();
+        resumeBarge = undefined;
+        return;
+      }
       // A queued frame from before a pause/resume must stay silent even after speech ends.
-      const { frame, generation: captured } = event.data as { frame: ArrayBuffer; generation: number };
+      const { frame, generation: captured } = message;
       if (pageSpeaking() || captured !== generation) new Int16Array(frame).fill(0);
       onFrame(frame);
     };
@@ -126,7 +151,8 @@ export async function startMic(onFrame: (frame: ArrayBuffer) => void, onEnded?: 
       stopped = true;
       signal?.removeEventListener("abort", cancel);
       unwatchSpeech();
-      writer.port.onmessage = null;
+      unwatchSetting();
+      detachWriter();
       context.onstatechange = null;
       source.disconnect();
       writer.disconnect();
