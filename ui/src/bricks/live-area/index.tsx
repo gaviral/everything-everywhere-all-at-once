@@ -16,15 +16,19 @@ function createFeed() {
 }
 import type { BrickProps } from "../contract";
 import "./example.css";
+import { LookSwitch, type Look } from "./looks/LookSwitch";
+import "./looks/looks.css";
 
 export default function Example({ actions }: BrickProps) {
+const [look, setLook] = useState<Look>("current");
 const [example] = useState(createFeed);
 const [enabled, setEnabled] = useState(true);
 useEffect(() => { if (enabled) example.publish(); }, [example, enabled]);
 const [open, setOpen] = useState(true);
 return <>{!open && <button className="live-area-reopen" type="button" onClick={() => setOpen(true)}>Open Development activity</button>}
-<section hidden={!open} className="live-area-example" aria-label="Development activity example" data-guide="live-area">
+<section hidden={!open} data-look={look} className="live-area-example" aria-label="Development activity example" data-guide="live-area">
 <div><strong>Development activity · local example</strong><span><button type="button" onClick={() => actions.openCatalog("live-area")}>Features</button> <button type="button" onClick={() => setOpen(false)}>Close</button></span></div>
+<LookSwitch value={look} onChange={setLook} />
 <div><button onClick={example.publish}>Send newer example status</button> <button onClick={() => example.connect(false)}>Disconnect example feed</button> <button onClick={() => { example.connect(true); example.publish(); }}>Reconnect with new status</button></div>
 <LiveArea enabled={enabled} onEnabledChange={setEnabled} adapters={example.adapters} selected={selected} />
 </section></>;

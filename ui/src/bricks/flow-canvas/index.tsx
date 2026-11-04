@@ -59,9 +59,15 @@ export default function FlowCanvas({ map, actions, on, destination }: BrickProps
   const [testing, setTesting] = useState(false);
   const [saved, setSaved] = useState(false);
   useBrickEvent(on, "notice", event => { if (event.kind === "error") { setError(event.text); setListening(false); } });
-  // Draw hands over boxes it read from a sketch.
+  // Draw hands over boxes it read from a sketch, and the thought they are for: they run on it, as a spoken "run that through" does.
+  const startOnThought = useRef<(p: Pipeline, text: string) => void>(() => {});
   useEffect(() => {
-    const load = (event: Event) => { setPipeline((event as CustomEvent<Pipeline>).detail); setOpen(true); };
+    const load = (event: Event) => {
+      event.preventDefault();
+      const { pipeline: drawn, source } = (event as CustomEvent<{ pipeline: Pipeline; source: { id: string; text: string } | null }>).detail;
+      setPipeline(drawn); setOpen(true);
+      if (source) { sourceRef.current = source; setInput(source.text); startOnThought.current(drawn, source.text); }
+    };
     addEventListener("e2a2o:flow-load", load);
     return () => removeEventListener("e2a2o:flow-load", load);
   }, []);
@@ -179,6 +185,7 @@ export default function FlowCanvas({ map, actions, on, destination }: BrickProps
       if (alive.current) setNotice(failed ? "A box failed. Its later boxes did not run." : "Run complete. Open any box to see its prompt and exact input.");
     } catch (e) { if (alive.current) setError(String(e)); } finally { if (alive.current) markBusy(false); active.current = null; }
   }
+  startOnThought.current = (p, text) => { void execute(p, text); };
   async function build(text: string, runSource?: string) {
     markBusy(true); setError(""); setNotice(pipeline ? "Spark is changing the boxes…" : "Spark is making your boxes…");
     try {

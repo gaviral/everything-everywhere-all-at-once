@@ -1,0 +1,8 @@
+{
+  "id": "topic-views",
+  "name": "Topic views",
+  "does": "Explore one topic tree, original conversation and independent notes with source links.",
+  "kind": "view",
+  "defaultOn": false,
+  "demoSafe": true
+}

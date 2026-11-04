@@ -17,6 +17,8 @@ const SAID_MAX = 1800;
 /** Keeps up: a pause this long in drawing is the moment to look, as a person beside you would. */
 const FOLLOW_PAUSE_MS = 1400;
 const FOLLOW_MIN_STROKES = 3;
+const FLOW_RETRY_MS = 150;
+const FLOW_TRIES = 30;
 const plainWords = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 const flagged = () => new URLSearchParams(location.search).has("draw");
 
@@ -36,14 +38,22 @@ function useBarHeight(open: boolean) {
   return height;
 }
 
-function openFlow(reading: Reading) {
+type Source = { id: string; text: string } | null;
+
+/** Hands the boxes to Flow, and keeps offering until Flow, which may still be loading, takes them. */
+function openFlow(reading: Reading, source: Source) {
   const pipeline = {
     id: crypto.randomUUID(), name: reading.flow.name,
     steps: reading.flow.steps.map((step, index) => ({ id: `step-${index + 1}`, name: step.name, prompt: step.prompt })),
   };
   location.hash = `flow=${btoa(unescape(encodeURIComponent(JSON.stringify(pipeline))))}`;
   switchBrick("flow-canvas", true);
-  dispatchEvent(new CustomEvent("e2a2o:flow-load", { detail: pipeline }));
+  let tries = 0;
+  const offer = () => {
+    const taken = !dispatchEvent(new CustomEvent("e2a2o:flow-load", { detail: { pipeline, source }, cancelable: true }));
+    if (!taken && ++tries < FLOW_TRIES) setTimeout(offer, FLOW_RETRY_MS);
+  };
+  offer();
 }
 
 export default function Draw({ on, actions, map }: BrickProps) {
@@ -59,6 +69,10 @@ export default function Draw({ on, actions, map }: BrickProps) {
   const [following, setFollowing] = useState(true);
   const [seeThrough, setSeeThrough] = useState(false);
   const said = useRef("");
+  // What the person was on when they picked up the pen: the boxes they draw run on that.
+  const thoughtBefore = useRef<Source>(null);
+  const known = map.thoughts[map.thoughts.length - 1];
+  useEffect(() => { if (!open) thoughtBefore.current = known ? { id: known.id, text: known.text } : null; }, [open, known]);
   const barHeight = useBarHeight(open);
   const sheet = useRef<HTMLDivElement>(null);
   const now = useRef({ strokes, labels, picked, reading });
@@ -117,7 +131,7 @@ export default function Draw({ on, actions, map }: BrickProps) {
 
   const build = useCallback(async () => {
     const known = now.current.reading?.value ?? await read();
-    if (known?.flow?.steps?.length) { openFlow(known); setOpen(false); }
+    if (known?.flow?.steps?.length) { openFlow(known, thoughtBefore.current); setOpen(false); }
   }, [read]);
 
   const undo = useCallback(() => {
