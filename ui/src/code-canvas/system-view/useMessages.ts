@@ -49,10 +49,16 @@ export function useMessages(paused: boolean, reduced: boolean) {
       close();
       if (paused || document.hidden) { setStatus(paused ? 'Paused · observer disconnected' : 'Hidden · observer disconnected'); return; }
       setStatus('Connecting to the core…');
-      source = new EventSource('/code-canvas/events');
-      source.onopen = () => { sequence = 0; setStatus('Live · waiting for real messages'); };
-      source.onerror = () => { queue.clear(); setStatus('Disconnected · reconnecting · no replay'); };
-      source.onmessage = event => {
+      const stream = new EventSource('/code-canvas/events');
+      source = stream;
+      stream.onopen = () => { if (source === stream) { sequence = 0; setStatus('Live · waiting for real messages'); } };
+      stream.onerror = () => {
+        if (source !== stream) return;
+        queue.clear();
+        setStatus(stream.readyState === EventSource.CLOSED ? 'Core stream unavailable · reopen this view to retry' : 'Disconnected · reconnecting · no replay');
+      };
+      stream.onmessage = event => {
+        if (source !== stream) return;
         const batch = readBatch(event.data);
         if (!batch) { queue.clear(); setStatus('Unsupported event · waiting for valid metadata'); return; }
         if (batch.sequence <= sequence) return;
