@@ -145,8 +145,10 @@ The default page opens the current shell; `/?sample` adds its SAMPLE stamp. The 
 
 **With a key: watch the story build itself.**
 
+See [Local configuration](docs/configuration.md) for all model, helper, and connector options.
+
 ```sh
-cp .env.example .env                                # paste your Meta Model API key after MODEL_API_KEY=
+cp .env.example .env                                # then add MODEL_API_KEY= with your own Meta key
 ./run.sh demo                                       # its own map, in data/demo
 node scripts/demo.mjs scripts/story-talk.jsonl      # in a second terminal: the minute above, typed at real speed
 ```
