@@ -669,6 +669,7 @@ async fn mixed_turn_commands_keep_their_order_and_only_remaining_words_reach_met
                         crate::placer::Job::Back(_) => "back",
                         crate::placer::Job::Next(_) => "next",
                         crate::placer::Job::Previous(_) => "previous",
+                        crate::placer::Job::Resume { .. } => "resume",
                     });
                 }
                 assert_eq!(jobs, expected_jobs, "voice={voice}, enabled={enabled}: {text}");

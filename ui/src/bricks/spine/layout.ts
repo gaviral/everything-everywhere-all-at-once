@@ -291,6 +291,7 @@ export interface LayoutInput {
   active?: string | null;
   /** Your thoughts on their way, oldest first: a slot each under the active thread's tip. */
   slots?: readonly string[];
+  paused?: ReadonlyMap<string, number>;
   /** The newest landing, by its thought, with the note it shows under the point until the next. */
   landing?: { thought: string; text: string } | null;
   /** Margin notes. */
@@ -547,7 +548,8 @@ export function layout(input: LayoutInput): Layout {
     const lines = wrap(measured, look.font, look.textW, (wordsOpen || pending) ? Infinity : look.max);
     const chips = idea.decided || left;
     const landing = landingOn === idea.key ? input.landing!.text : undefined;
-    const h = lines.length * look.line + (staying || wordsOpen ? G.pointLine + G.pointGap : 0) + (chips ? G.chips : 0) + (landing ? G.landLine : 0) + tuckHeight(tucks);
+    const pauseHeight = idea.parts.reduce((n,p)=>n+(input.paused?.get(p.id)??0),0)*44;
+    const h = pauseHeight + lines.length * look.line + (staying || wordsOpen ? G.pointLine + G.pointGap : 0) + (chips ? G.chips : 0) + (landing ? G.landLine : 0) + tuckHeight(tucks);
     const shape = { shown, lines, quotes, ends, tucks, beside, chips, landing, h };
     shapes.set(`${idea.key}|${look.variant}`, shape);
     return shape;

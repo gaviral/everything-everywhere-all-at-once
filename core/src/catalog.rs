@@ -260,7 +260,7 @@ pub fn of_job(job: crate::Command) -> Act {
     match job(String::new()) {
         crate::placer::Job::Next(_) => Act::Next,
         crate::placer::Job::Previous(_) => Act::Previous,
-        crate::placer::Job::Back(_) | crate::placer::Job::Place(_) => Act::Back,
+        crate::placer::Job::Back(_) | crate::placer::Job::Place(_) | crate::placer::Job::Resume { .. } => Act::Back,
     }
 }
 

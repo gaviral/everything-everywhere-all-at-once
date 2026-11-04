@@ -36,7 +36,7 @@ const MODEL_WAIT_MS = 1000;
  *  brick is handed only map, actions and on (BrickMount). */
 export function useBrickHost(world: World, revision: number, me: string, connected: boolean, rooms: ReadonlyMap<string, string>, partial: string, act: HostActions, destination?: BrickProps["destination"], usage: UsageSnapshot | null = null, placingUnavailable = false): BrickHost & Pick<ReturnType<typeof brickEvents>, "emit"> {
   const jobs = useJobs();
-  const map = useMemo(() => ({ ...snapshotOf(world, me, connected, rooms, partial, jobs, usage), placingUnavailable }), [world, me, connected, rooms, partial, jobs, usage, placingUnavailable]);
+  const map = useMemo(() => ({ ...snapshotOf(world, me, connected, rooms, partial, jobs, usage), placingUnavailable, pauses: world.pauses ?? [] }), [world, me, connected, rooms, partial, jobs, usage, placingUnavailable]);
   const latest = useRef(act);
   useLayoutEffect(() => { latest.current = act; });
   const [sends] = useState(senders);
@@ -45,6 +45,7 @@ export function useBrickHost(world: World, revision: number, me: string, connect
   const actionsFor = useMemo(() => (info: BrickInfo): BrickActions => {
     let actions = made.current.get(info.id);
     if (!actions) made.current.set(info.id, actions = {
+      resume: (id, keyboard) => latest.current.resume?.(id, keyboard) ?? false,
       addThought: (text) => {
         const sent = latest.current.addThought(text);
         if (sent) sends.sent(text, info);

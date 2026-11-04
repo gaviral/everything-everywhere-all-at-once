@@ -133,6 +133,31 @@ pub struct Action {
     pub done_ms: Option<u64>,
 }
 
+/// An exact unfinished source at a committed departure. Later edits never rewrite its excerpt.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Pause {
+    pub id: String,
+    pub thought_id: String,
+    pub speaker: String,
+    pub thread_id: String,
+    pub revision: u64,
+    pub excerpt: String,
+    pub at_ms: u64,
+    #[serde(default)] pub resolved: bool,
+    #[serde(default)] pub later_count: u32,
+    #[serde(default)] pub offer_after_ms: u64,
+    #[serde(default)] pub hidden: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ReturnAnchor {
+    pub pause: Option<Pause>,
+    pub thought_id: String,
+    pub thread_id: Option<String>,
+    pub excerpt: String,
+    pub current_text: Option<String>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CaptureReceipt {
     pub id: String,
@@ -149,6 +174,8 @@ pub struct SpeechDraft {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct World {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")] pub pauses: Vec<Pause>,
+    #[serde(default, skip_serializing)] pub returning: std::collections::HashMap<String, (String, usize)>,
     #[serde(default, skip_serializing)]
     pub captures: std::collections::HashMap<(String, String), CaptureReceipt>,
     #[serde(default, skip_serializing)]
@@ -250,6 +277,10 @@ pub struct World {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Change {
+    Paused { pause: Pause },
+    PauseResolved { id: String, by_thought: String },
+    PauseChoice { id: String, later_count: u32, offer_after_ms: u64, hidden: bool },
+    ReturnFocused { speaker: String, pause_id: String, #[serde(default)] after: usize },
     SpeechRecovered { draft: SpeechDraft },
     SpeechResolved { id: String },
     TextReceived { speaker: String, id: String },
@@ -419,6 +450,54 @@ pub enum Change {
 }
 
 impl World {
+    /// Add recovery facts only to a batch that actually places a new thought and moves its speaker away.
+    pub(crate) fn with_pauses(&self, mut changes: Vec<Change>, now: u64) -> Vec<Change> {
+        for change in &mut changes { if let Change::ReturnFocused { after, .. } = change { *after=self.thoughts.len(); } }
+        let thought = |id: &str| self.thoughts.iter().find(|t| t.id == id).or_else(|| changes.iter().find_map(|change| match change {
+            Change::ThoughtAdded { thought } if thought.id == id => Some(thought), _ => None,
+        }));
+        let mut extra = Vec::new();
+        for change in &changes {
+            let Change::ThoughtPlaced { thought_id, thread_id, .. } = change else { continue };
+            let Some(next) = thought(thought_id).filter(|t| !t.placed) else { continue };
+            // Focus changes and panning do not identify the interrupted sentence. The speaker's
+            // immediately preceding committed words do; a late placement behind newer words does not.
+            let next_index=self.thoughts.iter().position(|t|t.id==next.id).unwrap_or(usize::MAX);
+            let leaves = changes.iter().any(|change|matches!(change,Change::ActiveChanged {thread_id:to,speaker} if speaker==&next.speaker&&self.resolve(to)==self.resolve(thread_id)))
+                || self.active_by.get(&next.speaker).is_some_and(|id|self.resolve(id)==self.resolve(thread_id));
+            let late = self.returning.get(&next.speaker).is_some_and(|(_,after)|next_index<*after);
+            let source=self.thoughts.iter().enumerate().filter(|(_,t)|t.placed&&t.speaker==next.speaker)
+                .max_by_key(|(i,t)|(t.said_at(now),*i))
+                .filter(|(i,t)|!t.complete&&(t.said_at(now),*i)<(next.said_at(now),next_index))
+                .map(|(_,t)|t).or_else(||self.returning.get(&next.speaker).filter(|(_,after)|next_index>=*after)
+                    .and_then(|(id,_)|self.pauses.iter().find(|p|p.id==*id&&!p.resolved))
+                    .and_then(|p|self.thoughts.iter().find(|t|t.id==p.thought_id&&!t.complete)))
+                .filter(|t|t.thread_id.as_ref().is_some_and(|id|self.resolve(id)!=self.resolve(thread_id)));
+            if let Some(source)=source.filter(|_|leaves&&!late) {
+                let revision=self.pauses.iter().filter(|p|p.thought_id==source.id).map(|p|p.revision).max().unwrap_or(0)+1;
+                extra.push(Change::Paused {pause:Pause {id:format!("pause-{}-{revision}",source.id),thought_id:source.id.clone(),speaker:source.speaker.clone(),thread_id:self.resolve(source.thread_id.as_ref().unwrap()),revision,
+                    excerpt:source.text.clone(),at_ms:now,resolved:false,later_count:0,offer_after_ms:0,hidden:false}});
+            }
+            let continued = changes.iter().find_map(|change| match change {
+                Change::ThoughtNoted { thought_id: id, note } if id == thought_id && !note.continues.is_empty() => Some(&note.continues), _ => None,
+            });
+            if let Some(source) = continued {
+                let candidates = self.pauses.iter().filter(|p| !p.resolved && p.speaker == next.speaker && &p.thought_id == source);
+                let pause = self.returning.get(&next.speaker).and_then(|(id,_)| candidates.clone().find(|p| &p.id == id)).or_else(|| candidates.max_by_key(|p| (p.at_ms,p.revision)));
+                if let Some(pause) = pause { extra.push(Change::PauseResolved { id: pause.id.clone(), by_thought: thought_id.clone() }); }
+            }
+        }
+        changes.extend(extra);
+        changes
+    }
+
+    pub(crate) fn return_anchor(&self, pause: &Pause) -> ReturnAnchor {
+        let thought = self.thoughts.iter().find(|t| t.id == pause.thought_id && t.speaker == pause.speaker);
+        ReturnAnchor { pause: Some(pause.clone()), thought_id: pause.thought_id.clone(),
+            thread_id: thought.and_then(|t| t.thread_id.as_ref()).map(|id|self.resolve(id)).filter(|id|self.thread(id).is_some()),
+            excerpt: pause.excerpt.clone(), current_text: thought.map(|t|t.text.clone()) }
+    }
+
     pub(crate) fn capture(&mut self, speaker: &str, id: &str, text: Option<&str>, change: &Change) {
         let receipt = self.captures.entry((speaker.into(), id.into())).or_insert_with(|| CaptureReceipt {
             id: id.into(), text: text.unwrap_or_default().into(), thought_ids: Vec::new(),
@@ -466,6 +545,10 @@ impl World {
         let change = self.resolved(change);
         crate::tidy::follow(self, &change);
         match change.as_ref() {
+            Change::Paused { pause } => { self.returning.remove(&pause.speaker); if !self.pauses.iter().any(|p|p.id == pause.id) { self.pauses.push(pause.clone()); } }
+            Change::PauseResolved { id, .. } => { if let Some(pause)=self.pauses.iter_mut().find(|p| &p.id==id) { pause.resolved=true; } self.returning.retain(|_,(value,_)|value!=id); }
+            Change::PauseChoice { id, later_count, offer_after_ms, hidden } => { if let Some(pause)=self.pauses.iter_mut().find(|p| &p.id==id) { pause.later_count=*later_count;pause.offer_after_ms=*offer_after_ms;pause.hidden=*hidden; } }
+            Change::ReturnFocused { speaker, pause_id, after } => { self.returning.insert(speaker.clone(),(pause_id.clone(),*after)); }
             Change::SpeechRecovered { draft } => { if !self.speech_resolved.contains(&draft.id) { self.speech_drafts.insert(draft.id.clone(), draft.clone()); } }
             Change::SpeechResolved { id } => { self.speech_drafts.remove(id); self.speech_resolved.insert(id.clone()); }
             Change::TextReceived { speaker, id } => { self.received_text.insert((speaker.clone(), id.clone())); }
@@ -1948,6 +2031,10 @@ mod tests {
             Change::TopicRenamed { from: "Muse Spark".into(), to: "".into() },
             Change::StayChanged { thread_id: Some("T4".into()) },
             Change::StayChanged { thread_id: None },
+            Change::Paused { pause: super::Pause { id: "pause-a-1".into(), thought_id: "a".into(), speaker: "you".into(), thread_id: "T1".into(), revision: 1, excerpt: "Unfinished source".into(), at_ms: 1, resolved: false, later_count: 0, offer_after_ms: 0, hidden: false } },
+            Change::ReturnFocused { speaker: "you".into(), pause_id: "pause-a-1".into(), after: 2 },
+            Change::PauseChoice { id: "pause-a-1".into(), later_count: 1, offer_after_ms: 300001, hidden: false },
+            Change::PauseResolved { id: "pause-a-1".into(), by_thought: "b".into() },
             Change::TextReceived { speaker: "you".into(), id: "received-once".into() },
             Change::SpeechRecovered { draft: super::SpeechDraft { id: "speech-once".into(), speaker: "you".into(), text: "Unfinished words".into() } },
             Change::SpeechResolved { id: "speech-once".into() },
@@ -1964,6 +2051,7 @@ mod tests {
                 | Change::AppsSeeded
                 | Change::ThoughtAdded { .. }
                 | Change::TextReceived { .. }
+                | Change::Paused { .. } | Change::PauseResolved { .. } | Change::PauseChoice { .. } | Change::ReturnFocused { .. }
                 | Change::SpeechRecovered { .. }
                 | Change::SpeechResolved { .. }
                 | Change::ThreadAdded { .. }
@@ -2017,7 +2105,7 @@ mod tests {
         let changes = every_change();
         let kinds: std::collections::HashSet<String> =
             changes.iter().map(|c| serde_json::to_value(c).unwrap()["type"].as_str().unwrap().to_string()).collect();
-        assert_eq!(kinds.len(), 52, "one of each kind of change");
+        assert_eq!(kinds.len(), 56, "one of each kind of change");
         for change in &changes {
             let json = serde_json::to_string(change).unwrap();
             let back: Change = serde_json::from_str(&json).unwrap_or_else(|e| panic!("{json} didn't read back: {e}"));

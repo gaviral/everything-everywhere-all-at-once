@@ -5,7 +5,7 @@
 import { createContext, Fragment, memo, useContext, useEffect, useLayoutEffect, useRef, useState, useId, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode, type RefObject } from "react";
 import { useStore, type Node, type NodeProps } from "@xyflow/react";
 import { G, type Entry, type Item, type Who } from "./layout";
-import { SpeechFixesContext, type Thought } from "../contract";
+import { SpeechFixesContext, type Pause, type Thought } from "../contract";
 import { StayHere } from "../../StayHere";
 
 /** Below this zoom a point's 15 px words are under 11 px on screen, the smallest the app sets: they turn to bars. */
@@ -13,6 +13,7 @@ export const READ = 0.75;
 
 export type ItemData = {
   item: Item;
+  pauses?: readonly Pause[];
   here: boolean;
   pulse: number;
   fresh: boolean;
@@ -32,6 +33,7 @@ export type ItemNode = Node<ItemData, "item">;
 
 /** What a thing on the canvas can ask of the view. */
 export interface Acts {
+  resume(id:string,keyboard:boolean): void;
   toggle(thread: string): void;
   pick(item: Item): void;
   words(item: Item): void;
@@ -339,6 +341,10 @@ function Point({ data }: { data: ItemData }) {
         </button>
         : <span key={tuck.margin} className="spine-tuck" data-margin={tuck.margin}><Entries entries={tuck.entries} /></span>)}
     </span>}
+    {(data.pauses??[]).map((pause,i)=><button key={pause.id} type="button" className="spine-paused-mark nodrag nopan"
+      data-paused-source={pause.id} data-source-thought={pause.thought_id} title={pause.excerpt} aria-label={`Paused here: ${pause.excerpt} (interruption ${pause.revision})`}
+      style={{left:look.textX,top:item.box.h-(data.pauses!.length-i)*44,height:44}}
+      onClick={event=>{event.stopPropagation();acts.resume(pause.id,event.detail===0);}}>Paused here</button>)}
     <Tools item={item} />
   </div>;
 }

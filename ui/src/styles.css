@@ -1110,3 +1110,9 @@ img.slot-picture[data-instant] { transition: none; }
 
 /* Below 380 px the idle status hides its words. Capture must always keep the existing Listening indicator visible. */
 .header-actions > .status.capturing > span[aria-hidden="true"] { display: inline; }
+
+/* Interruption identity survives the transient offer. These markers never animate or route speech. */
+.spine-paused-mark { position: absolute; border: 0; padding: 0 8px; background: transparent; color: var(--amber); font: inherit; font-size: 12px; text-decoration: underline; cursor: pointer; }
+.paused-sources, .return-receipt { background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; max-height: 24vh; overflow: auto; }
+.paused-sources blockquote, .return-receipt blockquote { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0; }
+.return-receipt p { margin: 4px 0; }

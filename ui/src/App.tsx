@@ -57,7 +57,7 @@ import "./route.css";
 import { Tips, TIPS } from "./Tips";
 import { InstallHint, useInstallHint } from "./Install";
 import { COMPOSER_ID, opensHelp, togglesPoint } from "./keys";
-import { cardAt, dismiss, dropKey, lastWords as lastWordsOn, leftOff, lingerMs as unfinishedLingerMs, putOff, useHidden } from "./unfinished";
+import { cardAt, dismiss, dropKey, pauseOffer, lastWords as lastWordsOn, leftOff, lingerMs as unfinishedLingerMs, putOff, useHidden } from "./unfinished";
 import { SendCard } from "./SendCard";
 import { PullsCard } from "./PullsCard";
 import { NoteCard } from "./NoteCard";
@@ -895,6 +895,8 @@ export default function App() {
 
   // Pull-back: at a natural pause, offer the most recently dropped thread (unfinished.ts).
   const [lastActivity, setLastActivity] = useState(() => Date.now());
+  const [expiredOffers, setExpiredOffers] = useState<ReadonlySet<string>>(new Set());
+  const returnFocus = useRef<{id:string; keyboard:boolean} | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [hidden, setHidden] = useHidden(world.thoughts, me);
   useEffect(() => setLastActivity(Date.now()), [core.partial, world.thoughts.length]);
@@ -908,9 +910,12 @@ export default function App() {
       .flatMap((item) => world.threads.filter((t) => t.id === item.threadId && t.dropped_by === me).map(dropKey));
     if (covered.length) setHidden((was) => dismiss(was, covered));
   }, [away.items, world.threads, me]);
-  const dropped = leftOff(world.threads, me, hidden, now);
+  const dropped = useMemo(()=>pauseOffer(world, me, now, expiredOffers) ?? leftOff(world.threads.filter(thread => !(world.pauses ?? []).some(p=>p.speaker===me&&p.thread_id===thread.id)), me, hidden, now),[world,me,now,expiredOffers,hidden]);
   // Once offered, keep this card through new speech (even on its thread) until it has had time to be read.
-  const pullBack = core.unfinishedNotice && leftOff([core.unfinishedNotice], me, hidden, now) ? core.unfinishedNotice : null;
+  const told = core.unfinishedNotice;
+  const toldPause = told?.return_source && (world.pauses ?? []).find(p=>p.id===told.return_source!.id);
+  const pullBack = told?.return_source ? (toldPause && !toldPause.resolved && !toldPause.hidden && toldPause.offer_after_ms<=now && !expiredOffers.has(toldPause.id) ? told : null)
+    : told && leftOff([told], me, hidden, now) && !expiredOffers.has(dropKey(told)) ? told : null;
   useEffect(() => {
     const next = cardAt(dropped, now, lastActivity);
     if (next && !hasAway) core.noticeQueue.push("unfinished", dropKey(next), next);
@@ -930,8 +935,14 @@ export default function App() {
       if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setPullBackFocused(false);
     },
   };
-  const later = (thread: Thread) => { core.noticeQueue.drop("unfinished", dropKey(thread), false); setHidden((was) => putOff(was, thread, Date.now())); };
-  const forget = (thread: Thread) => { core.noticeQueue.drop("unfinished", dropKey(thread)); setHidden((was) => dismiss(was, [dropKey(thread)])); };
+  const later = (thread: Thread) => {
+    if(thread.return_source) { if(core.pauseChoice(thread.return_source.id,true)) core.noticeQueue.drop("unfinished",dropKey(thread),false); return; }
+    core.noticeQueue.drop("unfinished", dropKey(thread), false); setHidden((was) => putOff(was, thread, Date.now()));
+  };
+  const forget = (thread: Thread) => {
+    if(thread.return_source) { if(core.pauseChoice(thread.return_source.id,false)) core.noticeQueue.drop("unfinished",dropKey(thread)); return; }
+    core.noticeQueue.drop("unfinished", dropKey(thread)); setHidden((was) => dismiss(was, [dropKey(thread)]));
+  };
   // Installing is offered once, after a thought of yours found its thread, in a lull: nothing else in the dock
   // and nothing being said or typed, so it never covers a card that needs you or interrupts a thought.
   const placedMine = useMemo(() => world.thoughts.filter((t) => t.placed && t.speaker === me).map((t) => t.id), [world.thoughts, me]);
@@ -960,7 +971,7 @@ export default function App() {
       later(card);
       core.showNotice(`Later: ${card.title} comes back after a while.`, core.viewAsk);
     } else {
-      setHidden((was) => dismiss(was, [dropKey(card)]));
+      forget(card);
       core.showNotice(`Set aside: ${card.title}. What you said stays on the map.`, core.viewAsk);
     }
   }, [core.viewAsk]);
@@ -996,10 +1007,13 @@ export default function App() {
   });
   useEffect(() => () => cancelAnimationFrame(clearFrame.current), []);
   // A move changes where words belong, not when this thread was last spoken on. Future sample times count as earliest.
-  const lastWords = pullBack ? lastWordsOn(world.thoughts.filter((t) => (t.at_ms > now ? 0 : t.at_ms) <= pullBack.touched_ms), pullBack, me, now) : "";
+  const lastWords = pullBack?.return_source ? lastWordsOn(world.thoughts, pullBack, me, now) : "";
   useEffect(() => {
     if (!pullBack || pullBackHovered || pullBackFocused) return;
-    const timer = window.setTimeout(() => forget(pullBack), unfinishedLingerMs(pullBack.title, lastWords));
+    const timer = window.setTimeout(() => {
+      setExpiredOffers(was=>new Set([...was,dropKey(pullBack)]));
+      core.noticeQueue.drop("unfinished",dropKey(pullBack),false);
+    }, unfinishedLingerMs(pullBack.title, lastWords));
     return () => window.clearTimeout(timer);
   }, [pullBack, lastWords, hasAway, pullBackHovered, pullBackFocused]);
 
@@ -1034,7 +1048,29 @@ export default function App() {
   };
   // Finish it reveals the same destination, but the next words belong in the composer. Choose focus in goBack's
   // one post-render callback so a queued thread-toggle focus cannot take it back. The existing draft stays intact.
-  const finishThread = (thread: Thread) => goBack(thread, "composer");
+  const finishPause = (id: string, keyboard = false) => {
+    const request = core.resumePause(id);
+    if(request) returnFocus.current={id:request,keyboard};
+    else core.showNotice("Not connected. Your interrupted words are still kept here.");
+    return !!request;
+  };
+  const finishThread = (thread: Thread, keyboard = false) => {
+    if(thread.return_source) return finishPause(thread.return_source.id,keyboard);
+    core.showNotice("Exact interruption source unavailable for this older topic. Its words remain on the map.");
+    return false;
+  };
+  useEffect(()=>{
+    const result=core.returnResult;
+    if(!result) return;
+    if(result.anchor?.pause) {
+      const id=result.anchor.pause.id;
+      setExpiredOffers(was=>new Set([...was,id]));
+      core.noticeQueue.drop("unfinished",id,false);
+    }
+    if(result.request_id!==returnFocus.current?.id) return;
+    const wanted=returnFocus.current;returnFocus.current=null;
+    if(wanted.keyboard && !draft && result.anchor?.thread_id && result.anchor.current_text!==null) requestAnimationFrame(()=>composerRef.current?.focus({preventScroll:true}));
+  },[core.returnResult,draft]);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.key !== "Enter" || event.shiftKey || event.metaKey || event.ctrlKey || event.altKey
@@ -1042,12 +1078,24 @@ export default function App() {
       // Fields and focused controls keep their own Enter (including a native click on Finish it or Later).
       if (event.target !== document.body && event.target !== document.documentElement) return;
       event.preventDefault();
-      finishThread(pullBack);
+      finishThread(pullBack,true);
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [pullBack, hasAway]);
 
+  const pausedSources = (world.pauses ?? []).filter(p=>p.speaker===me&&!p.resolved);
+  const returnPanel = <>
+    {pausedSources.length>0 && <details className="paused-sources"><summary>Paused sources ({pausedSources.length})</summary>
+      {pausedSources.map(pause=><section key={pause.id} data-paused-source={pause.id}><button type="button" aria-label={`Paused here: ${pause.excerpt} (interruption ${pause.revision})`} onClick={event=>finishPause(pause.id,event.detail===0)}>Paused here · {world.threads.find(t=>t.id===pause.thread_id)?.title??"Earlier topic"}</button><blockquote>{pause.excerpt}</blockquote></section>)}
+    </details>}
+    {core.returnResult && <section className="return-receipt" role="status" data-returned-source={core.returnResult.anchor?.thought_id}>
+      <button type="button" onClick={core.clearReturn} aria-label="Close return details">×</button><p>{core.returnResult.message}</p>
+      {core.returnResult.anchor && <><blockquote>{core.returnResult.anchor.excerpt}</blockquote>
+        {core.returnResult.anchor.current_text===null ? <p>Source deleted. These are the retained interruption-time words.</p>
+        : core.returnResult.anchor.current_text!==core.returnResult.anchor.excerpt && <p>Current words: {core.returnResult.anchor.current_text}</p>}</>}
+    </section>}
+  </>;
   // Bricks (docs/bricks.md): what each is handed, and the views among those on. A brick's actions are the app's own:
   // openThread is a Palace picture's goBack, select tells the core "this" as pointing at a card does, listen is the mic
   // button's tap (the Keys brick's ⌘D). It starts the mic only inside a click or key press in this tab, as the tap does,
@@ -1056,6 +1104,7 @@ export default function App() {
   // caption, here only (guide-core.ts `showHint`).
   const brickHost = useBrickHost(world, core.snapshotRevision, me, core.connected, rooms, core.partial, {
     addThought: core.sendText,
+    resume: (id,keyboard) => finishPause(id,keyboard),
     openThread: (id) => { const thread = threadById.get(resolveMerged(world, id)); if (thread) goBack(thread); },
     select: core.select,
     notify: (text) => core.showNotice(text),
@@ -1355,6 +1404,7 @@ export default function App() {
       {sampleMap && <div className="sample-recovery-actions"><button type="button" onClick={() => core.sendText("Where was I?")}>Where was I?</button><button type="button" onClick={() => showView("palace")}>Pictures</button></div>}
       <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{announcement}</div>
       <section ref={dockRef} className={view === "palace" ? "dock in-palace" : "dock"} aria-label="Your thoughts">
+        {returnPanel}
         <RecoveryPanel recovery={core.recovery} recover={core.recover} discardRecovery={core.discardRecovery} sendOnline={core.sendOnline}
           draft={draft} clearDraft={exact => setDraft(current => current === exact ? "" : current)} />
         <div className="dock-inner">
@@ -1386,9 +1436,10 @@ export default function App() {
                     You didn't finish <b>{pullBack.title}</b>
                   </div>
                   {lastWords && <UnfinishedQuote key={pullBackKey} text={lastWords} />}
+                  {!pullBack.return_source && <p>Exact interruption source unavailable.</p>}
                 </div>
                 <div className="pullback-actions">
-                  <button onClick={() => finishThread(pullBack)}>Finish it</button>
+                  <button disabled={!pullBack.return_source} onClick={event => finishThread(pullBack,event.detail===0)}>Finish it</button>
                   {/* Feedback catalog: goBack(pullBack)'s navigation, with composer focus for the next words. */}
                   <button className="quiet" onClick={() => later(pullBack)}>
                     Later
@@ -1573,6 +1624,7 @@ export default function App() {
       {/* Cards, notices and captions stay above the bottom bar's input row. */}
       <section className="shell-stage" data-slot="stage" aria-label="Your thoughts">
         {keyHelp && core.noKey && <p className="keyless-help" role="status">Your words can be saved. Add a working AI key for automatic placement and listening.</p>}
+        {returnPanel}
         <RecoveryPanel recovery={core.recovery} recover={core.recover} discardRecovery={core.discardRecovery} sendOnline={core.sendOnline}
           draft={draft} clearDraft={exact => setDraft(current => current === exact ? "" : current)} />
         {waitingCaptures.length > 0 && <section className="capture-pending" aria-label="Thoughts waiting for placement">
@@ -1600,9 +1652,10 @@ export default function App() {
             <div className="pullback-text">
               <div className="pullback-title">You didn't finish <b>{pullBack.title}</b></div>
               {lastWords && <UnfinishedQuote key={pullBackKey} text={lastWords} />}
+                  {!pullBack.return_source && <p>Exact interruption source unavailable.</p>}
             </div>
             <div className="pullback-actions">
-              <button onClick={() => finishThread(pullBack)} aria-keyshortcuts="Enter">Finish it</button>
+              <button disabled={!pullBack.return_source} onClick={event => finishThread(pullBack,event.detail===0)} aria-keyshortcuts="Enter">Finish it</button>
               {/* Feedback catalog: goBack(pullBack)'s navigation, with composer focus for the next words. */}
               <button className="quiet" onClick={() => later(pullBack)} aria-keyshortcuts="L">Later</button>
               <button className="quiet" onClick={() => forget(pullBack)}>Forget it</button>
