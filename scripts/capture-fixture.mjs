@@ -49,7 +49,7 @@ export async function capturePage(core, { width = 1440, height = 900, scheme = '
   await page('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }, { name: 'prefers-reduced-motion', value: reduced ? 'reduce' : 'no-preference' }] });
   await page('Page.navigate', { url: `http://127.0.0.1:${core.port}/` });
   assert.ok(await until('!!document.querySelector("#type-a-thought")', 10000), 'composer mounts');
-  if (tour) { assert.equal(await evaluate('localStorage.getItem("e2a2o.toured")'), null, 'no tour bypass flag in the fresh profile'); if (!core.state.world.threads.length) assert.ok(await until('!!document.querySelector(".shell-welcome")'), 'the current shell Welcome actually runs'); }
+  if (tour) { assert.equal(await evaluate('localStorage.getItem("e2a2o.toured")'), null, 'no tour bypass flag in the fresh profile'); if (!core.state.world.threads.length) assert.ok(await until('!!document.querySelector("[data-map-capture=active]")'), 'the empty map offers capture in place'); }
   await evaluate('document.fonts.ready.then(() => true)');
   return browser;
 }

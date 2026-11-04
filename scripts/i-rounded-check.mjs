@@ -66,7 +66,7 @@ try {
   assert.ok(await browser.until(palette), "feature preference survives reload");
   assert.equal(await browser.evaluate(instanceCount), 0, "visit state clears on reload");
   await features(false);
-  assert.ok(await browser.until('!!document.querySelector(".shell-welcome") && !document.querySelector(".spine")'), "empty ordinary page restored");
+  assert.ok(await browser.until('!!document.querySelector("[data-map-capture=active] textarea") && !!document.querySelector(".spine-ready")'), "empty ordinary page restored");
 
   shown = full;
   await navigate();

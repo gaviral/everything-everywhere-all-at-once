@@ -40,7 +40,7 @@ try {
         window.SpeechSynthesisUtterance = ${capability === "missing" ? 'undefined' : 'class { constructor(text) { this.text = text; } }'};
       ` });
       await page("Page.navigate", { url: `http://127.0.0.1:${core.port}/` });
-      assert.ok(await until('!!document.querySelector(".app.shell .shell-welcome")'), `${capability}: empty page mounted after snapshot`);
+      assert.ok(await until('!!document.querySelector(".app.shell [data-map-capture=active]")'), `${capability}: empty page mounted after snapshot`);
       await evaluate('document.querySelector("[data-guide=catalog]").click()');
       assert.ok(await until('!!document.querySelector(".shell-catalog")'));
       assert.equal(await evaluate(`document.querySelectorAll('${switchQuery}').length`), available ? 1 : 0,

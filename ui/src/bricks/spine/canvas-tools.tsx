@@ -9,7 +9,7 @@ import "./canvas-tools.css";
 const IDS: CanvasToolId[] = ["composer", "features", "history"];
 const LABELS = { composer: "Type a thought", features: "Features", history: "History" };
 type ToolNode = Node<{ tool: CanvasToolId; height: number }, "canvasTool">;
-export type CanvasNode = ItemNode | ToolNode;
+export type CanvasNode = ItemNode | ToolNode | import("./capture").CaptureNode;
 
 export function useCanvasToolNodes() {
   const tools = useContext(CanvasToolsContext);

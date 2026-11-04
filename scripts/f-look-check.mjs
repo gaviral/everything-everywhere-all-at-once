@@ -55,7 +55,7 @@ try {
   }
 const results=[];
 const save=(path,data)=>{if(existsSync(path))renameSync(path,path+'.previous-'+Date.now());writeFileSync(path,data)};
-for(const [device,width,height] of [['desktop',1440,900],['phone',390,844]]) for(const scheme of ['light','dark']){
+for(const [device,width,height] of [['desktop',1440,900],['phone',390,844]].filter(([device])=>!process.env.LOOK_DEVICE||process.env.LOOK_DEVICE===device)) for(const scheme of ['light','dark']){
  let browser;
  try{
   browser=await openPage('about:blank',{width,height});
@@ -81,16 +81,16 @@ for(const [device,width,height] of [['desktop',1440,900],['phone',390,844]]) for
   };
   const clean=()=>check(`!document.querySelector('.brick-broke,.crash') && lookErrors.length===0`,'no UI errors');
   await page('Page.navigate',{url:`http://127.0.0.1:${servers.empty.port}/`});
-  await check(`!!document.querySelector('.shell-welcome button') && document.body.innerText.includes('This copy has no AI key')`,'empty key explanation');
+  await check(`!!document.querySelector('.map-capture-setup') && document.body.innerText.includes('No AI key')`,'empty key explanation');
   await check(`!(/MODEL_API_KEY|\\.env/.test(document.body.innerText))`,'empty screen has no technical setup text');
   await clean();await shot('empty');
-  await click('.shell-welcome .shell-link');await check(`!!document.querySelector('.ai-setup[open]')`,'setup opens');
+  await click('.map-capture-setup');await check(`!!document.querySelector('.ai-setup[open]')`,'setup opens');
   await check(`document.querySelector('.ai-setup').innerText.includes('MODEL_API_KEY')`,'technical setup behind action');
   await shot('setup');await key('Escape','Escape',27);
   await check(`!document.querySelector('.ai-setup')`,'Escape closes setup');
   await page('Page.navigate',{url:`http://127.0.0.1:${servers.sample.port}/?sample`});
   await check(`!!document.querySelector('.shell-welcome') || !!document.querySelector('.spine-ready')`,'sample available');
-  if(await evaluate(`!!document.querySelector('.shell-welcome')`))await click('.shell-sample');
+  if(await evaluate(`!!document.querySelector('.map-capture-example')`))await click('.map-capture-example');
   await check(`!!document.querySelector('.spine-ready')`,'map ready');
   await check(`!!document.querySelector('.pullback .pullback-quote')`,'recorded reminder appears');
   await evaluate('document.fonts.ready');await sleep(600);
@@ -107,20 +107,22 @@ for(const [device,width,height] of [['desktop',1440,900],['phone',390,844]]) for
   assert.ok(spacing.clear<=spacing.controls-8,'map ends above lower controls');
   if(device==='phone') {
     const opening=await evaluate(`(()=>{
-      const head=document.querySelector('.spine-head');
-      const words=[...document.querySelectorAll('.spine-point .spine-text')]
-        .find(e=>e.closest('[data-thread]')?.dataset.thread===head?.dataset.thread);
+      const words=document.querySelector('.spine-point.spine-on .spine-text');
+      const input=document.querySelector('[data-map-capture=active]');
+      const mic=input?.querySelector('.mic'),m=mic?.getBoundingClientRect();
       const covers=[...document.querySelectorAll('[data-slot="top-left"],[data-slot="top-right"],.sample-recovery-actions')]
         .filter(e=>getComputedStyle(e).visibility!=='hidden').map(e=>e.getBoundingClientRect()).filter(r=>r.width&&r.height);
-      return {top:Math.max(0,...covers.map(r=>r.bottom)),words:words?.getBoundingClientRect().toJSON()};
+      return {top:Math.max(0,...covers.map(r=>r.bottom)),words:words?.getBoundingClientRect().toJSON(),input:input?.getBoundingClientRect().toJSON(),micHit:!!m&&mic.contains(document.elementFromPoint(m.x+m.width/2,m.y+m.height/2))};
     })()`);
-    assert.ok(geometry.head.top>=opening.top+8 && geometry.head.bottom<=spacing.clear,
-      'opening topic is fully below the top controls and above lower controls');
-    assert.ok(geometry.head.left>=0 && geometry.head.right<=width,
-      'opening topic fits across the phone');
-    assert.ok(opening.words && opening.words.height>0 && opening.words.top>=geometry.head.bottom && opening.words.bottom<=spacing.clear
-      && opening.words.left>=0 && opening.words.right<=width,
-      'the opening thought is readable before lower controls');
+    assert.ok(opening.words && opening.words.height>0 && opening.words.top>=opening.top+8 && opening.words.bottom<=spacing.clear
+      && opening.words.left>=0 && opening.words.right<=width,'current thought stays readable between the phone controls');
+    const inputReadable=opening.input && opening.input.top>=opening.top+8 && opening.input.bottom<=spacing.clear
+      && opening.input.left>=0 && opening.input.right<=width && opening.micHit;
+    if(!inputReadable) {
+      await check(`!!document.querySelector('.capture-return button')`,'explicit source navigation keeps a route back to input');
+      await click('.capture-return button');
+      await check(`(()=>{const e=document.querySelector('[data-map-capture=active]'),r=e?.getBoundingClientRect(),m=e?.querySelector('.mic'),b=m?.getBoundingClientRect();return r&&r.left>=0&&r.right<=innerWidth&&r.top>=${opening.top+8}&&r.bottom<=${spacing.clear}&&!!b&&m.contains(document.elementFromPoint(b.x+b.width/2,b.y+b.height/2))})()`,'return restores a readable input and reachable microphone');
+    }
   }
   await clean();await shot('map');
   await click('.shell-find input');await shot('find');await key('Escape','Escape',27);

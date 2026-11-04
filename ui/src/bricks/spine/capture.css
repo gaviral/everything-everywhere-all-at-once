@@ -1,0 +1,43 @@
+.map-capture { pointer-events: auto; position: relative; background: var(--bg); width: 300px; box-sizing: border-box; padding: 0 0 14px 20px; border-left: 2px solid var(--blue, #547cba); color: var(--ink); text-align: left; }
+.map-capture-heading { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 550; margin: 0 0 16px -25px; }
+.map-capture-heading > i { width: 8px; height: 8px; border: 2px solid var(--blue, #547cba); border-radius: 50%; background: var(--paper, #faf9f6); }
+html.shell2 .map-capture .shell-composer { display: flex; flex-wrap: wrap; width: 100%; min-width: 0; padding: 0; height: auto; border: 0; border-radius: 0; background: transparent; box-shadow: none; gap: 8px; }
+html.shell2 .map-capture .shell-composer textarea { order: -1; flex: 0 0 100%; width: 100%; min-width: 0; height: 72px !important; max-height: 240px !important; min-height: 72px; resize: none; overflow-y: auto; font-size: 18px; line-height: 1.5 !important; padding: 0; background: transparent; border: 0; border-radius: 0; }
+.map-capture:focus-within { border-left-color: var(--blue, #547cba); }
+html.shell2 .map-capture .shell-composer-label, html.shell2 .map-capture .shell-composer > kbd { display: none; }
+.map-capture-mic { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.map-capture .mic { flex: 0 0 auto; }
+html.shell2 .map-capture .shell-composer .map-capture-hint { margin-left: auto; align-self: center; font-size: 11px; color: var(--muted); }
+.map-capture-words, .map-capture-live p { margin: 0 0 18px; font-size: 18px; line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; max-height: 240px; overflow-y: auto; }
+.map-capture-live p > i { display: inline-block; height: 1em; border-right: 2px solid var(--blue, #547cba); margin-left: 4px; vertical-align: -2px; }
+.map-capture-state { font-size: 11px; line-height: 1.6; color: var(--muted); }
+.map-capture-state button { margin-left: 10px; }
+.map-capture-waiting { border-left-style: dashed; }
+.map-capture-saved { font-size: 11px; color: var(--muted); }
+html.shell2 .shell.capture-in-place .shell-status { min-height: 34px; }
+html.shell2 .shell.capture-in-place .shell-status-state { display: none; }
+html.shell2 .shell.capture-in-place .shell-status-right { margin-left: auto; }
+
+.map-capture .shell-tool-body { display: block; }
+
+/* The next editor starts in clear space immediately; only the thought travels to its destination. */
+.capture-anchor { transition: none; }
+html.shell2 .map-capture .map-capture-receipt { padding: 10px 0 0; border: 0; background: transparent; font-size: 11px; }
+html.shell2 .map-capture .map-capture-receipt button { font-size: 11px; text-align: left; }
+@media (prefers-reduced-motion: reduce) { .capture-anchor { transition: none; } }
+
+html.shell2 .map-capture .map-capture-receipt button { color: var(--muted); background: transparent; border: 0; padding: 4px 0; font-family: inherit; cursor: pointer; }
+html.shell2 .map-capture .map-capture-receipt button:hover { color: var(--ink); text-decoration: underline; }
+html.shell2 .map-capture-speaking .shell-composer textarea { height: 44px !important; min-height: 44px; }
+html.shell2 .map-capture textarea:focus-visible { outline: 2px solid color-mix(in srgb, var(--blue) 40%, transparent); outline-offset: 5px; }
+.map-capture :is(button,textarea):focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
+
+@media (max-width: 560px) {
+  .map-capture { max-height: calc(100dvh - 180px); overflow-y: auto; overscroll-behavior: contain; }
+  .map-capture-live p { max-height: 20dvh; }
+}
+
+.capture-return { top: 64px; margin-top: 0; }
+.capture-return button { display: flex; gap: 12px; align-items: center; max-width: calc(100vw - 24px); min-height: 40px; padding: 8px 14px; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); color: var(--ink); box-shadow: var(--shadow); font: inherit; font-size: 13px; cursor: pointer; }
+.capture-return button span:first-child { color: var(--muted); }
+.capture-return button:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }

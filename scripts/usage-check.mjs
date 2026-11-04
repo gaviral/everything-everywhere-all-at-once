@@ -98,7 +98,7 @@ try {
       addEventListener("unhandledrejection", e => __errors.push(String(e.reason)));
     ` });
     await browser.page("Page.navigate", { url });
-    assert.ok(await browser.until('!!document.querySelector(".shell-welcome")'), "the page received the empty map");
+    assert.ok(await browser.until('!!document.querySelector("[data-map-capture=active]")'), "the page received the empty map");
     assert.equal(await browser.evaluate('!!document.querySelector(".usage")'), false, "off by default, even with a usage file");
     await features();
     assert.equal(await browser.evaluate(`document.querySelector('${usageSwitch}').getAttribute("aria-checked")`), "false");
@@ -162,7 +162,7 @@ try {
     { type: "snapshot", me: "you", world: { threads: [], thoughts: [], active: null, active_by: {} } }, usage(397),
   ]);
   browser = await openPage(`http://127.0.0.1:${fixture.port}`);
-  assert.ok(await browser.until('!!document.querySelector(".shell-welcome")'));
+  assert.ok(await browser.until('!!document.querySelector("[data-map-capture=active]")'));
   await features();
   await toggle();
   await browser.evaluate('document.querySelector(".shell-rail-close").click()');
