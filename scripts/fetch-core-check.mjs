@@ -181,7 +181,8 @@ try {
     };
   `);
   const run = (args, env = {}) => spawnSync(process.execPath, ["--import", shim, script, ...args],
-    { cwd: temporary, env, encoding: "utf8", timeout: 5000 });
+    // Leave room for cold Node startup during parallel gate runs; fetch timeouts are tested separately above.
+    { cwd: temporary, env, encoding: "utf8", timeout: 60_000 });
   let result = run(["--help"]);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /TAG/);

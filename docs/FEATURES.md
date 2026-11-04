@@ -232,7 +232,7 @@ An app is a watcher (a new thought, a phrase, a topic, loud voices for some seco
 
 ### Features
 
-Parts of the app can be features: a view, a card, an input or a panel, each in a folder of its own under `ui/src/bricks/`, found by reading the folders, so adding one is adding a folder. The Features page lists them, each with its line and an on/off switch kept in this browser. Two so far, both off until switched on: Bubbles, a view beside Cards and Pictures that shows each topic as a bubble sized by its points, and the Level meter (also `?level`). Each feature sees the map read-only and acts only as the app's own buttons do; `ui/bricks.html` runs one on a sample map, without the core. How to build one: [`docs/bricks.md`](bricks.md).
+Parts of the app can be features: a view, a card, an input or a panel, each in a folder of its own under `ui/src/bricks/`, found by reading the folders, so adding one is adding a folder. The Features page lists them, each with its line and an on/off switch kept in this browser. The Level meter is one optional feature (also `?level`). Each feature sees the map read-only and acts only as the app's own buttons do; `ui/bricks.html` runs one on a sample map, without the core. How to build one: [`docs/bricks.md`](bricks.md).
 
 ### Recap
 

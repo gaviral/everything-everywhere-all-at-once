@@ -17,13 +17,14 @@ type SpeechMessage = {
 };
 
 export type Playback = { phase: "off" | "queued" | "playing" | "failed"; text: string; error: string };
-let playback: Playback = { phase: "off", text: "", error: "" };
+const idlePlayback: Playback = { phase: "off", text: "", error: "" };
+let playback: Playback = idlePlayback;
 const playbackListeners = new Set<() => void>();
 function publish(phase: Playback["phase"], error = "") {
   playback = { ...playback, phase, error };
   playbackListeners.forEach(listener => listener());
 }
-export const usePlayback = () => useSyncExternalStore(listener => { playbackListeners.add(listener); return () => { playbackListeners.delete(listener); }; }, () => playback);
+export const usePlayback = () => useSyncExternalStore(listener => { playbackListeners.add(listener); return () => { playbackListeners.delete(listener); }; }, () => playback, () => idlePlayback);
 let replyId: string | undefined;
 const stoppedReplies = new Set<string>();
 export const replyStopped = (id?: string) => !!id && stoppedReplies.has(id);
@@ -104,7 +105,7 @@ export function hearPageSpeech(data: unknown) {
   const failed = () => {
     if (utterance !== next) return;
     stopPageSpeech();
-    publish("failed", "Reply audio failed. Read the reply on the spine, retry audio, or type below.");
+    publish("failed", "Reply audio failed. Read the reply on the Canvas, retry audio, or type below.");
   };
   next.onerror = failed;
   utterance = next;

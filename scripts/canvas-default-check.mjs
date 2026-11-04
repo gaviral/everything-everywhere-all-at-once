@@ -58,15 +58,16 @@ try {
       const { page, evaluate, until } = browser;
       // Without Page.enable, Chrome accepts the script below and never runs it.
       await page("Page.enable");
-      await page("Page.addScriptToEvaluateOnNewDocument", { source: `
-        localStorage.clear(); sessionStorage.clear();
+      const captureErrors = `
         window.__canvasCheck = { errors: [], fresh: localStorage.length === 0 && sessionStorage.length === 0 };
         // Chrome reports a size observer whose change lands a frame later (the dock's, on first paint) as a window error: not one.
         addEventListener("error", e => { if (!/^ResizeObserver loop/.test(e.message)) __canvasCheck.errors.push(e.message || "Resource failed: " + e.target?.src); }, true);
         addEventListener("unhandledrejection", e => __canvasCheck.errors.push(String(e.reason)));
         const error = console.error;
         console.error = (...args) => { __canvasCheck.errors.push(args.map(String).join(" ")); error.apply(console, args); };
-      ` });
+      `;
+      const { identifier: storageSeed } = await page("Page.addScriptToEvaluateOnNewDocument", { source:
+        `localStorage.clear(); sessionStorage.clear(); ${captureErrors}` });
       await page("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: width < 600 });
       await page("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: scheme }] });
       const healthy = async () => {
@@ -218,6 +219,39 @@ try {
       // The shell's first open on an empty map, with no flag and with the old address.
       shown = empty;
       for (const query of ["", "?shell=2"]) await navigate(query, ".shell-welcome");
+      // A saved switch for the removed view is inert. Preserve other choices on the next reload.
+      await page("Page.removeScriptToEvaluateOnNewDocument", { identifier: storageSeed });
+      await page("Page.addScriptToEvaluateOnNewDocument", { source: captureErrors });
+      await evaluate(`localStorage.clear(); sessionStorage.clear(); localStorage.setItem('e2a2o.bricks', JSON.stringify({ bubbles: true }));`);
+      shown = full;
+      const reloadLegacySwitch = async () => {
+        await page("Page.navigate", { url: base });
+        assert.ok(await until('!!document.querySelector(".app.shell .spine-frame.spine-ready")', 10000), `${label}: retired Bubbles switch falls back to Canvas`);
+        await evaluate("document.querySelector('.tour-skip')?.click()");
+        await evaluate('document.fonts.ready.then(() => true)');
+        assert.equal(await evaluate(`!!document.querySelector('[data-brick="bubbles"], [data-guide="view:bubbles"]')`), false, `${label}: no removed view is mounted`);
+        await healthy();
+      };
+      await reloadLegacySwitch();
+      assert.deepEqual(await evaluate("JSON.parse(localStorage.getItem('e2a2o.bricks'))"), { bubbles: true }, `${label}: the old switch is not rewritten`);
+      await evaluate(`document.querySelector('[data-guide="catalog"]').click()`);
+      assert.ok(await until(`!!document.querySelector('[data-slot="rail"] [data-row="bubble-flight"]')`), `${label}: Fly-in remains in Features`);
+      assert.ok(await evaluate(`!!document.querySelector('[data-slot="rail"] [data-row="work-spine"]')`), `${label}: Work spine remains in Features`);
+      assert.equal(await evaluate(`!!document.querySelector('[data-slot="rail"] [data-row="bubbles"]')`), false, `${label}: Bubbles is absent from Features`);
+      await evaluate('document.querySelector(".shell-rail-close").click()');
+      const savedSwitches = { bubbles: true, level: true, usage: false, "live-outline": true };
+      await evaluate(`localStorage.setItem('e2a2o.bricks', ${JSON.stringify(JSON.stringify(savedSwitches))})`);
+      await reloadLegacySwitch();
+      assert.ok(await until(`!!document.querySelector('[data-brick="level"]')`), `${label}: another saved feature still mounts`);
+      assert.deepEqual(await evaluate("JSON.parse(localStorage.getItem('e2a2o.bricks'))"), savedSwitches, `${label}: other saved switches survive reload`);
+      core.send({ type: "guide", kind: "point", target: "composer", text: "Keep typing here.", by: "Helper", at_ms: Date.now() });
+      assert.ok(await until(`(() => {
+        const ring=document.querySelector('.guide-ring'), input=document.querySelector('[data-guide="composer"]');
+        if (!ring || !input || !['near','aimed'].includes(document.querySelector('.guide-layer')?.dataset.state)) return false;
+        const r=ring.getBoundingClientRect(), c=input.getBoundingClientRect();
+        return r.width>=c.width && Math.abs((r.left+r.right)-(c.left+c.right))<2;
+      })()`, 3000), `${label}: guide still targets the input after a legacy switch reload`);
+      await healthy();
       await browser.close();
       browser = null;
     }

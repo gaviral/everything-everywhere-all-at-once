@@ -35,7 +35,14 @@ const NOT_CONNECTED = "notice: “Not connected — try again when connected.”
 
 export const ACTIONS: Action[] = [
   { id: "partner-cancel", how: "click", at: [["PartnerStatus.tsx", "onClick={() => {"]], pressed: PRESS, waits: "core",
-    done: "browser speech stops immediately; the core cancels a pending answer and shows Reply cancelled", failed: "a disconnected socket clears the thinking state" },
+    done: "browser speech stops immediately and shows Reply stopped; the core cancels a pending answer", failed: "local speech stops even while disconnected" },
+  { id: "partner-retry-audio", how: "click", at: [["PartnerStatus.tsx", "onClick={retryPageReply}"]], pressed: PRESS,
+    working: "Preparing reply audio, then Reply playing", done: "the retained reply is spoken again", failed: "the audio error and Retry audio remain available",
+    says: ["Preparing reply audio…", "Reply playing", "Retry audio"] },
+  { id: "partner-stop-conversation", how: "click", at: [["PartnerStatus.tsx", "onClick={onStopConversation}"]], pressed: PRESS,
+    done: "capture and local reply audio stop immediately; the partner turns off and recognized Draft words remain" },
+  { id: "voice-draft-copy", how: "click", at: [["App.tsx", "setDraft(text => text ?"]], pressed: PRESS,
+    done: "recognized words append to the editor, the Draft closes, and the editor receives focus" },
   // The new shell: corners, Find, held questions and the rail.
   { id: "catalog-corner", how: "click", at: [["App.tsx", `toggleTab("catalog")`], ["shell/Shell.tsx", "onClick={onClick} data-guide={guide}"]], pressed: PRESS,
     done: "the rail opens at the Features tab, or closes; the button stays pressed while it's open" },

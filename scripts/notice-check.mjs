@@ -97,7 +97,7 @@ try {
   for (const notice of ["The AI key was refused. Check MODEL_API_KEY in .env, then restart.", "Moved to Health", ""]) assert.ok(!micNotice(notice), notice);
   const appText = readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8");
   const startPath = appText.slice(appText.indexOf("const toggleMic"), appText.indexOf("await startMic("));
-  assert.match(startPath, /setStartingMic\(true\);\s*if \(micNotice\(core\.notice\)\) core\.clearNotice\(\);/, "the tap that starts the mic clears its notice");
+  assert.match(startPath, /setStartingMic\(true\);\s*setMicFailed\(false\);\s*if \(micNotice\(core\.notice\)\) core\.clearNotice\(\);/, "the tap that starts the mic clears its failure state and notice");
   for (const notice of [quiet, busy]) assert.ok(staysUp(notice), notice);
 
   // A notice with Undo stays until a slow reader could notice it, read it and its button, check the map, decide and
@@ -110,6 +110,32 @@ try {
 
   // "Visa was refused" is a thread's title, not the key: "Back to Visa was refused" goes like any answer (review).
   assert.ok(!staysUp("Back to Visa was refused"));
+
+  // Active sends interrupt reading: Stop cannot wait behind an old completion or another card.
+  const { noticeQueue } = await server.ssrLoadModule("/src/notice-queue.ts");
+  const priority = noticeQueue();
+  const older = { id: 1, to: "Sam", text: "Earlier send", state: "stopped", live: false, message: "Stopped: not sent", until: 0, total: 5000 };
+  priority.push("send", "1", older);
+  priority.push("notice", "answer", { text: "Unread answer", undo: null });
+  const active = { ...older, id: 2, state: "counting", until: Date.now() + 5000 };
+  priority.push("send", "2", active);
+  assert.equal(priority.snapshot().value, active, "a fresh countdown preempts the older completion");
+  assert.equal(priority.find("send", "1").value, older, "preemption preserves the unread completion");
+  priority.push("notice", "later", { text: "Later answer", undo: null });
+  assert.equal(priority.snapshot().value, active, "ordinary answers cannot cover Stop");
+  const replacement = { ...active, id: 3 };
+  priority.push("send", "3", replacement);
+  assert.equal(priority.snapshot().value, replacement, "the current core count replaces an obsolete count");
+  assert.equal(priority.find("send", "2"), undefined);
+  priority.push("send", "3", { ...replacement, state: "stopped" });
+  assert.equal(priority.snapshot().key, "3", "its completion keeps the current reading turn");
+  priority.drop("send", "3");
+  assert.equal(priority.snapshot().value, older, "the interrupted completion resumes afterwards");
+  priority.drop("send", "1");
+  assert.equal(priority.snapshot().key, "answer", "the remaining unread answers resume in arrival order");
+  priority.push("send", "1", { ...active, id: 1 });
+  assert.equal(priority.snapshot().kind, "send", "an active countdown cannot be suppressed by a previously read id");
+  assert.equal(priority.snapshot().key, "1");
 
   // The real hook: a burst waits in order, keeps its own Undo and survives new speech.
   const { useCore } = await server.ssrLoadModule("/src/core.ts");
