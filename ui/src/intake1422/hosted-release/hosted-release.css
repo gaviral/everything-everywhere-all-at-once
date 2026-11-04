@@ -1,0 +1,15 @@
+.hosted-release { color: #172f36; background: #fffdf7; border: 1px solid #b9cbc8; border-radius: 16px; padding: clamp(16px, 4vw, 40px); line-height: 1.6; }
+.hosted-release header { border-bottom: 2px solid #36796c; padding-bottom: 20px; }
+.hosted-release h2 { font-size: clamp(26px, 4vw, 38px); line-height: 1.15; margin: 10px 0; }
+.hosted-release h3 { margin: 28px 0 10px; }
+.hosted-release-eyebrow { color: #42665d; font-size: 12px; letter-spacing: .1em; font-weight: 700; }
+.hosted-release dl { display: grid; grid-template-columns: minmax(110px, 160px) minmax(0, 1fr); gap: 8px 16px; }
+.hosted-release dd { margin: 0; overflow-wrap: anywhere; }
+.hosted-release code { font-size: .88em; overflow-wrap: anywhere; }
+.hosted-release-table { overflow-x: auto; }
+.hosted-release table { border-collapse: collapse; width: 100%; text-align: left; }
+.hosted-release th, .hosted-release td { padding: 12px; border-bottom: 1px solid #cedad5; vertical-align: top; }
+.hosted-release thead { background: #e7efea; }
+.hosted-release li { margin: 8px 0; overflow-wrap: anywhere; }
+.hosted-release [role="alert"] { padding: 20px; border: 2px solid #993c26; background: #fff0e9; }
+@media (max-width: 600px) { .hosted-release dl { display: block; } .hosted-release dt { margin-top: 10px; font-weight: 700; } .hosted-release table { min-width: 650px; } }
