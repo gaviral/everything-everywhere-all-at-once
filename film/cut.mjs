@@ -127,8 +127,10 @@ export async function cut(args = process.argv.slice(2)) {
   const results = new Array(plan.shots.length), inFlight = new Map();
   await pool(plan.shots, async (original, index) => {
     try {
-      const { shot, key } = await prepareShot(original, opts.file, shared, hashFile);
-      const frames = Math.ceil(shot.duration * format.fps - 1e-8), file = join(opts.cuts, `${key}.mp4`);
+      const frames = original.frames?.[format.preview ? 'preview' : 'final'] ?? Math.ceil(original.duration * format.fps - 1e-8);
+      if (!Number.isInteger(frames) || frames < 1) throw new Error('Shot frame allocation must be a positive integer');
+      const { shot, key } = await prepareShot({...original, duration: frames / format.fps}, opts.file, shared, hashFile);
+      const file = join(opts.cuts, `${key}.mp4`);
       let reused = await cached(file, format, frames);
       if (!reused) {
         if (!inFlight.has(key)) inFlight.set(key, renderShot(shot, file, format, frames));
@@ -145,6 +147,12 @@ export async function cut(args = process.argv.slice(2)) {
   await writeFile(`${opts.out}.json`, JSON.stringify(report, null, 2) + '\n');
   if (report.failed) throw new Error(`${report.failed} shot(s) failed; successful cuts retained. Film was not joined.`);
   await joinShots(results, opts);
+  let cursor = 0;
+  const times = results.map(r => {
+    const line = `${(cursor / format.fps).toFixed(3)}\t${r.id}\t${(r.frames / format.fps).toFixed(3)}`;
+    cursor += r.frames; return line;
+  });
+  await writeFile(opts.out.replace(/\.mp4$/, '.times.txt'), 'start_seconds\tshot_id\tduration_seconds\n' + times.join('\n') + `\n${(cursor / format.fps).toFixed(3)}\tEND\t0.000\n`);
   console.log(`JOINED ${results.length} shots: ${opts.out}`);
   return report;
 }
