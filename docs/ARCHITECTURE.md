@@ -10,6 +10,7 @@ Browser, one page per window (ui/src)
   RecoveryPanel.tsx  unfinished speech, other-map words and explicit online sends; consumes the core hook’s typed recovery state
   core.ts        the WebSocket; applies each Change to its own copy of the world (mirrors world.rs)
   mic.ts         the mic as 24 kHz 16-bit PCM in 80 ms frames (worklet in ui/public)
+  film.ts        opt-in `?film` camera, pointer and caption controls; film.css hides recording distractions (checked by scripts/film-check.mjs)
   pictures.ts    the one picture-slot rule (Cards view, Unfinished thought card, Pictures view): letter until decoded, capped refetches
   MicButton.tsx  the mic's states (off, starting, listening, hearing you, paused, no key, refused, connecting)
   Tips.tsx       one shared tip for every element with `data-tip` (each ✦ says what the AI did and its undo)

@@ -11,6 +11,8 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { bundledCore, check, coreAddresses, corePort, free, lanIp, launchUrl, loadDotenv, rustFloor, toolchainProblem } from "./start.mjs";
 
+// A launch starts several Node processes; allow for parallel precheck builds on a busy machine.
+const LAUNCH_TIMEOUT_MS = 60000;
 const load = (text, env = {}) => { const out = { ...env }; const r = loadDotenv(text, out); return { ...out, ...r }; };
 
 // dotenvy's own test file (iter.rs test_parse_line_env) reads to these values.
@@ -225,7 +227,7 @@ process.exit(Number(process.env.CORE_EXIT ?? 0));
     FIXTURE_LOG: join(dir, "events"), FIXTURE_MARKER: "kept value", E2A2O_DATA: "../fixture-data",
     OPENSSL_DIR: "/fixture/ssl" };
   const run = (args = [], extra = {}) => spawnSync(join(dir, "run.sh"), args,
-    { cwd: tmpdir(), env: { ...env, ...extra }, encoding: "utf8", timeout: 15000 });
+    { cwd: tmpdir(), env: { ...env, ...extra }, encoding: "utf8", timeout: LAUNCH_TIMEOUT_MS });
   const events = () => { try { return readFileSync(env.FIXTURE_LOG, "utf8"); } catch { return ""; } };
   const binary = join(dir, `e2a2o-core-${process.platform}-${process.arch}`);
   return { dir, env, run, events, binary };
@@ -267,7 +269,7 @@ assert.equal(selected.stderr, "");
 assert.equal(bundle.events(), "");
 const preflight = spawnSync(process.execPath,
   [join(bundle.dir, "scripts/start.mjs"), "--selected-core", bundle.binary, "sample"],
-  { env: bundle.env, encoding: "utf8", timeout: 15000 });
+  { env: bundle.env, encoding: "utf8", timeout: LAUNCH_TIMEOUT_MS });
 assert.equal(preflight.status, 0, preflight.stderr);
 assert.equal(preflight.stdout, "0\n", "preflight stdout stays a machine-readable port");
 assert.equal(preflight.stderr, "");
