@@ -12,8 +12,25 @@ import "./kit.css";
 const BUILD_ALL = /\b(build|make|do) (it |that |this )?all( of)?( that| this| it)?\b|\bbuild everything\b/i;
 const opensAtOnce = () => new URLSearchParams(location.search).has("crew");
 
+/** The person keeps talking while it builds, so the bottom bar with their live words stays in view. */
+function useBarHeight(open: boolean) {
+  const [height, setHeight] = useState(0);
+  useEffect(() => {
+    if (!open) return;
+    const measure = () => {
+      const stage = document.querySelector('[data-slot="stage"]');
+      setHeight(stage ? Math.max(0, Math.min(200, innerHeight - stage.getBoundingClientRect().top)) : 0);
+    };
+    measure();
+    addEventListener("resize", measure);
+    return () => removeEventListener("resize", measure);
+  }, [open]);
+  return height;
+}
+
 export default function Crew({ on, actions, map }: BrickProps) {
   const [open, setOpen] = useState(opensAtOnce);
+  const barHeight = useBarHeight(open);
   const [run, setRun] = useState<Run | null>(null);
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState("");
@@ -78,6 +95,13 @@ export default function Crew({ on, actions, map }: BrickProps) {
     }
   }, [actions, busy, change, workOn]);
 
+  // A sketch hands over its parts from the Draw sheet.
+  useEffect(() => {
+    const fromSketch = (event: Event) => { void go((event as CustomEvent<string>).detail); };
+    addEventListener("e2a2o:crew-build", fromSketch);
+    return () => removeEventListener("e2a2o:crew-build", fromSketch);
+  }, [go]);
+
   // "Build all that": everything said since the last run is the brief.
   useBrickEvent(on, "landed", event => {
     if (!event.mine) return;
@@ -90,7 +114,7 @@ export default function Crew({ on, actions, map }: BrickProps) {
 
   if (!open) return <button className="crew-open" onClick={() => setOpen(true)} aria-label="Open the crew">Crew</button>;
   const elapsed = run?.doneMs ?? clock;
-  return <div className="crew" role="dialog" aria-label="Crew">
+  return <div className="crew" role="dialog" aria-label="Crew" style={{ bottom: barHeight }}>
     <header className="crew-head">
       <div>
         <h2>{run?.name ?? "Say it all at once."}</h2>
