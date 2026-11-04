@@ -1,0 +1,7 @@
+.hosted-release-preview { max-width: 1080px; margin: 32px auto; padding: 0 16px; font: 16px/1.6 system-ui, sans-serif; color: #172f36; }
+.hosted-release-preview fieldset { border: 1px solid #9ab5ae; border-radius: 12px; padding: 16px 24px; margin: 24px 0; background: #edf3ef; }
+.hosted-release-preview label { display: flex; align-items: center; gap: 10px; margin: 12px 0; }
+.hosted-release-preview input { width: 20px; height: 20px; }
+.hosted-release-preview select { font: inherit; max-width: 100%; padding: 5px; }
+.hosted-release-preview :focus-visible { outline: 3px solid #985300; outline-offset: 3px; }
+@media (max-width: 600px) { .hosted-release-preview label { flex-wrap: wrap; } }
