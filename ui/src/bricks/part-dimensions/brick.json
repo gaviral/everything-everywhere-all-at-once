@@ -1,0 +1,8 @@
+{
+  "id": "part-dimensions",
+  "name": "Part dimensions",
+  "does": "Follow example steps through their interface, behavior and data parts.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": true
+}

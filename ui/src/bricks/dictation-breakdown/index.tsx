@@ -1,0 +1,13 @@
+import { useState } from "react";
+import type { BrickProps } from "../contract";
+import { DictationBreakdown } from "../../msg1351/dictation-breakdown";
+import { syntheticDictation, syntheticHomes } from "../../msg1351/dictation-breakdown/fixture";
+import "./example.css";
+
+export default function DictationExample({ actions }: BrickProps) {
+  const [enabled, setEnabled] = useState(true);
+  return <section className="dictation-breakdown-example" aria-label="Dictation breakdown example" data-guide="dictation-breakdown">
+    <div><strong>Dictation breakdown · local example</strong><button onClick={() => actions.openCatalog("dictation-breakdown")}>Features</button></div>
+    <DictationBreakdown enabled={enabled} onEnabledChange={setEnabled} initialSource={syntheticDictation} queueHomes={syntheticHomes} />
+  </section>;
+}
