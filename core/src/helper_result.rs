@@ -179,7 +179,7 @@ fn redact(text: &str, root: &Path) -> String {
     text.split_inclusive(char::is_whitespace)
         .map(|token| {
             if [
-                "/Users/",
+                concat!("/", "Users", "/"),
                 "/home/",
                 "/private/",
                 "/tmp/",

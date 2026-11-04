@@ -37,9 +37,10 @@ async fn coexist_fixture() -> Coexist {
     let repo = root.join("source");
     std::fs::create_dir_all(&repo).unwrap();
     std::fs::write(repo.join("README.md"), "# Example\n").unwrap();
-    for args in [vec!["init", "-q"], vec!["add", "README.md"], vec!["-c", "user.name=User", "-c", "user.email=12901566+gaviral@users.noreply.github.com", "-c", "core.hooksPath=/dev/null", "commit", "-q", "--no-gpg-sign", "-m", "Isolated mechanics fixture"]] {
+    for args in [vec!["init", "-q"], vec!["add", "README.md"], vec!["-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "-c", "core.hooksPath=/dev/null", "commit", "-q", "--no-gpg-sign", "-m", "Isolated mechanics fixture"]] {
         assert!(tokio::process::Command::new("git").args(args).current_dir(&repo)
             .env("GIT_CONFIG_GLOBAL", "/dev/null").env("GIT_CONFIG_NOSYSTEM", "1")
+            .env_remove("GIT_AUTHOR_NAME").env_remove("GIT_AUTHOR_EMAIL").env_remove("GIT_COMMITTER_NAME").env_remove("GIT_COMMITTER_EMAIL")
             .status().await.unwrap().success());
     }
     let script = root.join("worker.py");

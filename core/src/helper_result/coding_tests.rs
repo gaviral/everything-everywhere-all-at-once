@@ -66,7 +66,8 @@ async fn builtin_result_running_comes_from_provider_start_and_stop_is_truthful()
         .lock()
         .unwrap()
         .active
-        .as_ref()
+        .values()
+        .find(|run| run.coding)
         .unwrap()
         .clone();
     assert!(stop(&core, run.id));

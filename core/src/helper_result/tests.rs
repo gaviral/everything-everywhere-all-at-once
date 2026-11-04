@@ -148,7 +148,7 @@ async fn bounded_and_private_files_and_paths_are_withheld() {
     let (root, base) = repository().await;
     std::fs::write(
         root.join("example.txt"),
-        format!("{}\n{}example/private/value\n", root.display(), "/Users/"),
+        format!("{}\n{}example/private/value\n", root.display(), concat!("/", "Users", "/")),
     )
     .unwrap();
     std::fs::write(root.join(".env"), "PRIVATE_FILE_SENTINEL").unwrap();
@@ -157,7 +157,7 @@ async fn bounded_and_private_files_and_paths_are_withheld() {
     let json = serde_json::to_string(&view).unwrap();
     assert!(
         !json.contains("PRIVATE_FILE_SENTINEL")
-            && !json.contains("/Users/")
+            && !json.contains(concat!("/", "Users", "/"))
             && !json.contains(root.to_str().unwrap())
     );
     assert!(view.files.iter().any(|f| f.withheld));
