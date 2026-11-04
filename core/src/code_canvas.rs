@@ -79,7 +79,7 @@ pub async fn read(ConnectInfo(link): ConnectInfo<crate::Link>) -> Response {
     response
 }
 
-fn admission(
+pub(super) fn admission(
     enabled: bool,
     from: std::net::IpAddr,
     to: std::net::IpAddr,
