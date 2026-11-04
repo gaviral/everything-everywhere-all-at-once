@@ -59,6 +59,7 @@ export type FeatureName = { name: string; aka?: string; does?: string; lives?: s
  *  missing here shows its brick.json name and line. */
 export const FEATURE_NAMES: Record<string, FeatureName> = {
   // Built in: switched here, as the features are.
+  "canvas-tools": { name: "Canvas tools", does: "Move Type a thought, Features and History onto the Canvas. Focus a tool to read it; Exit restores the ordinary shell.", lives: "The Canvas" },
   partner: { name: "Conversation partner", does: "E2A2O answers explicit questions with short spoken replies using Meta. Say ‘Partner, …’ for a follow-up. Cancel a reply at any time.", lives: "Beside your words and in Talk" },
   cards: { name: "Cards", aka: "List view", does: "Every topic as a card of its points, in a list you scroll and search.", lives: "A view" },
   pictures: { name: "Pictures", aka: "Gallery", does: "Every topic as its picture, side by side.", lives: "A view" },
