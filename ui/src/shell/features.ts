@@ -5,9 +5,10 @@ import { useSyncExternalStore } from "react";
 import { talkOn, watchTalk } from "../talk-preset";
 import type { BrickKind } from "../bricks/contract";
 
-export type BuiltIn = { id: "canvas-tools" | "terse" | "helpers" | "conversation-spine" | "email" | "partner" | "listening" | "recap" | "import" | "export" | "cards" | "pictures" | "semantic-zoom" | "bring-here" | "rotate-canvas"; kind: BrickKind; defaultOn: boolean };
+export type BuiltIn = { id: "full-content" | "canvas-tools" | "terse" | "helpers" | "conversation-spine" | "email" | "partner" | "listening" | "recap" | "import" | "export" | "cards" | "pictures" | "semantic-zoom" | "bring-here" | "rotate-canvas"; kind: BrickKind; defaultOn: boolean };
 
 export const BUILT_INS: readonly BuiltIn[] = [
+  { id: "full-content", kind: "panel", defaultOn: false },
   { id: "canvas-tools", kind: "panel", defaultOn: false },
   { id: "terse", kind: "view", defaultOn: false },
   { id: "bring-here", kind: "panel", defaultOn: false },

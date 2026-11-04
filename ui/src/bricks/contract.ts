@@ -21,6 +21,10 @@ export type CanvasTools = {
 export const CanvasToolsContext = createContext<CanvasTools | null>(null);
 
 /** This browser's optional readable Canvas overview; the playground keeps the default. */
+/** A local inspector request; never changes the World or source layout. */
+export type FullContentRequest = { threadId: string; thoughtIds?: readonly string[]; displayedPoint?: string; restoreCamera: () => void };
+export const FullContentContext = createContext<((request: FullContentRequest, source: HTMLElement) => void) | null>(null);
+
 export const SemanticZoomContext = createContext(false);
 
 /** Optional presentation objects, local to this visit. Never World thoughts or positions. */

@@ -1,3 +1,5 @@
+import { FullContentProvider } from "../FullContent";
+import { useBuiltInsOn } from "../shell/features";
 // The playground (bricks.html, docs/bricks.md): one brick on its own against a sample map from samples/, so a builder
 // needs neither the core, a key nor the whole app. `?brick=<id>` picks the brick (the template too) and `&sample=`
 // the map ("empty" for none). It's mounted as the app mounts it (BrickSlot.tsx), and what it asks for is answered
@@ -73,6 +75,7 @@ const PAUSE = Array(7).fill(0.01);
 const VOICES = [...Array(10).fill(0.075), ...PAUSE, ...Array(10).fill(0.1), ...PAUSE, ...Array(8).fill(0.2), ...PAUSE];
 
 function Playground() {
+  const builtIns = useBuiltInsOn();
   const params = new URLSearchParams(location.search);
   const [id, setId] = useState(params.get("brick") ?? found.bricks[0]?.info.id ?? "");
   const [sample, setSample] = useState(params.get("sample") ?? (SAMPLES["student-week"] ? "student-week" : "empty"));
@@ -288,6 +291,7 @@ function Playground() {
     {brick ? <p className="playground-about"><strong>{brick.info.name}</strong> · {brick.info.kind} · {brick.info.does} · {brick.info.defaultOn ? "on" : "off"} by default · {brick.info.demoSafe ? "demo-safe" : "not for the demo"}</p>
       : <p className="playground-about playground-wrong">{found.problems[id] ? `“${id}” can't load: ${found.problems[id].join("; ")}.` : `No feature “${id}” here. Pick one above.`}</p>}
     <ShapesContext.Provider value={shapes}>
+    <FullContentProvider enabled={builtIns.has("full-content")} threads={world.threads} thoughts={world.thoughts}>
     <SyntheticTools enabled={params.has("canvas-tools") && id === "spine"} add={add}>
     <div className={`playground-stage playground-${brick?.info.kind ?? "none"}`}>
       {id === "shapes" && shapeCanvas && <BrickMount brick={shapeCanvas} host={host} />}
@@ -296,6 +300,7 @@ function Playground() {
       {(brick?.info.kind === "panel" || brick?.info.kind === "input") && <p className="playground-hint">A {brick.info.kind} places itself on the page: look at its edges.</p>}
     </div>
     </SyntheticTools>
+    </FullContentProvider>
     </ShapesContext.Provider>
     <aside className="playground-log" aria-label="What the feature asked for">
       <strong>What it asked for</strong>

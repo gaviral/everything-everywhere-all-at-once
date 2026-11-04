@@ -1,4 +1,5 @@
 import { createPortal } from "react-dom";
+import { FullContentProvider } from "./FullContent";
 import { cancelPageReply, usePlayback } from "./page-speech";
 import RecoveryPanel from "./RecoveryPanel";
 import { PartnerStatus } from "./PartnerStatus";
@@ -1337,6 +1338,7 @@ export default function App() {
     <SpeechFixesContext.Provider value={speechFixes}>
     <SemanticZoomContext.Provider value={builtIns.has("semantic-zoom")}>
     <ShapesContext.Provider value={shapes}>
+    <FullContentProvider enabled={builtIns.has("full-content")} threads={world.threads} thoughts={world.thoughts}>
     <StayProvider thread={world.stay_here ?? null} connected={core.connected} stay={core.stay}>
     <div className="app" onClickCapture={(event) => {
       const target = event.target as HTMLElement;
@@ -1598,6 +1600,7 @@ export default function App() {
       }} />
     </div>
     </StayProvider>
+    </FullContentProvider>
     </ShapesContext.Provider>
     </SemanticZoomContext.Provider>
     </SpeechFixesContext.Provider>
@@ -1673,6 +1676,7 @@ export default function App() {
     <SpeechFixesContext.Provider value={speechFixes}>
     <SemanticZoomContext.Provider value={builtIns.has("semantic-zoom")}>
     <ShapesContext.Provider value={shapes}>
+    <FullContentProvider enabled={builtIns.has("full-content")} threads={world.threads} thoughts={world.thoughts}>
     <CanvasToolsContext.Provider value={canvasTools ? { slots: toolSlots, request: toolRequest, focus: focusTool, exit: () => switchBuiltIn("canvas-tools", false) } : null}>
     <StayProvider thread={world.stay_here ?? null} connected={core.connected} stay={core.stay}>
     <div className={`app shell${canvasTools ? " canvas-tools-on" : ""}`} onClickCapture={(event) => {
@@ -1849,6 +1853,7 @@ export default function App() {
     </div>
     </StayProvider>
     </CanvasToolsContext.Provider>
+    </FullContentProvider>
     </ShapesContext.Provider>
     </SemanticZoomContext.Provider>
     </SpeechFixesContext.Provider>
