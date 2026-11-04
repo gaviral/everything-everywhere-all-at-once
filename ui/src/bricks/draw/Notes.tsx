@@ -41,7 +41,7 @@ function NameLine({ label, strokes }: { label: Label; strokes: readonly Stroke[]
 function PartMarks({ reading }: { reading: Reading }) {
   const boxes = new Map(reading.parts.map(part => [part.name, part.box]));
   return <>
-    {reading.parts.map(part => <path key={part.name} className="draw-part" d={wobblyBox(part.name, part.box)} />)}
+    {reading.parts.map((part, index) => <path key={index} className="draw-part" d={wobblyBox(part.name + index, part.box)} />)}
     {reading.links.map(link => {
       const from = boxes.get(link.from), to = boxes.get(link.to);
       if (!from || !to) return null;
@@ -52,32 +52,40 @@ function PartMarks({ reading }: { reading: Reading }) {
   </>;
 }
 
-function Question({ item, index, onDone }: { item: Reading["unsure"][number]; index: number; onDone: () => void }) {
-  const left = item.at[0] < 500 ? 62 : 6, top = 8 + index * 16;
-  return <button className="draw-question" style={{ left: `${left}%`, top: `${top}%` }} onClick={onDone}>
+/** Where a question sits: the corner with the least ink, so it never covers what the person drew. */
+const CORNERS: readonly (readonly [number, number])[] = [[64, 18], [4, 18], [64, 62], [4, 62]];
+function emptiestCorner(strokes: readonly Stroke[]) {
+  const inkIn = ([left, top]: readonly [number, number]) => strokes.reduce((sum, stroke) => sum + stroke.points.filter(point =>
+    point.x * 100 >= left && point.x * 100 <= left + 34 && point.y * 100 >= top && point.y * 100 <= top + 24).length, 0);
+  return [...CORNERS].sort((one, other) => inkIn(one) - inkIn(other))[0];
+}
+
+function Question({ item, corner, onDone }: { item: Reading["unsure"][number]; corner: readonly [number, number]; onDone: () => void }) {
+  return <button className="draw-question" style={{ left: `${corner[0]}%`, top: `${corner[1]}%` }} onClick={onDone}>
     <span>{item.question}</span>
   </button>;
 }
 
 export function Notes({ strokes, labels, picked, reading, onForget }: Props) {
   const [answered, setAnswered] = useState<string[]>([]);
-  const open = (reading?.value.unsure ?? []).filter(item => !answered.includes(item.question));
+  const open = (reading?.value.unsure ?? []).filter(item => !answered.includes(item.question)).slice(0, 1);
+  const corner = emptiestCorner(strokes);
   const pickedBox = boundsOf(strokes.filter(stroke => picked.includes(stroke.id)));
   return <div className="draw-notes">
     <svg className="draw-lines" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
       {labels.map(label => <NameLine key={label.id} label={label} strokes={strokes} />)}
       {pickedBox && <path className="draw-picked" d={wobblyBox("picked", [toSheet(pickedBox.left) - 14, toSheet(pickedBox.top) - 18, toSheet(pickedBox.right) + 14, toSheet(pickedBox.bottom) + 18])} />}
       {reading && <PartMarks reading={reading.value} />}
-      {open.map((item, index) => {
-        const start: [number, number] = [item.at[0] < 500 ? 620 : 300, 60 + index * 160 + 74];
+      {open.map(item => {
+        const start: [number, number] = [corner[0] * 10 + 40, corner[1] * 10 + (corner[1] < 40 ? 110 : -14)];
         const line = curve(start, item.at, 0.22);
         return <g key={item.question}><path className="draw-ask" d={line.path} /><path className="draw-ask" d={arrowHead(line.control, item.at)} /></g>;
       })}
     </svg>
     {labels.map(label => <NameMark key={label.id} label={label} strokes={strokes} onForget={() => onForget(label.id)} />)}
-    {reading?.value.parts.filter(part => !labels.some(label => sameName(label.text, part.name))).map(part =>
+    {reading?.value.parts.filter(part => part.name && !labels.some(label => sameName(label.text, part.name))).map(part =>
       <span key={part.name} className="draw-part-name" style={{ left: `${part.box[0] / 10}%`, top: `${Math.max(0, part.box[1] / 10 - 5)}%` }}>{part.name}</span>)}
-    {open.map((item, index) => <Question key={item.question} item={item} index={index} onDone={() => setAnswered(done => [...done, item.question])} />)}
+    {open.map(item => <Question key={item.question} item={item} corner={corner} onDone={() => setAnswered(done => [...done, item.question])} />)}
   </div>;
 }
 
@@ -86,6 +94,10 @@ export function Answers({ reading, reply, looking }: { reading: Props["reading"]
   return <>
     {looking && <p className="draw-said draw-looking">Muse Spark is looking…</p>}
     {reading && !looking && <p className="draw-said">{reading.value.said}<small>Muse Spark · {(reading.ms / 1000).toFixed(2)} s</small></p>}
+    {reply && <svg className="draw-lines draw-handover" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
+      <path className="draw-link" d={curve([520, 400], [560, 400], 0.5).path} />
+      <path className="draw-link" d={arrowHead(curve([520, 400], [560, 400], 0.5).control, [560, 400], 12)} />
+    </svg>}
     {reply && <figure className={reply.waiting ? "draw-reply draw-reply-waiting" : "draw-reply"}>
       {reply.image ? <img src={reply.image} alt="Muse Image's drawing of the same idea" /> : <span>drawing back…</span>}
       {reply.ms !== undefined && <figcaption>Muse Image · {(reply.ms / 1000).toFixed(1)} s</figcaption>}
