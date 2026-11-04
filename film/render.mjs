@@ -90,6 +90,7 @@ async function resolveClips(plan, configFile, clipsDir, directory) {
     }
     if (shot.kind === 'wall') for (const spec of shot.tiles.filter(t => t.image))
       spec.source = pathToFileURL(await realpath(resolve(dirname(configFile), spec.image))).href;
+    if(shot.layout==='field') shot.opening.source=pathToFileURL(await realpath(resolve(dirname(configFile),shot.opening.image))).href;
   }
 }
 export async function render(args = process.argv.slice(2)) {

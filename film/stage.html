@@ -15,6 +15,11 @@
   video { display: block; width: 100%; height: auto; }
   .wall-tile { position: absolute; width: 1920px; height: 1920px; overflow: hidden; background: #0d1014; outline: 1px solid #48515c; }
   .wall-tile img, .wall-tile video { display: block; width: 100%; height: 100%; object-fit: contain; }
+  .wall-field-tile { position:absolute; overflow:visible; }
+  .wall-field-tile:not(:first-child) { overflow:hidden; }
+  .wall-field-tile img,.wall-field-tile video { display:block;width:100%;height:100%;object-fit:cover; }
+  .wall-caption { position:absolute;bottom:16px;left:50%;transform:translateX(-50%);padding:7px 14px;border-radius:5px;background:#fffffff0;text-align:center;font-size:21px;font-weight:500;letter-spacing:.025em;color:#333;z-index:5; }
+  .wall-opening { position:absolute;inset:0;width:1920px;height:1080px;z-index:3;pointer-events:none; }
   .lockup { display: flex; align-items: center; gap: 46px; }
   .endplate { flex-direction: column; padding: 0; }
   .endplate .lockup { font-size: 174px; font-weight: 700; }
@@ -29,7 +34,7 @@
 </style>
 <main id="stage" aria-label="Film frame"><div id="scene"><div id="camera"></div></div><div class="label" hidden></div><div class="caption" hidden></div></main>
 <script type="module">
-  import { createWall, drawWall } from './wall.mjs';
+  import { createWall, drawWall, paintWall } from './wall.mjs';
   const stage = document.querySelector('#stage');
   const camera = document.querySelector('#camera');
   let active = null;
@@ -85,6 +90,8 @@
   async function mount(shot) {
     videos.forEach(({ video }) => { video.pause(); video.removeAttribute('src'); video.load(); });
     videos = []; wallTiles = []; planes = []; camera.replaceChildren();
+    stage.querySelector('.wall-caption')?.remove();
+    stage.querySelector('.wall-opening')?.remove();
     camera.style.opacity = '1'; camera.style.transformOrigin = '50% 50%';
     for (const key of ['label', 'caption']) {
       const node = stage.querySelector(`.${key}`);
@@ -109,6 +116,12 @@
     // Sequential loading keeps plane order stable even when decode times differ.
     for (let i = 0; i < clips.length; i++) await createPlane(clips[i], clips.length, i);
     if (shot.kind === 'wall') wallTiles = await createWall(shot, camera, videos, bounded);
+    if (shot.layout === 'field') {
+      stage.style.background='#fff';
+      const opening=document.createElement('img');opening.className='wall-opening';opening.src=shot.opening.source;
+      await opening.decode();stage.append(opening);
+      const caption=document.createElement('div');caption.className='wall-caption';caption.textContent='Recorded demonstrations';stage.append(caption);
+    }
     active = shot.index;
   }
   async function seek(video, target) {
@@ -137,8 +150,10 @@
     if (shot.kind === 'list') camera.firstChild.textContent = shot.names[Math.min(shot.names.length - 1, Math.floor((local + 1e-8) / shot.seconds))];
     const tilts = planes.map(plane => posePlane(plane, local));
     const wall = shot.kind === 'wall' ? drawWall(shot, local, camera, wallTiles) : null;
+    if(shot.layout==='field') stage.querySelector('.wall-opening').style.opacity=String(Math.max(0,1-local/.15));
     await Promise.all(videos.map(({ video, spec }) => seek(video, (spec.start ?? 0) +
       (spec.loop ? local % (spec.loopSeconds ?? video.duration - (spec.start ?? 0)) : Math.min(local, spec.playSeconds ?? local)))));
+    if(shot.kind==='wall')paintWall(shot,local,wallTiles);
     await document.fonts.ready;
     await Promise.all([...camera.querySelectorAll('img')].map(img => img.decode()));
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));

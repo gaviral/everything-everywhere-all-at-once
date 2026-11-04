@@ -46,7 +46,10 @@ export function timeline(config) {
     }
     if (shot.kind === 'wall') {
       if (!Array.isArray(shot.tiles) || !shot.tiles.length) throw new Error('wall needs real image or clip tiles');
-      if (!shot.tiles[0].clip) throw new Error('wall starts on a clip');
+      if (shot.layout==='field') {
+        if(shot.tiles.length<144||(shot.tiles.length-144)%3||shot.tiles.length>576) throw Error('Field needs complete four-square clusters in its rectangle');
+        if(!shot.opening?.image||!Array.isArray(shot.opening.crop)||shot.opening.crop.length!==3) throw Error('Field needs its original opening frame and square crop');
+      } else if (!shot.tiles[0].clip) throw new Error('wall starts on a clip');
       for (const tile of shot.tiles) {
         if (Boolean(tile.clip) === Boolean(tile.image)) throw new Error('Each wall tile needs exactly one image or clip');
         if (tile.clip) plane(tile);
