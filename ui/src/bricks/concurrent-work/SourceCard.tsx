@@ -9,7 +9,7 @@ export function SourceCard({ source, intent, map, actions, hold, setIntent }: {
   const available = source && sourceAvailable(source, map);
   return <aside className="cw-source" aria-label="Original thought">
     <p className="cw-eyebrow">01 / Your return point</p>
-    <h2>Keep the thread.</h2>
+    <h2>Keep your thought.</h2>
     {source ? <><blockquote>{source.text}</blockquote><p className="cw-by">{source.example ? 'Example thought · not on your map' : `Captured words · ${source.speaker}`}</p></>
       : <p>Capture a thought in the input below, then hold it here.</p>}
     <label className="cw-label">Hold a different thought
