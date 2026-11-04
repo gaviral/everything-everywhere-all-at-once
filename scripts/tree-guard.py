@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Static index + tracked worktree boundary. No history, network, or app calls."""
+"""Static tree boundary; opt-in --pre-push scans approved outgoing history offline."""
 import argparse
 import hashlib
 import importlib.util
@@ -147,9 +147,20 @@ def scan(root):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--repo', default='.')
+    parser.add_argument('--pre-push', action='store_true')
+    parser.add_argument('--allowlist', help='local approved public ref/OID JSON')
+    parser.add_argument('remote', nargs='?')
+    parser.add_argument('url', nargs='?')
     args = parser.parse_args()
     try:
+        if args.pre_push:
+            spec = importlib.util.spec_from_file_location('publication_guard', Path(__file__).with_name('publication-guard.py'))
+            publication = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(publication)
+            sys.exit(publication.scan(args.repo, args.allowlist, sys.stdin.buffer.read()))
+        if args.allowlist or args.remote or args.url:
+            raise ValueError('publication options require --pre-push')
         sys.exit(scan(args.repo))
-    except (OSError, ValueError, TypeError, AttributeError, subprocess.SubprocessError):
+    except (OSError, ValueError, TypeError, AttributeError, KeyError, RecursionError, subprocess.SubprocessError):
         print('FAIL tree-guard: Git/input enumeration or read failed (details redacted)')
         sys.exit(1)
