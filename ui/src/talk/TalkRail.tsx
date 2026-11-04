@@ -8,7 +8,7 @@ import { copyInvite, useJoin, useLeave } from "../room";
 import { SHELL2 } from "../shell/flag";
 import { inCall, peopleHere, shownCode, useTalkCall, useSaid } from "./call-core";
 import { Talk, TALK } from "./Talk";
-import { turnIndex, turnsOf, unreadOf, newerMark } from "./turns";
+import { turnIndex, turnsOf, unreadOf } from "./turns";
 
 const OPEN_KEY = "e2a2o.talk.open";
 const PHONE = "(max-width: 560px)";
@@ -68,9 +68,7 @@ function TalkPill({ host, phone, show }: { host: BrickHost; phone: boolean; show
   const call = useTalkCall();
   const me = host.map.me;
   const turns = turnsOf(host.map.thoughts, host.map.threads);
-  let mark: string | null = null;
-  try { mark = localStorage.getItem(`e2a2o.talk.read.${me}`); } catch { /* none kept */ }
-  const read = turnIndex(turns, newerMark(turns, mark, call?.people.find((p) => p.name === me)?.read));
+  const read = turnIndex(turns, host.map.readThrough);
   const waiting = unreadOf(turns, read, me, call?.started_ms ?? 0).length;
   const said = turns.filter((t) => t.at >= (call?.started_ms ?? 0)).length;
   const count = waiting ? `${waiting} new` : phone && said ? `${said} ${said === 1 ? "turn" : "turns"}` : "";

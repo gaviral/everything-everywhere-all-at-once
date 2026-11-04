@@ -1,9 +1,10 @@
 import { useEffect, useRef } from "react";
-import type { BrickProps, MapSnapshot } from "../contract";
+import type { BrickActions, BrickProps, MapSnapshot } from "../contract";
 import "./read-progress.css";
 
 const PREFIX = "e2a2o.brick.read-progress.";
 const DWELL_MS = 1500;
+const POINTS = '.points li, .spine-point[data-readable="true"], .spine-aside[data-readable="true"], .spine-entry[data-thought]';
 
 /** The part of the window a point can be read in: the header (with the map's tools while they stay pinned) covers its
  *  top and the dock its bottom, so a point under either isn't read. The app publishes their heights on the page. */
@@ -16,7 +17,7 @@ function readable() {
 }
 
 type Point = {
-  element: HTMLLIElement;
+  element: HTMLElement;
   thoughtId: string;
   threadId: string;
   ids: string[];
@@ -26,10 +27,11 @@ type Point = {
   dot?: HTMLSpanElement;
 };
 
-/** Only DOM ids and the existing snapshot connect a card to its thoughts. No app imports or new fields. */
-function watchPoints(initial: MapSnapshot) {
+/** DOM thought/thread identities connect each readable surface to the snapshot. */
+function watchPoints(initial: MapSnapshot, readThought: BrickActions["readThought"]) {
   let snapshot = initial;
-  const points = new Map<HTMLLIElement, Point>();
+  let readThrough: string | null | undefined;
+  const points = new Map<HTMLElement, Point>();
   const marks = new Map<string, string | null>();
   let ranks = new Map<string, number>();
   const rankOf = (threadId: string, id: string | null) => id === null ? -1 : ranks.get(JSON.stringify([threadId, id])) ?? -1;
@@ -75,6 +77,8 @@ function watchPoints(initial: MapSnapshot) {
   };
   const mark = (point: Point, automatic: boolean) => {
     if (!point.element.isConnected || document.visibilityState === "hidden") return;
+    // Talk and the canvas share their read position, even if this thread's bookmark was already here.
+    readThought(point.thoughtId);
     const previous = stored(point.threadId);
     // Scrolling advances; an explicit tap may deliberately move the bookmark back.
     if (automatic && point.rank <= rankOf(point.threadId, previous)) return;
@@ -85,7 +89,7 @@ function watchPoints(initial: MapSnapshot) {
   };
   const updateVisibility = (entries: IntersectionObserverEntry[]) => {
     for (const entry of entries) {
-      const point = points.get(entry.target as HTMLLIElement);
+      const point = points.get(entry.target as HTMLElement);
       if (!point) continue;
       const full = entry.isIntersecting && entry.intersectionRatio >= 1 && document.visibilityState !== "hidden";
       if (!full) cancel(point);
@@ -125,11 +129,23 @@ function watchPoints(initial: MapSnapshot) {
       .sort((a, b) => said(a.at_ms) - said(b.at_ms));
     ranks = new Map(thoughts.map((thought, i) => [JSON.stringify([thought.thread_id, thought.id]), i]));
     const others = new Map(thoughts.filter((thought) => thought.speaker !== snapshot.me).map((thought) => [thought.id, thought]));
-    const found = new Set<HTMLLIElement>();
-    for (const element of document.querySelectorAll<HTMLLIElement>(".points li")) {
-      if (!element.id.startsWith("point-")) continue;
-      const thought = others.get(element.id.slice("point-".length));
-      if (!thought || element.closest(".thread")?.id !== `thread-${thought.thread_id}`) continue;
+    // A turn read in Talk also advances the thread's canvas line. An explicit tap may still move that line back.
+    if (snapshot.readThrough !== readThrough) {
+      readThrough = snapshot.readThrough;
+      const until = thoughts.findIndex((thought) => thought.id === readThrough);
+      for (const thought of thoughts.slice(0, until + 1)) {
+        if (thought.speaker === snapshot.me || !thought.thread_id) continue;
+        if (rankOf(thought.thread_id, thought.id) <= rankOf(thought.thread_id, stored(thought.thread_id))) continue;
+        marks.set(thought.thread_id, thought.id);
+        try { localStorage.setItem(PREFIX + thought.thread_id, thought.id); } catch { /* Keep working in memory. */ }
+      }
+    }
+    const found = new Set<HTMLElement>();
+    for (const element of document.querySelectorAll<HTMLElement>(POINTS)) {
+      const canvas = !!element.dataset.thought;
+      const id = canvas ? element.dataset.thought : element.id.startsWith("point-") ? element.id.slice("point-".length) : undefined;
+      const thought = id ? others.get(id) : undefined;
+      if (!thought || (canvas ? element.dataset.thread !== thought.thread_id : element.closest(".thread")?.id !== `thread-${thought.thread_id}`)) continue;
       found.add(element);
       let point = points.get(element);
       if (point && (point.thoughtId !== thought.id || point.threadId !== thought.thread_id)) {
@@ -149,13 +165,13 @@ function watchPoints(initial: MapSnapshot) {
     for (const [element, point] of points) if (!found.has(element)) { clean(point); points.delete(element); }
     paint();
   };
-  // Cards can fold, reopen, or be replaced by another view without a new snapshot.
+  // Replies can fold, change zoom, or move between views without a new snapshot.
   const mutations = new MutationObserver(() => sync());
-  mutations.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["id", "class", "data-heads"] });
+  mutations.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["id", "class", "data-heads", "data-readable", "data-thought", "data-thread"] });
   // The heights live on the page's root (--dock-height and the rest).
   mutations.observe(document.documentElement, { attributes: true, attributeFilter: ["style"] });
   const click = (event: MouseEvent) => {
-    const element = event.target instanceof Element ? event.target.closest<HTMLLIElement>(".points li") : null;
+    const element = event.target instanceof Element ? event.target.closest<HTMLElement>(POINTS) : null;
     const point = element && points.get(element);
     if (!point) return;
     // A tap keeps its chosen place until another point enters view, rather than a pending timer overriding it.
@@ -192,14 +208,14 @@ function watchPoints(initial: MapSnapshot) {
   };
 }
 
-export default function ReadProgress({ map }: BrickProps) {
+export default function ReadProgress({ map, actions }: BrickProps) {
   const watcher = useRef<ReturnType<typeof watchPoints> | null>(null);
   const hasOthers = map.threads.length > 0 && map.thoughts.some((thought) => thought.placed && thought.speaker !== map.me);
   useEffect(() => {
     if (!hasOthers) return;
-    watcher.current = watchPoints(map);
+    watcher.current = watchPoints(map, actions.readThought);
     return () => { watcher.current?.stop(); watcher.current = null; };
   }, [hasOthers, map.me]);
-  useEffect(() => { watcher.current?.sync(map); }, [map.thoughts, map.threads, map.me]);
+  useEffect(() => { watcher.current?.sync(map); }, [map.thoughts, map.threads, map.me, map.readThrough]);
   return null;
 }

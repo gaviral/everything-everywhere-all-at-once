@@ -289,8 +289,8 @@ function Chips({ item, offset = 0 }: { item: Item; offset?: number }) {
 }
 
 /** A margin note's entries, as a note beside the words or tucked under them. */
-function Entries({ entries }: { entries: Entry[] }) {
-  return <>{entries.map((entry, i) => <span key={i} className="spine-entry">
+function Entries({ entries, thread }: { entries: Entry[]; thread?: string }) {
+  return <>{entries.map((entry, i) => <span key={i} className="spine-entry" data-thought={entry.thoughtId} data-thread={thread}>
     {entry.who.me ? <span className="spine-entry-mine" aria-hidden="true" /> : <Initial who={entry.who} small />}
     <span className="spine-entry-text" style={{ WebkitLineClamp: entry.lines.length }}>{entry.text}</span>
   </span>)}</>;
@@ -313,7 +313,8 @@ function Point({ data }: { data: ItemData }) {
   };
   return <div className={cls("spine-point", look.variant === "mini" && "spine-point-mini", item.pinned && "spine-pinned", here && "spine-on", picked && "spine-picked",
     data.fresh && "spine-fresh", data.dim && "spine-dim", item.left && "spine-point-left", arriving && "spine-arriving", data.cut && "spine-cut", data.selecting && "spine-selecting")}
-    style={roomStyle(item.room)} data-thread={item.thread} data-thought={item.id} data-guide={`point:${item.id}`} data-slot={arriving ? `slot:${arriving}` : undefined}>
+    style={roomStyle(item.room)} data-thread={item.thread} data-thought={item.id} data-heads={item.thoughts?.join(" ")}
+    data-readable={!zoomedOut && !arriving ? "true" : undefined} data-guide={`point:${item.id}`} data-slot={arriving ? `slot:${arriving}` : undefined}>
     {item.who ? <Initial who={item.who} small={look.variant === "mini"} style={{ left: look.lineX, top: look.line / 2 }} />
       : <span className={cls("spine-dot", item.decided && "spine-dot-decided")} style={{ left: look.lineX, top: look.line / 2 }} aria-hidden="true" />}
     {pulse > 0 && !arriving && <span key={pulse} className="spine-ring" style={{ left: look.lineX, top: look.line / 2 }} aria-hidden="true" />}
@@ -337,7 +338,7 @@ function Point({ data }: { data: ItemData }) {
           <span className="spine-tuck-title">{`${tuck.title} · tangent`}</span>
           {tuck.entries.map((entry, i) => <span key={i} className="spine-entry-text" style={{ WebkitLineClamp: G.marginMax }}>{entry.text}</span>)}
         </button>
-        : <span key={tuck.margin} className="spine-tuck" data-margin={tuck.margin}><Entries entries={tuck.entries} /></span>)}
+        : <span key={tuck.margin} className="spine-tuck" data-margin={tuck.margin}><Entries entries={tuck.entries} thread={tuck.margin} /></span>)}
     </span>}
     <Tools item={item} />
   </div>;
@@ -436,7 +437,8 @@ function Aside({ data, dragging }: { data: ItemData; dragging: boolean }) {
   const bubble = useRef<HTMLDivElement>(null);
   const whole = useWhole(bubble) || dragging || picked;
   return <div ref={bubble} className={cls("spine-aside", item.pinned && "spine-pinned", here && "spine-on", picked && "spine-picked", data.fresh && "spine-fresh", data.dim && "spine-dim",
-    data.cut && "spine-cut")} style={roomStyle(item.room)} data-edge={whole ? undefined : "cut"} data-thread={item.thread} data-guide={`thread:${item.thread}`}>
+    data.cut && "spine-cut")} style={roomStyle(item.room)} data-edge={whole ? undefined : "cut"} data-thread={item.thread}
+    data-thought={item.thoughts?.[0]} data-heads={item.thoughts?.join(" ")} data-readable={!zoomedOut && whole ? "true" : undefined} data-guide={`thread:${item.thread}`}>
     <StayHere thread={item.thread} title={item.title} />
     {pulse > 0 && <span key={pulse} className="spine-card-ring" aria-hidden="true" />}
     <button type="button" className="spine-aside-face" onClick={() => acts.pick(item)} onFocus={() => acts.focus(item)} onDoubleClick={() => acts.openOnMap(item.thread)}
@@ -456,7 +458,7 @@ function Margin({ data }: { data: ItemData }) {
   if (zoomedOut) return <div className={cls("spine-margin", data.dim && "spine-dim")} aria-hidden="true"><Bars lines={(item.entries ?? []).flatMap((e) => e.lines)} line={G.marginLine} x={26} /></div>;
   return <div className={cls("spine-margin", data.dim && "spine-dim", data.fresh && "spine-fresh")} style={roomStyle(item.room)} data-margin={item.margin} role="note"
     aria-label={`A note on these words: ${(item.entries ?? []).map((e) => `${e.who.ai ? "the AI helper" : e.who.name}: ${e.text}`).join("; ")}`}>
-    <Entries entries={item.entries ?? []} />
+    <Entries entries={item.entries ?? []} thread={item.margin} />
     {item.more && <span className="spine-margin-more">{`${item.more} more`}</span>}
     <button type="button" className="spine-margin-reply nodrag" onClick={() => acts.reply(item)}>Reply</button>
   </div>;

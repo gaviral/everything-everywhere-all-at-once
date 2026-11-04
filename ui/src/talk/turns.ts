@@ -72,7 +72,7 @@ export function unreadOf(turns: readonly Turn[], read: number, me: string, from:
 }
 
 /** How long a turn must stay in view to count as read: its words at an average reader's pace (attention-core.ts
- *  `readMs`), and never under the Read progress brick's dwell (1.5 s), so a glance while scrolling past isn't reading. */
+ *  `readMs`), and never under the canvas read marker's dwell (1.5 s), so a glance while scrolling past isn't reading. */
 export const DWELL_MS = 1500;
 export function readFor(turn: Turn): number {
   return Math.max(DWELL_MS, readMs(turn.parts.map((part) => part.text).join(" ")));

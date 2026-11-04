@@ -123,6 +123,7 @@ export interface Tuck {
 
 /** One entry of a margin note: who, and their words as they wrap. */
 export interface Entry {
+  thoughtId?: string;
   who: Who;
   text: string;
   lines: number[];
@@ -268,7 +269,7 @@ export interface MarginInput {
   /** The words, as picked. */
   quote: string;
   /** The note, then its replies, oldest first. */
-  entries: readonly { by: string; text: string }[];
+  entries: readonly { by: string; text: string; thoughtId?: string }[];
   /** It asks: folded to "…?" until opened. */
   question: boolean;
 }
@@ -531,7 +532,7 @@ export function layout(input: LayoutInput): Layout {
       if (folded && start >= 0) continue;
       if (narrow || look.variant === "mini") {
         const w = look.textW - G.tuckIn - 26;
-        tucks.push({ margin: m.id, entries: shownEntries(m, staying).map((e) => entryOf(e.by, e.text, w, staying)) });
+        tucks.push({ margin: m.id, entries: shownEntries(m, staying).map((e) => ({ ...entryOf(e.by, e.text, w, staying), thoughtId: e.thoughtId })) });
       } else {
         beside.push(m);
         ends.set(m.id, start >= 0 ? wrapEnd(measured, look.font, look.textW, look.max) : { line: 0, x: -1 });
@@ -713,7 +714,7 @@ export function layout(input: LayoutInput): Layout {
           ? { key: point.key, dx: Math.min(G.textX + shape.lines[0] + 8, G.colW + 8), dy: G.dotY }
           : { key: point.key, dx: G.textX + end.x + 3, dy: end.line * G.pointLine + G.pointLine / 2 + 2 };
         const staying = t.id === input.staying;
-        const entries = shownEntries(m, staying).map((e) => entryOf(e.by, e.text, G.marginText, staying));
+        const entries = shownEntries(m, staying).map((e) => ({ ...entryOf(e.by, e.text, G.marginText, staying), thoughtId: e.thoughtId }));
         const more = m.entries.length - entries.length;
         const h = marginHeight(entries, more);
         const column = columnKey(owner, 1, 1);

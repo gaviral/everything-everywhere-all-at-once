@@ -11,7 +11,7 @@ import { useGuide } from "../guide-core";
 import { sendToCore } from "../room";
 import { TIPS } from "../Tips";
 import { clock, initialOf, LEVELS, named, ordered, shown, stateWord, useTalkCall, useSaid, type Call, type Level, type Person, type Said } from "./call-core";
-import { newerMark, readersAt, readFor, turnIndex, turnsOf, unreadOf, type Turn } from "./turns";
+import { readersAt, readFor, turnIndex, turnsOf, unreadOf, type Turn } from "./turns";
 import "./talk.css";
 
 /** Who Talk acts as when it asks the map for something (a reply it sends is yours; this names it in a hint). */
@@ -21,14 +21,6 @@ export const TALK: BrickInfo = { id: "talk", name: "Talk", does: "Who's in the c
 type Row = { kind: "turn"; turn: Turn; i: number } | { kind: "said"; said: Said };
 
 const HEAD_GAP_MS = 3 * 60_000;
-const READ_KEY = "e2a2o.talk.read.";
-
-function stored(key: string): string | null {
-  try { return localStorage.getItem(key); } catch { return null; }
-}
-function store(key: string, value: string) {
-  try { localStorage.setItem(key, value); } catch { /* kept for this visit only */ }
-}
 
 /** The tab's body: people, turns, the meter. `open`: it's on screen (a closed rail reads nothing). */
 export function Talk({ map, actions, open = true }: { map: MapSnapshot; actions: BrickActions; open?: boolean }) {
@@ -51,22 +43,11 @@ function TalkBody({ map, actions, open, call }: { map: MapSnapshot; actions: Bri
     return theirs.filter((_, i) => i !== live);
   }, [saidAll, captioning, map.speakers, call.people]);
 
-  // How far you've read: the newer of this browser's mark and the core's (another window of yours), told to the core
-  // as it moves and again on each connection, so the others see it and a restarted core learns it again.
-  const readKey = READ_KEY + me;
-  const coreMark = call?.people.find((p) => p.name === me)?.read ?? null;
-  const [mark, setMark] = useState<string | null>(() => stored(readKey));
-  const markIndex = turnIndex(turns, newerMark(turns, mark, coreMark));
-  const markNow = markIndex >= 0 ? turns[markIndex].key : null;
-  const markSent = useRef(markNow);
-  markSent.current = markNow;
-  useEffect(() => { if (map.connected && markSent.current) sendToCore({ type: "read", thought_id: markSent.current }); }, [map.connected]);
+  // Reading here and reading on the canvas advance the same position, owned by the page's brick host.
+  const markIndex = turnIndex(turns, map.readThrough);
   const see = (i: number) => {
     if (i <= markIndex || !turns[i]) return;
-    const key = turns[i].key;
-    setMark(key);
-    store(readKey, key);
-    sendToCore({ type: "read", thought_id: key });
+    actions.readThought(turns[i].key);
   };
 
   const from = call?.started_ms ?? 0;

@@ -264,6 +264,8 @@ html.shell2 .shell-catalog-group ul { margin: 0; padding: 0; list-style: none; }
 html.shell2 .shell-catalog-row { display: flex; align-items: center; gap: 8px; min-height: 32px; border-radius: 8px; }
 html.shell2 .shell-catalog-row.shell-at { margin: 0 -8px; padding: 0 8px; background: var(--blue-soft); }
 html.shell2 .shell-catalog-name { display: flex; flex: 1; flex-wrap: wrap; align-items: baseline; column-gap: 6px; min-width: 0; overflow: hidden; color: var(--ink); font-size: 13px; font-weight: 500; white-space: nowrap; }
+/* Keep the read action's full label visible on a phone, including with enlarged text. */
+html.shell2 .shell-catalog-row[data-row="read-progress"] .shell-catalog-name { white-space: normal; line-height: 1.3; }
 html.shell2 .shell-aka { min-width: 0; max-width: 100%; overflow: hidden; color: var(--muted); font-size: 11px; font-weight: 400; text-overflow: ellipsis; }
 html.shell2 .shell-catalog-lives { flex: none; color: var(--muted); font-size: 11px; }
 html.shell2 .shell-catalog-core { flex: none; width: 36px; color: var(--muted); font-size: 11px; text-align: right; }

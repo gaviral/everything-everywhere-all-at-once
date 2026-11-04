@@ -993,12 +993,13 @@ try {
     shown = world([thread("read-progress-check", "Read here")]);
     shown.thoughts = [friend("read-progress-0", "Participant point 1", now), friend("read-progress-1", "Participant point 2", now + 1)];
     const key = "e2a2o.brick.read-progress.read-progress-check";
-    await evaluate(`localStorage.removeItem(${JSON.stringify(key)})`);
+    await evaluate(`localStorage.removeItem(${JSON.stringify(key)}); localStorage.removeItem("e2a2o.talk.read.you")`);
     await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }, { name: "prefers-reduced-motion", value: "reduce" }] });
     await go(`${base}/?cards`);
     const firstPoint = `document.getElementById("point-read-progress-0")`;
     if (!await until(`${firstPoint}?.classList.contains("read-progress-point")`, 8000)) fail("read-progress", "doesn't attach to another participant's point");
     else {
+      await settle(); // Let the initial visibility entries arrive before the explicit bookmark cancels their dwell.
       await evaluate(`${firstPoint}.click()`);
       if (!await until(`${firstPoint}.classList.contains("read-progress-mark") && localStorage.getItem(${JSON.stringify(key)}) === "read-progress-0"`, 2000)) fail("read-progress", "a tap doesn't mark and save the thought");
       await go(`${base}/?cards`);
@@ -1008,7 +1009,7 @@ try {
       if (!state.dot || state.broke || state.sideways > 1) fail("read-progress", "unread dot missing, brick broke, or overflows on a dark phone with reduced motion");
     }
     // Under the dock: a long card, your points first, then another's two, scrolled to sit behind the dock.
-    await evaluate(`localStorage.removeItem(${JSON.stringify(key)})`);
+    await evaluate(`localStorage.removeItem(${JSON.stringify(key)}); localStorage.removeItem("e2a2o.talk.read.you")`);
     shown = world([thread("read-progress-check", "Read here")]);
     shown.thoughts = [...Array.from({ length: 9 }, (_, n) => ({ ...thought(`mine-${n}`, `My point ${n + 1}`, "read-progress-check"), at_ms: now - 9000 + n })),
       friend("read-progress-0", "Participant point 1", now), friend("read-progress-1", "Participant point 2", now + 1)];
