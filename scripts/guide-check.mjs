@@ -810,7 +810,7 @@ try {
       core.send({ type: "notice", message: "Your map is saved." });
       guide("point", "search", "");
       guide("caption", null, "Find a topic here. Your **rent** is still on the map. Keep your plans together.");
-      assert.ok(await until(`document.querySelectorAll('#shell-caption .guide-caption').length === 1 && document.querySelector('.guide-layer')?.dataset.state === 'aimed'`, 2000), "one caption is portaled into the shell");
+      assert.ok(await until(`document.querySelectorAll('#shell-caption .guide-caption').length === 1 && ['aimed', 'near'].includes(document.querySelector('.guide-layer')?.dataset.state)`, 2000), "one caption is portaled into the shell");
       await sleep(250);
       const checkSlot = async () => {
         const [cap, slot, composer, notice] = await Promise.all([box(".guide-caption"), box("#shell-caption"), box('[data-guide="composer"]'), box('[data-guide="notice"]')]);
@@ -820,7 +820,8 @@ try {
         assert.ok(!overlap(cap, composer) && !overlap(cap, notice) && notice.bottom <= cap.top && cap.bottom <= composer.top, "between notice and composer without overlap");
         assert.ok(Math.abs(cap.top - slot.top) <= 1 && Math.abs(cap.bottom - slot.bottom) <= 1, "the visible caption follows its reserved box");
         assert.ok(await evaluate(`(() => { const line = document.querySelector('.guide-line'); return line.getBoundingClientRect().height <= 2 * parseFloat(getComputedStyle(line.parentElement).lineHeight) + 1; })()`), "sentence pages fit two lines at the slot's width");
-        await lands("search", "the shell caption's arrow");
+        if (await layer() === "aimed") await lands("search", "the shell caption's arrow");
+        else assert.ok(await ringed("search"), "without a clear arrow path, the ring still identifies Find exactly");
       };
       await checkSlot();
       await shot(`shell-caption-${width}-${scheme}`);

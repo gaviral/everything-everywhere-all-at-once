@@ -362,7 +362,7 @@ export function phoneParents(threads: readonly Thread[], thoughts: readonly Thou
     const parent = parentId ? byId.get(parentId) : undefined;
     const exact = !!(source && parent && source.thread_id === parent.id);
     return [t.id, { threadId: parent?.id ?? null, thoughtId: exact ? source!.id : null,
-      label: exact ? `${t.anchor!.quote} [${source!.id}]` : t.anchor ? `Source unavailable · ${t.anchor.quote} [${t.anchor.thought_id}]` : parent ? `Topic branch · ${parent.title}` : "",
+      label: exact ? `${t.anchor!.quote} [${source!.id}]` : t.anchor ? `Source unavailable · ${t.anchor.quote} [${t.anchor.thought_id}]` : parent ? `Tangent · ${parent.title}` : "",
       missing: !!t.anchor && !exact }];
   }));
 }

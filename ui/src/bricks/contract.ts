@@ -3,7 +3,7 @@
 // the map as it is now (read-only), the few actions it may take, and `on`, for what passes (a thought landing, your
 // words as they come, the mic's loudness, a notice). Nothing here runs the app's code, so a brick works the same in the
 // app and in the playground (bricks.html), which hands it a sample map instead.
-import { createContext, useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
+import { createElement, createContext, useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import type { MiniApp } from "../apps-core";
 import type { Anchor } from "../annotate-core";
 import type { ActionEstimate, EstimateRequest, EstimateResult, Action, Note, Pause, Suggestion, Thought, Thread as MapThread, UsageRow, UsageSnapshot } from "../core";
@@ -181,6 +181,9 @@ export interface MapSnapshot {
   /** Optional presentation only; never enabled by a sample or recording preset. */
   readonly comparePhoneReading?: boolean;
   readonly terse?: boolean;
+  /** Whether the host conversation controls are enabled. */
+  readonly partnerOn?: boolean;
+  readonly rotateCanvas?: boolean;
   /** Allowances from USAGE_FILE and the core's rolling-hour model budget; null with no readable file or connection. */
   readonly usage: UsageSnapshot | null;
   /** The helpers' jobs, in the order each first came (the oldest first, the newest last), each in its latest state; the
@@ -360,4 +363,15 @@ export function useBrickEvent<K extends keyof BrickEvents>(on: BrickOn, name: K,
   const latest = useRef(listener);
   useLayoutEffect(() => { latest.current = listener; });
   useEffect(() => on(name, (value) => latest.current(value), consumer), [on, name, consumer]);
+}
+
+/** Move the same portal target between shell and canvas; its React tree and draft stay mounted. */
+export function ToolSlot({ host }: { host: HTMLElement }) {
+  const place = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const target = place.current!;
+    target.append(host);
+    return () => { if (host.parentNode === target) host.remove(); };
+  }, [host]);
+  return createElement("div", { ref: place, className: "shell-tool-slot spine-tool-slot" });
 }

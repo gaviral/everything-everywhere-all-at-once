@@ -898,8 +898,8 @@ export function useCore(speaker?: string) {
       const heartbeatId = thoughtId();
       let lastReply = Date.now();
       ws.onopen = () => {
-        if (estimatesOn.current) ws.send(JSON.stringify({ type: "action_estimates", on: true }));
         noticeQueue.reset("note");
+        if (estimatesOn.current) ws.send(JSON.stringify({ type: "action_estimates", on: true }));
         resetApps();
         resetSteps();
         resetRoute();

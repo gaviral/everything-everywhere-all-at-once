@@ -38,6 +38,8 @@ try {
     };
     const tool = () => `.canvas-tools-controls button[aria-pressed]`;
     const focus = async id => {
+      // Let entry and portal focus settle before issuing the next user action.
+      await evaluate("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
       await evaluate(`document.querySelectorAll(${JSON.stringify(tool())})[${["composer", "features", "history"].indexOf(id)}].click()`);
       assert.ok(await until(`(() => { const e = document.querySelector('[data-canvas-tool="${id}"]'); if (!e) return false; const r=e.getBoundingClientRect(); return r.left>=0 && r.right<=innerWidth+1 && r.top>=130 && r.bottom<innerHeight-40; })()`), `${width}: ${id} readable`);
     };
@@ -100,7 +102,7 @@ try {
     await shot("canvas-tools-features");
     await evaluate('document.querySelector(".canvas-tools-controls > div:nth-child(2) button:last-child").click()');
     assert.ok(await until('!document.querySelector(".canvas-tool") && !!document.querySelector(".shell-status textarea")'), "ordinary shell restored");
-    assert.equal(await evaluate('document.activeElement === originalComposer && originalComposer.value === "Synthetic draft survives exit"'), true, "draft and focus survive exit");
+    assert.ok(await until('document.activeElement === originalComposer && originalComposer.value === "Synthetic draft survives exit"'), "draft and focus survive exit");
     assert.equal(await evaluate('micStarts'), 0, "no microphone starts from treatment");
     // Enable again, reload the same profile: setting persists; no second composer or auto-mic.
     await evaluate('originalComposer.blur()'); await key("c", "KeyC", 67);

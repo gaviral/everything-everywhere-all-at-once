@@ -14,7 +14,7 @@ export async function uiServer(config = {}, { port } = {}) {
   try {
     const server = await createServer({ ...config, cacheDir, root: new URL("../ui", import.meta.url).pathname,
       // SSR-only checks do not serve client modules and need no browser dependency scan.
-      ...(port === undefined ? { optimizeDeps: { noDiscovery: true, include: [] } } : {}),
+      ...(port === undefined ? { optimizeDeps: config.optimizeDeps ?? { noDiscovery: true, include: [] } } : {}),
       server: { ...(port === undefined ? { middlewareMode: true } : { host: "127.0.0.1", port, strictPort: true }), hmr: false, ws: false, watch: null }, appType: "custom" });
     const close = server.close.bind(server);
     server.close = async () => {

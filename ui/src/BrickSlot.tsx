@@ -42,9 +42,11 @@ export function useBrickHost(world: World, revision: number, me: string, connect
   const conversationSpine = builtIns.has("conversation-spine");
   const comparePhoneReading = builtIns.has("compare-phone-reading");
   const terse = builtIns.has("terse");
+  const partnerOn = builtIns.has("partner");
+  const rotateCanvas = builtIns.has("rotate-canvas");
   const snapshot = useMemo(() => snapshotOf(world, me, connected, rooms, partial, jobs, usage), [world, me, connected, rooms, partial, jobs, usage]);
   const reading = useReadPosition(snapshot);
-  const map = useMemo(() => ({ ...snapshot, readThrough: reading.mark, conversationSpine, comparePhoneReading, terse, placingUnavailable, pauses: world.pauses ?? [] }), [snapshot, reading.mark, conversationSpine, comparePhoneReading, terse, placingUnavailable, world.pauses]);
+  const map = useMemo(() => ({ ...snapshot, readThrough: reading.mark, conversationSpine, comparePhoneReading, terse, partnerOn, rotateCanvas, placingUnavailable, pauses: world.pauses ?? [] }), [snapshot, reading.mark, conversationSpine, comparePhoneReading, terse, partnerOn, rotateCanvas, placingUnavailable, world.pauses]);
   const read = useRef(reading.read);
   read.current = reading.read;
   const latest = useRef(act);

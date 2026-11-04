@@ -28,7 +28,6 @@ import { phoneUsableArea } from "./measure";
 import { CanvasToolNode, CanvasToolControls, useCanvasToolNodes, type CanvasNode } from "./canvas-tools";
 import { semanticBlend } from "./semantic-zoom";
 import { CanvasShapes } from "./shapes";
-import { useBuiltInsOn } from "../../shell/features";
 import { anchorAt, normalAngle, rotatePoint, screenToWorld, turnAt, worldToScreen, type Camera } from "./rotation";
 
 /** A press that moves less than this is a click, not a drag: a hand's wobble on a click is 1–3 px. */
@@ -196,7 +195,7 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
     try { if (localStorage.getItem("e2a2o.spine.lens") === "topics") view = "topics"; } catch { /* this visit */ }
     return { view, x: 0, y: 0 };
   });
-  const rotationOn = useBuiltInsOn().has("rotate-canvas");
+  const rotationOn = !!map.rotateCanvas;
   const [localAngle, setLocalAngle] = useState(0);
   const angleRef = useRef(0);
   const angle = rotationOn ? localAngle : 0;
@@ -298,16 +297,16 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
   const narrow = width < NARROW;
   const compare = !!map.comparePhoneReading && (box?.width ?? innerWidth) <= 600;
   const conversation = conversationEnabled && !compare;
-  const [treatment, setTreatment] = useState<"spatial" | "inline">("spatial");
+  const [readingMode, setReadingMode] = useState<"spatial" | "inline">("spatial");
   // Canvas tools own the shell bodies; Inline restores their ordinary shell before hiding the spatial surface.
-  const inline = compare && treatment === "inline" && !tools;
+  const inline = compare && readingMode === "inline" && !tools;
   const [inspected, setInspected] = useState<string | null>(null);
   const [phoneArea, setPhoneArea] = useState<Area>({ x0: 0, y0: 80, x1: width, y1: 500 });
   const [textScale, setTextScale] = useState(1);
   const phoneControls = useRef<HTMLDivElement>(null);
   const parents = useMemo(() => compare ? phoneParents(map.threads, map.thoughts) : new Map(), [compare, map.threads, map.thoughts]);
   useLayoutEffect(() => {
-    if (!compare) { setTreatment("spatial"); setInspected(null); return; }
+    if (!compare) { setReadingMode("spatial"); setInspected(null); return; }
     const measure = () => {
       const a = phoneUsableArea(frame.current, dock);
       setPhoneArea(was => Object.keys(a).every(k => a[k as keyof Area] === was[k as keyof Area]) ? was : a);
@@ -468,7 +467,7 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
 
   // The camera.
   const pane = useCallback(() => frame.current?.querySelector<HTMLElement>(".spine-flow") ?? null, []);
-  const camera = useCamera(flow, area, reduced || compare, pane, (key) => layout.byKey.get(key)?.box, angle, !inline, compare);
+  const camera = useCamera(flow, area, reduced || compare, pane, (key) => layout.byKey.get(key)?.box, angle, !inline, true);
   const savedCamera = useRef<ReturnType<typeof flow.getViewport> | null>(null);
   const wasInline = useRef(false);
   useLayoutEffect(() => {
@@ -489,8 +488,19 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
   const goal = () => {
     if (!here) return null;
     const boxes = [here.box, ...slotsHere.map((key) => layout.byKey.get(key)?.box).filter((b): b is Box => !!b)];
+    // Keep the theme heading above this landing visible when the available height permits it.
+    const group = layout.byKey.get(`t:${here.topic}`)?.group;
+    const heading = group && layout.byKey.get(`g:${group}`);
+    if (heading) boxes.push({ ...here.box, y: heading.box.y, h: heading.box.h });
     if (staying) boxes.push(...layout.items.filter((item) => item.kind === "margin" && item.up === here.key).map((item) => item.box));
-    return { box: bounds(boxes), ring: here.key };
+    const target = bounds(boxes);
+    // A side lane must not hide another column when both columns fit at reading size.
+    const whole = all(), free = area();
+    if (box?.right && whole.w + 64 <= free.x1 - free.x0) {
+      target.x = whole.x;
+      target.w = whole.w;
+    }
+    return { box: target, ring: here.key };
   };
   const goalNow = useRef(goal);
   // Words being picked or answered keep the view where it is.
@@ -520,7 +530,8 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
       return;
     }
     const g = goal();
-    if (g) camera.aim(g.box, { instant: true }); else camera.fit(all(), 1, minZoom, { instant: true });
+    if (box.right > 0) camera.fit(all(), 1, minZoom, { instant: true });
+    else if (g) camera.aim(g.box, { instant: true }); else camera.fit(all(), 1, minZoom, { instant: true });
   }, [width, box?.tall]);
   // Following: where you are stays in view as you talk (the camera spaces and limits the moves).
   // The canvas itself getting wider or narrower (a lane taking the page's right side, or giving it back) is a reason to
@@ -986,11 +997,11 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
       </div>;
   return <div className="spine">
     <div ref={anchor} className="spine-anchor" style={{ height: box?.tall ?? 0 }} />
-    <div ref={frame} tabIndex={-1} data-rotation-angle={angle} data-lens={conversation ? lens.view : undefined} className={cls("spine-frame", rotationOn && "spine-rotating", ready_ && "spine-ready", !semantic && shownStop === "pictures" && "spine-stop-pictures", narrow && "spine-narrow", compare && "spine-phone-compare")} data-phone-bounds={compare ? JSON.stringify(phoneArea) : undefined} data-phone-treatment={compare ? inline ? "inline" : "spatial" : undefined} style={{ "--phone-text-scale": textScale, top: top ?? 0, left: box?.left ?? 0, right: box?.right ?? 0 } as React.CSSProperties}>
+    <div ref={frame} tabIndex={-1} data-rotation-angle={angle} data-lens={conversation ? lens.view : undefined} className={cls("spine-frame", rotationOn && "spine-rotating", ready_ && "spine-ready", !semantic && shownStop === "pictures" && "spine-stop-pictures", narrow && "spine-narrow", compare && "spine-phone-compare")} data-phone-bounds={compare ? JSON.stringify(phoneArea) : undefined} data-phone-reading-mode={compare ? inline ? "inline" : "spatial" : undefined} style={{ "--phone-text-scale": textScale, top: top ?? 0, left: box?.left ?? 0, right: box?.right ?? 0 } as React.CSSProperties}>
       {compare && <div ref={phoneControls} className="phone-controls" style={{ "--phone-text-scale": textScale } as React.CSSProperties}>
         <div role="group" aria-label="Compare phone reading">
-          <button type="button" aria-pressed={!inline} onClick={() => setTreatment("spatial")}>Spatial</button>
-          <button type="button" aria-pressed={inline} onClick={() => { tools?.exit(); setTreatment("inline"); }}>Inline</button>
+          <button type="button" aria-pressed={!inline} onClick={() => setReadingMode("spatial")}>Spatial</button>
+          <button type="button" aria-pressed={inline} onClick={() => { tools?.exit(); setReadingMode("inline"); }}>Inline</button>
           <details><summary>Topics</summary><div className="phone-topic-list">
             <button type="button" onClick={() => { if (!inline) seeAll(); else frame.current?.querySelector('.inline-phone')?.scrollTo({ top: 0 }); }}>See all</button>
             {map.threads.map(t => <button type="button" key={t.id} data-phone-open={t.id} onClick={event => {
@@ -1010,7 +1021,7 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
       <ActsContext.Provider value={acts}>
       <NowContext.Provider value={now}>
       {inline && <InlinePhone map={map} destination={destination} layout={layout} data={datas} area={phoneArea} visit={inspect} />}
-      <div className="spatial-treatment" inert={inline} aria-hidden={inline || undefined} style={{ visibility: inline ? "hidden" : undefined }}>
+      <div className="spatial-reading-mode" inert={inline} aria-hidden={inline || undefined} style={{ visibility: inline ? "hidden" : undefined }}>
       <RotationAngle.Provider value={angle}>
       <ReactFlow<CanvasNode>
         className={cls("spine-flow", semantic && "spine-semantic")} nodes={[...nodes, ...toolNodes.nodes]} edges={[]} nodeTypes={rotationOn ? ROTATED_NODE_TYPES : NODE_TYPES} onNodesChange={(changes) => { toolNodes.change(changes); onNodesChange(changes); }}

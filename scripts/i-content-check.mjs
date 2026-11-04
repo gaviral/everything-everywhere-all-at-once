@@ -36,7 +36,7 @@ try {
   assert.ok(await until(`!!document.querySelector('.spine-point [aria-label="Inspect full content"]')`),'enabled survives reload');
   await sleep(600);
   const camera = ()=>evaluate(`document.querySelector('.spine-frame .react-flow__viewport').style.transform`);
-  const key = key=>page('Input.dispatchKeyEvent',{type:'keyDown',key});
+  const key = key=>page('Input.dispatchKeyEvent',{type:'keyDown',key,...(key==='Enter'?{text:'\r'}:{}),windowsVirtualKeyCode:({Enter:13,Tab:9,Escape:27})[key]??0});
   const open = async selector => {
     // Keep hover from revealing the tools: enter the node, then Tab to Inspect and press Enter.
     await page('Input.dispatchMouseEvent',{type:'mouseMoved',x:1,y:1});

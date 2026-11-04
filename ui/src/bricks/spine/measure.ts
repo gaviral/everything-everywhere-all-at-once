@@ -81,7 +81,7 @@ export function wrapEnd(prefix: string, font: FontKey, max: number, limit: numbe
   return { line: lines.length - 1, x: lines[lines.length - 1] };
 }
 
-/** Actual occupied bands, shared by both phone treatments. Coordinates are relative to the frame. */
+/** Actual occupied bands, shared by both phone reading modes. Coordinates are relative to the frame. */
 export function phoneUsableArea(frame: HTMLElement | null, dock: number) {
   const f = frame?.getBoundingClientRect();
   const left = f?.left ?? 0, top = f?.top ?? 0, w = f?.width ?? innerWidth, h = f?.height ?? innerHeight;

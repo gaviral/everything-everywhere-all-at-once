@@ -1058,7 +1058,21 @@ try {
     await sleep(500);
     const after = await evaluate(nodesAt);
     const moved = Object.keys(before).filter((key) => after[key] !== before[key]);
-    if (moved.length) fail("spine", `a landing moved ${moved.join(", ")} (each keeps its place)`);
+    if (moved.length) {
+      // Named groups stack whole topics in columns. Growth may push a later topic down,
+      // but must preserve its internal geometry, column and order, and leave other topics still.
+      const owners = await evaluate(`Object.fromEntries([...document.querySelectorAll(".react-flow__node")].map(n => [n.dataset.id, n.querySelector("[data-thread]")?.dataset.thread]))`);
+      const grouped = await evaluate('document.querySelectorAll(".spine-group").length >= 2');
+      const xy = transform => [...transform.matchAll(/[-\d.]+/g)].map(m => Number(m[0]));
+      const growing = xy(before["t:T1"]);
+      const bad = moved.filter(key => {
+        const head = `t:${owners[key]}`;
+        if (!grouped || !before[head] || !after[head] || head === "t:T1") return true;
+        const a = xy(before[key]), b = xy(after[key]), h = xy(before[head]), k = xy(after[head]);
+        return h[1] <= growing[1] || a[0] !== b[0] || h[0] !== k[0] || k[1] <= h[1] || Math.abs((b[1] - a[1]) - (k[1] - h[1])) > 0.5;
+      });
+      if (bad.length) fail("spine", `a landing moved ${bad.join(", ")} outside the grouped column's downstream reflow`);
+    }
     const point = await middle(`.react-flow__node[data-id="p:th-2"] .spine-text`);
     if (!point) fail("spine", "no point th-2 on the canvas");
     else {
@@ -1735,7 +1749,7 @@ try {
   await until(`!!document.querySelector(".apps-catalog button")`, 3000);
   await evaluate(`document.querySelector(".apps-catalog button").click()`);
   if (!await until(`!!document.querySelector("dialog.catalog[open]")`, 3000)) fail("Catalog", "doesn't open from the Apps panel");
-  const listed = await evaluate(`[...document.querySelectorAll(".catalog-row strong")].map((s) => s.textContent)`);
+  const listed = await evaluate(`[...document.querySelectorAll(".catalog-group:not([aria-label^=Built]) .catalog-row strong")].map((s) => s.textContent)`);
   for (const name of brickNames) if (!listed.includes(name)) fail("Catalog", `doesn't list ${name}`);
   if (listed.length !== brickNames.length) fail("Catalog", `lists ${listed.length} bricks, the folders hold ${brickNames.length}`);
   const switchFor = (name) => `[...document.querySelectorAll(".catalog-row")].find((r) => r.querySelector("strong").textContent === ${JSON.stringify(name)}).querySelector("[role=switch]")`;
@@ -1820,7 +1834,7 @@ try {
     await tapMic();
     if (!await until(`!document.querySelector(".status.capturing")`, 3000)) fail("the dock", "a second tap on the mic didn't stop it");
   }
-  const switched = ["Cards", "Pictures", ...viewBricks.map((info) => info.name)].join();
+  const switched = ["Cards", "Pictures", "Canvas", ...viewBricks.filter((info) => info.id !== "spine").map((info) => info.name)].join();
   if ((await views()).join() !== switched) fail("Catalog", `switched on, the view switch says ${await views()}, not ${switched}`);
   // Each view shows in the map's place, with something in it, and Map brings the map back.
   for (const { id, name } of viewBricks) {

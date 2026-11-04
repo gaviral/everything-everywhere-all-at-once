@@ -40,7 +40,7 @@ try {
    await click('.shell-rail-close');
   };
   await toggle();
-  assert.ok(await until(`document.querySelector('.spine-frame').dataset.phoneTreatment==='spatial'`), "enable retains A");
+  assert.ok(await until(`document.querySelector('.spine-frame').dataset.phoneReadingMode==='spatial'`), "enable retains A");
   const shot = async name => {const {data}=await page("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});writeFileSync(join(evidence,`${theme}-${name}.png`),Buffer.from(data,"base64"));};
   const draft = "Draft stays editable.";
   await evaluate(`(() => {const e=document.querySelector('.shell-composer textarea, .shell-composer input'); const setter=Object.getOwnPropertyDescriptor(e instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set; setter.call(e,${JSON.stringify(draft)});e.dispatchEvent(new Event('input',{bubbles:true}));})()`);
@@ -53,7 +53,7 @@ try {
   const bounds = async (id, inline) => {
    const result = await evaluate(`(() => {
     const f=document.querySelector('.spine-frame'), a=JSON.parse(f.dataset.phoneBounds), fr=f.getBoundingClientRect();
-    const q=${JSON.stringify(inline ? '.inline-phone' : '.spatial-treatment')};
+    const q=${JSON.stringify(inline ? '.inline-phone' : '.spatial-reading-mode')};
     const e=document.querySelector(q+' [data-heads~="${id}"]');
     if(!e) return {missing:true};
     const text=e.querySelector(${JSON.stringify(inline?'.inline-words':'.spine-text')});
@@ -78,8 +78,8 @@ try {
    await sleep(250);
    for(const mode of ["spatial","inline"]) {
     const inline=mode==='inline';
-    if(await evaluate(`document.querySelector('.spine-frame').dataset.phoneTreatment`) !== mode) await click(`.phone-controls button:nth-child(${inline?2:1})`);
-    if(inline) assert.equal(await evaluate(`getComputedStyle(document.querySelector('.spatial-treatment')).opacity`),"0","inactive A cannot show through Inline");
+    if(await evaluate(`document.querySelector('.spine-frame').dataset.phoneReadingMode`) !== mode) await click(`.phone-controls button:nth-child(${inline?2:1})`);
+    if(inline) assert.equal(await evaluate(`getComputedStyle(document.querySelector('.spatial-reading-mode')).opacity`),"0","inactive A cannot show through Inline");
     for(const [child,source] of [["A","p1"],["B","a1"],["C","p2"]]) {
      await open(child);
      assert.equal(await evaluate(`document.querySelector('.phone-back').dataset.sourceId`),source,`${child}: actual source identity`);
@@ -115,7 +115,7 @@ try {
   const restored=await evaluate(`document.querySelector('.react-flow__viewport').style.transform`);
   assert.equal(restored,before,"Inline restores A camera and zoom");
   await page("Page.reload");
-  assert.ok(await until(`document.querySelector('.spine-frame')?.dataset.phoneTreatment==='spatial'`,15000),"reload keeps setting, starts Spatial");
+  assert.ok(await until(`document.querySelector('.spine-frame')?.dataset.phoneReadingMode==='spatial'`,15000),"reload keeps setting, starts Spatial");
   await page("Emulation.setDeviceMetricsOverride",{width:1440,height:900,deviceScaleFactor:1,mobile:false});
   assert.ok(await until(`!document.querySelector('.phone-controls, .inline-phone')`),"desktop has baseline Spatial only");
   await shot("desktop");

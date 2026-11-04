@@ -1031,7 +1031,7 @@ export default function App() {
   });
   useEffect(() => () => cancelAnimationFrame(clearFrame.current), []);
   // A move changes where words belong, not when this thread was last spoken on. Future sample times count as earliest.
-  const lastWords = pullBack?.return_source ? lastWordsOn(world.thoughts, pullBack, me, now) : "";
+  const lastWords = pullBack ? lastWordsOn(world.thoughts, pullBack, me, now) : "";
   useEffect(() => {
     if (!pullBack || pullBackHovered || pullBackFocused) return;
     const timer = window.setTimeout(() => {
@@ -1741,9 +1741,9 @@ export default function App() {
           {core.snapshotRevision > 0 && empty && <Welcome models={!core.noKey ? modelsLine(site.models) : ""} sample={site.sample && !core.listening
             ? <p className="shell-samples">
               <button type="button" className="shell-btn shell-sample" onClick={() => loadSample()} disabled={!core.connected || waitingCaptures.length > 0 || core.recovery.onlinePending} aria-keyshortcuts="E">See an example<Keycap>E</Keycap></button>
-              <button type="button" className="shell-btn" onClick={() => loadSample("debug-break")} disabled={!core.connected || waitingCaptures.length > 0 || core.recovery.onlinePending}>Try an unfinished thought</button>
+              <button type="button" className="shell-btn" onClick={() => loadSample("debug-break")} disabled={!core.connected || waitingCaptures.length > 0 || core.recovery.onlinePending} aria-keyshortcuts="Enter">Try an unfinished thought</button>
               <span>A student's week. Add your own thoughts.</span>
-              {moreSamples(site.samples).map(choice => <button key={choice.id} type="button" className="shell-btn" onClick={() => loadSample(choice.id)} disabled={!core.connected || waitingCaptures.length > 0 || core.recovery.onlinePending}>{choice.label}</button>)}
+              {moreSamples(site.samples).map(choice => <button key={choice.id} type="button" className="shell-btn" onClick={() => loadSample(choice.id)} disabled={!core.connected || waitingCaptures.length > 0 || core.recovery.onlinePending} aria-keyshortcuts="Enter">{choice.label}</button>)}
             </p> : null} />}
           {!empty && !spine && <p className="shell-empty-line">{NAMES.findNone}</p>}
         </main>}

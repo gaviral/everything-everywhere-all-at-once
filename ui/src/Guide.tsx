@@ -125,7 +125,7 @@ function usePauses(on: BrickOn | null) {
 }
 
 const inField = (target: EventTarget | null) => target instanceof Element && !!target.closest("input, textarea, select, [contenteditable]");
-const onPage = (target: EventTarget | null) => !target || target === document.body || target === document.documentElement;
+const onPage = (target: EventTarget | null) => !target || target === document.body || target === document.documentElement || (target instanceof Element && target.matches(".spine-frame, .react-flow__pane"));
 /** On the caption itself: one of its buttons, or its box for your own words. */
 const inCaption = (target: EventTarget | null) => target instanceof Element && !!target.closest(".guide-caption");
 /** The box for words of your own, on a question that offers answers. */
