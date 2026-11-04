@@ -1,0 +1,27 @@
+.research-walkthrough { color: #262d36; background: #fffdf8; border: 1px solid #b8b6ac; border-radius: 16px; padding: 1.25em; max-width: 36em; font: 1rem/1.55 system-ui, sans-serif; overflow-wrap: anywhere; }
+.research-walkthrough * { box-sizing: border-box; }
+.research-walkthrough h2, .research-walkthrough h3 { line-height: 1.25; margin: .8em 0; }
+.research-walkthrough p { margin: .8em 0; }
+.research-walkthrough button, .research-walkthrough summary { font: inherit; min-height: 44px; padding: .55em .8em; cursor: pointer; }
+.research-walkthrough button { color: inherit; background: #fffdf8; border: 1px solid #777b78; border-radius: 8px; max-width: 100%; }
+.research-walkthrough button:disabled { cursor: wait; opacity: .6; }
+.research-walkthrough :focus-visible, .research-walkthrough h2:focus { outline: 3px solid #006e78; outline-offset: 3px; }
+.research-walkthrough a { color: #006474; text-underline-offset: .2em; }
+.research-walkthrough-control { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75em; font-weight: 650; }
+.research-walkthrough-control button { flex-shrink: 0; min-width: 4em; }
+.research-walkthrough-eyebrow { color: #565b60; font-size: .85em; }
+.research-walkthrough-detail { background: #f0eee5; border-radius: 8px; padding: .25em .65em; }
+.research-walkthrough-detail summary { font-weight: 650; }
+.research-walkthrough-return { border-top: 1px solid #c2c0b7; margin-top: 1em; padding-top: .25em; }
+.research-walkthrough img { max-width: 100%; height: auto; }
+.research-walkthrough figure { margin: 1em 0; }
+@media (prefers-color-scheme: dark) {
+  .research-walkthrough { color: #f0efe7; background: #222a2d; border-color: #788384; }
+  .research-walkthrough button { color: inherit; background: #293438; border-color: #97a4a3; }
+  .research-walkthrough-detail { background: #303b3e; }
+  .research-walkthrough a { color: #8ddde2; }
+  .research-walkthrough-eyebrow { color: #c0c9c9; }
+  .research-walkthrough :focus-visible, .research-walkthrough h2:focus { outline-color: #8ddde2; }
+}
+
+.research-walkthrough-control > span { flex: 1 1 9em; }

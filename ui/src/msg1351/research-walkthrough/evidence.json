@@ -1,0 +1,14 @@
+{
+  "id": "spatial-memory",
+  "title": "Why give thoughts a place?",
+  "claim": "Data Mountain's study found that its spatial document workspace supported spatial memory and outperformed Internet Explorer Favorites for managing documents.",
+  "sourceTitle": "Data Mountain: Using Spatial Memory for Document Management",
+  "sourceUrl": "https://www.microsoft.com/en-us/research/publication/data-mountain-using-spatial-memory-for-document-management/",
+  "citation": "Robertson et al., UIST 1998",
+  "verifiedOn": "2026-11-04",
+  "support": "The authors' abstract reports a user study, spatial-memory use, and statistically reliable advantages over Internet Explorer Favorites.",
+  "limitation": "This studied a different document workspace. It does not establish a memory benefit, placement accuracy, or speed advantage for E2A2O.",
+  "connection": "E2A2O lets you place thoughts and threads on its Canvas. Try the Canvas, then return to the same point in your demonstration.",
+  "feature": "Canvas",
+  "asset": null
+}
