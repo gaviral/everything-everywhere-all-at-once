@@ -1,0 +1,8 @@
+.wm-preview { max-width: 1080px; padding: 24px 12px; margin: auto; color: #182d35; font: 1rem/1.5 system-ui, sans-serif; }
+.wm-preview > header { padding: 8px; margin-bottom: 24px; }
+.wm-preview h1 { font-size: clamp(1.8em, 5vw, 2.6em); letter-spacing: -.04em; margin: 4px 0 8px; line-height: 1.1; }
+.wm-preview header p { margin: 8px 0; }
+.wm-preview-controls { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
+.wm-preview-controls button, .wm-preview-host button { font: inherit; color: #183d34; background: #f4f9f6; border: 1px solid #99b4ad; border-radius: 8px; min-height: 46px; padding: 8px 12px; cursor: pointer; }
+.wm-preview-host { padding: 24px; border: 1px dashed #99b4ad; border-radius: 16px; }
+.wm-preview button:focus-visible { outline: 3px solid #075fbb; outline-offset: 3px; }
