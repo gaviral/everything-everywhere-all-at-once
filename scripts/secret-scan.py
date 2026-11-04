@@ -62,6 +62,13 @@ def findings(data):
         value = match.group(2) or match.group(3)
         if len(value) < 16 and not SHORT_SECRET.search(match.group(1)):
             continue
+        # An unquoted JS increment/decrement in a variable declaration is an
+        # expression, not a credential literal (including in historical blobs).
+        # Keep quoted strings and shell assignments subject to the normal rules.
+        if (match.group(3) and
+                re.fullmatch(r"(?:\+\+|--)[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*", value) and
+                re.search(r"\b(?:const|let|var)\s+$", text[:match.start()])):
+            continue
         # References and explanatory prose are not literal credentials.
         if PLACEHOLDER.fullmatch(value) or re.search(r"\$\{|process\.env\.|std::env|os\.environ", value):
             continue

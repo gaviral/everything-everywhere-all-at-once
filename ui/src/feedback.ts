@@ -36,6 +36,11 @@ const NOT_CONNECTED = "notice: “Not connected — try again when connected.”
 export const ACTIONS: Action[] = [
   { id: "partner-cancel", how: "click", at: [["PartnerStatus.tsx", "onClick={() => {"]], pressed: PRESS, waits: "core",
     done: "browser speech stops immediately; the core cancels a pending answer and shows Reply cancelled", failed: "a disconnected socket clears the thinking state" },
+  { id: "partner-retry-audio", how: "click", at: [["PartnerStatus.tsx", "onClick={retryPageReply}"]], pressed: PRESS,
+    working: "Preparing reply audio… changes to Reply playing when browser speech starts", done: "the reply is read aloud and its playback status clears at the end",
+    failed: "the audio error returns with Retry audio available", says: ["Preparing reply audio…", "Reply playing", "Retry audio"] },
+  { id: "partner-stop-conversation", how: "click", at: [["PartnerStatus.tsx", "onClick={onStopConversation}"]], pressed: PRESS,
+    done: "reply audio and microphone capture stop; the conversation feature switches off and listening pauses", says: ["Stop conversation"] },
   // The new shell: corners, Find, held questions and the rail.
   { id: "catalog-corner", how: "click", at: [["App.tsx", `toggleTab("catalog")`], ["shell/Shell.tsx", "onClick={onClick} data-guide={guide}"]], pressed: PRESS,
     done: "the rail opens at the Features tab, or closes; the button stays pressed while it's open" },
@@ -74,6 +79,18 @@ export const ACTIONS: Action[] = [
     done: "the switch slides and the feature appears or goes at once (your apps' switches wait on the core: disabled while it's away)" },
 
   // The dock: what you say or type.
+  { id: "copy-recognized-draft", how: "click", at: [["App.tsx", "setDraft(text => text ?"]], pressed: PRESS,
+    done: "recognized words append to the input box, the voice draft clears and the input takes focus", says: ["Copy to editor"] },
+  { id: "recovery-send-online", how: "click", at: [["RecoveryPanel.tsx", "onClick={() => {"]], pressed: PRESS, waits: "network",
+    working: "the button says Waiting for receipt… and is disabled; the draft stays until every part is received",
+    done: "the exact sent draft clears after the core's receipt", failed: "the draft stays and Send online becomes available again after reconnecting",
+    says: ["Waiting for receipt…", "Send online"] },
+  { id: "recovery-keep", how: "click", at: [["RecoveryPanel.tsx", "onClick={() => recover(entry.id)}"]], pressed: PRESS, waits: "core",
+    done: "the saved words leave recovery and queue for this map; unfinished speech leaves when the core confirms the choice",
+    failed: "the words stay in recovery if storage or the connection is unavailable", says: ["Keep in this map"] },
+  { id: "recovery-discard", how: "click", at: [["RecoveryPanel.tsx", "onClick={() => discardRecovery(entry.id)}"]], pressed: PRESS, waits: "core",
+    done: "the saved words leave recovery; unfinished speech leaves when the core confirms the choice",
+    failed: "the words stay in recovery if storage or the connection is unavailable", says: ["Discard"] },
   { id: "type-a-thought", how: "form", at: [["App.tsx", `<form className="composer" onSubmit={submit}`]], pressed: INSTANT, waits: "model",
     done: "the field clears and the thought shows at once in the bottom bar, then lands on the map with the landing highlight",
     working: "the pending thought: “Finding a place for your thought…”, then where it stands", failed: NOT_CONNECTED + "; a thought that can't be placed yet says why in the bottom bar",

@@ -784,7 +784,11 @@ export function useCore(speaker?: string) {
   const onlineSend = useRef<{ map: string; text: string; messages: string[]; awaiting: Set<string>; received: () => void } | null>(null);
   const [recovery, setRecovery] = useState<RecoveryState>({ entries: [], storageUnavailable: false });
   const refreshRecovery = () => {
-    try { setRecovery((state) => ({ ...state, entries: [...state.entries.filter(entry => entry.kind === "speech"), ...quarantined(speaker ?? "you", mapId.current)] })); }
+    try {
+      // Read storage while this catch is active, not in React's deferred updater.
+      const entries = quarantined(speaker ?? "you", mapId.current);
+      setRecovery((state) => ({ ...state, entries: [...state.entries.filter(entry => entry.kind === "speech"), ...entries] }));
+    }
     catch { setRecovery((state) => ({ ...state, storageUnavailable: true })); }
   };
   const [queuedCount, setQueuedCount] = useState(0);

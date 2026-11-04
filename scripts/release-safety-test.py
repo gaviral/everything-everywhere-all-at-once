@@ -74,6 +74,23 @@ class SafetyTests(unittest.TestCase):
         for name in SCAN.TEMPLATES:
             self.assertFalse(SCAN.private_env(name))
 
+    def test_js_generation_is_not_a_credential(self):
+        for declaration in ("const", "let", "var"):
+            for operator in ("++", "--"):
+                expression = operator + "generation.current"
+                self.assertFalse(SCAN.findings(f"{declaration} token = {expression};".encode()))
+                # A quoted value or shell assignment is still a literal.
+                self.assertTrue(SCAN.findings(f'{declaration} token = "{expression}";'.encode()))
+                self.assertTrue(SCAN.findings(f"TOKEN={expression}".encode()))
+        self.init_repo()
+        self.write("camera.ts", "const token = ++generation.current;\n")
+        self.git("add", ".")
+        self.git("commit", "-qm", "Camera generation")
+        self.write("camera.ts", "const generation = 0;\n")
+        self.git("add", ".")
+        self.git("commit", "-qm", "Update camera")
+        self.assertEqual(self.scan().returncode, 0, "historical JS expressions are not credentials")
+
     def test_short_key_fixtures_and_real_key_in_start_check(self):
         self.init_repo()
         path = "scripts/start-check.mjs"
