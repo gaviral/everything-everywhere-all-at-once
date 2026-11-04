@@ -17,12 +17,13 @@ assert.ok(existsSync(binary), 'build the real core first');
 const data = mkdtempSync(join(tmpdir(), 'system-view-check-'));
 let page, app;
 const streams = new Set();
-let opens = 0, sequence = 0;
+let opens = 0, sequence = 0, feedAvailable = true;
 const snapshot = { functions: [], branches: [], files: 0, warnings: [] };
 const server = createServer((req, res) => {
   const path = new URL(req.url, 'http://local').pathname;
   if (path === '/code-canvas/snapshot') { res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(snapshot)); return; }
   if (path === '/code-canvas/events') {
+    if (!feedAvailable) { res.writeHead(404).end(); return; }
     opens++; streams.add(res); res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write(': connected\n\n');
     res.on('close', () => streams.delete(res)); return;
   }
@@ -108,6 +109,12 @@ async function visualChecks(base) {
   await page.page('Input.dispatchKeyEvent', { type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 });
   await check(`document.querySelector('.system-view button').getAttribute('aria-checked') === 'false' && !document.querySelector('.sv-diagram')`, 'keyboard turns observer off');
   await waitFor(() => streams.size === 0, 'off releases observer');
+  feedAvailable = false;
+  await click('.system-view button');
+  await check(`document.querySelector('.sv-status').textContent.includes('Core stream unavailable')`, 'refused stream does not claim an automatic reconnect');
+  assert.equal(streams.size, 0, 'refused stream has no observer');
+  assert.equal(await page.evaluate(`document.querySelectorAll('.sv-flight').length`), 0, 'unavailable stream invents no messages');
+  await click('.system-view button');
   await page.close(); page = undefined;
 }
 
