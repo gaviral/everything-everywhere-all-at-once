@@ -339,7 +339,7 @@ function Point({ data }: { data: ItemData }) {
   };
   return <div className={cls("spine-point", look.variant === "mini" && "spine-point-mini", item.pinned && "spine-pinned", here && "spine-on", picked && "spine-picked",
     data.fresh && "spine-fresh", data.dim && "spine-dim", item.left && "spine-point-left", arriving && "spine-arriving", data.cut && "spine-cut", data.selecting && "spine-selecting")}
-    style={roomStyle(item.room)} data-thread={item.thread} data-thought={item.id} data-heads={item.thoughts?.join(" ")}
+    style={roomStyle(item.room)} data-thread={item.thread} data-thought={item.id} data-command-thought={item.thoughts?.at(-1)} data-heads={item.thoughts?.join(" ")}
     data-readable={!zoomedOut && !arriving ? "true" : undefined} data-guide={`point:${item.id}`} data-slot={arriving ? `slot:${arriving}` : undefined}>
     {item.who ? <Initial who={item.who} small={look.variant === "mini"} style={{ left: look.lineX, top: look.line / 2 }} />
       : <span className={cls("spine-dot", item.decided && "spine-dot-decided")} style={{ left: look.lineX, top: look.line / 2 }} aria-hidden="true" />}
@@ -386,7 +386,7 @@ function ConversationPoint({ data }: { data: ItemData }) {
   const who = item.who!;
   const textH = item.lines!.length * G.pointLine;
   return <div className={cls("spine-point", "spine-conversation-turn", data.picked && "spine-picked", data.cut && "spine-cut")}
-    data-thread={item.thread || undefined} data-thought={item.id} data-guide={`point:${item.id}`}>
+    data-thread={item.thread || undefined} data-thought={item.id} data-command-thought={item.thoughts?.at(-1)} data-guide={`point:${item.id}`}>
     <Initial who={who} style={{ left: G.lineX, top: C.speaker + G.dotY }} />
     <span className="spine-turn-speaker" style={{ left: G.textX }}>{who.ai ? `✦ ${who.name}` : who.name}</span>
     <span className="spine-text" data-spine-target tabIndex={0} role="button" style={{ left: G.textX, top: C.speaker, width: G.textW, WebkitLineClamp: item.lines!.length }}
@@ -524,7 +524,7 @@ function Aside({ data, dragging }: { data: ItemData; dragging: boolean }) {
   const whole = useWhole(bubble) || dragging || picked;
   return <div ref={bubble} className={cls("spine-aside", item.pinned && "spine-pinned", here && "spine-on", picked && "spine-picked", data.fresh && "spine-fresh", data.dim && "spine-dim",
     data.cut && "spine-cut")} style={roomStyle(item.room)} data-edge={whole ? undefined : "cut"} data-thread={item.thread}
-    data-thought={item.thoughts?.[0]} data-heads={item.thoughts?.join(" ")} data-readable={!zoomedOut && whole ? "true" : undefined} data-guide={`thread:${item.thread}`}>
+    data-thought={item.thoughts?.[0]} data-command-thought={item.thoughts?.length === 1 ? item.thoughts.at(-1) : undefined} data-heads={item.thoughts?.join(" ")} data-readable={!zoomedOut && whole ? "true" : undefined} data-guide={`thread:${item.thread}`}>
     <StayHere thread={item.thread} title={item.title} />
     {pulse > 0 && <span key={pulse} className="spine-card-ring" aria-hidden="true" />}
     <button type="button" className="spine-aside-face" onClick={() => acts.pick(item)} onFocus={() => acts.focus(item)} onDoubleClick={() => acts.openOnMap(item.thread)}

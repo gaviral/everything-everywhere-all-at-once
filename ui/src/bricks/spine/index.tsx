@@ -1006,7 +1006,7 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
         <span>{"GestureEvent" in window ? "Browser rotation gestures available; or use Angle." : "Rotation gestures unavailable here; use Angle."}</span>
       </div>}
       {picking && <Reply key={`${picking.key}|${picking.quote}`} picking={picking} width={width} start={() => setPicking({ ...picking, typing: true })} cancel={() => { unpick(); getSelection()?.removeAllRanges(); }}
-        send={(text) => { notes.add(picking.thoughtId, picking.quote, text); unpick(); getSelection()?.removeAllRanges(); }} />}
+        send={(text) => { if (notes.add(picking.thoughtId, picking.quote, text)) { unpick(); getSelection()?.removeAllRanges(); } }} />}
       {/* The camera's corner: bottom left in the shell that has a stage (its regions); in the app without one, over the
           shelf at the right, where the left is the notice timeline's. */}
       {!narrow && corner.shell && <div className="spine-corner spine-corner-left" style={{ bottom: corner.bottom }}>

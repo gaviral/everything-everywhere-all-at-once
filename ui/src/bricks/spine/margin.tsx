@@ -35,7 +35,7 @@ export function useMargins(map: MapSnapshot, actions: BrickActions) {
   }, [map.threads, map.thoughts, map.me]);
 
   // For every window, by you: the first note on those words starts their note, a later one answers in it.
-  const add = (thoughtId: string, quote: string, text: string) => { actions.annotate(thoughtId, quote, text); };
+  const add = (thoughtId: string, quote: string, text: string) => actions.annotate(thoughtId, quote, text);
   return { margins, anchored, add };
 }
 
