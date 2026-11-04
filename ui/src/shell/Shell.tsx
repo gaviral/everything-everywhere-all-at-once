@@ -34,14 +34,15 @@ export function TopLeft({ mapName, mode, wordmark }: { mapName: string; mode: Mo
 
 /** Find: its field is the pill, so "/" goes straight to typing; the topics that match list under it, best first. Enter
  *  or a click goes to one (the view moves there); Esc clears it and lets go. */
-export function Find({ inputRef, query, setQuery, results, go }: {
+export function Find({ inputRef, query, setQuery, results, go, inspect, inspecting }: {
   inputRef: React.RefObject<HTMLInputElement | null>; query: string; setQuery: (q: string) => void;
   results: { thread: Thread; points: number }[]; go: (thread: Thread) => void;
+  inspect?: (threadId: string, invoker: HTMLElement) => void; inspecting?: boolean;
 }) {
   const [at, setAt] = useState(0);
   const [focused, setFocused] = useState(false);
   useEffect(() => setAt(0), [query]);
-  const shown = focused && query.trim().length > 0;
+  const shown = (focused || inspecting) && query.trim().length > 0;
   const key = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setQuery(""); event.currentTarget.blur(); return; }
     if (!results.length) return;
@@ -49,23 +50,28 @@ export function Find({ inputRef, query, setQuery, results, go }: {
     if (event.key === "ArrowUp") { event.preventDefault(); setAt((i) => Math.max(0, i - 1)); }
     if (event.key === "Enter") { event.preventDefault(); const pick = results[at] ?? results[0]; if (pick) { go(pick.thread); setQuery(""); event.currentTarget.blur(); } }
   };
-  return <div className={cls("shell-find", (focused || query) && "shell-find-open")} data-guide="search">
+  return <div className={cls("shell-find", (focused || query) && "shell-find-open")} data-guide="search"
+    onFocusCapture={() => setFocused(true)} onBlurCapture={() => window.setTimeout(() => setFocused(!!inputRef.current?.closest(".shell-find")?.contains(document.activeElement)), 120)}>
     <label className="shell-pill shell-find-field">
       <Icon name="find" />
       <span className="sr-only">{NAMES.find}</span>
       <input ref={inputRef} type="search" value={query} placeholder={focused ? NAMES.findPlaceholder : NAMES.find} aria-keyshortcuts="/"
-        onChange={(event) => setQuery(event.target.value)} onKeyDown={key} onFocus={() => setFocused(true)} onBlur={() => window.setTimeout(() => setFocused(false), 120)}
-        role="combobox" aria-expanded={shown} aria-controls="shell-find-results" aria-autocomplete="list" />
+        onChange={(event) => setQuery(event.target.value)} onKeyDown={key} onFocus={() => setFocused(true)}
+        role={inspect ? "searchbox" : "combobox"} aria-expanded={!!shown} aria-controls="shell-find-results" aria-autocomplete={inspect ? undefined : "list"} />
       {!focused && !query && <Keycap>/</Keycap>}
       {focused && <Keycap>esc</Keycap>}
     </label>
-    {shown && <div id="shell-find-results" className="shell-find-results" role="listbox" aria-label="Topics found">
-      {results.length ? results.map(({ thread, points }, i) => <button key={thread.id} type="button" role="option" aria-selected={i === at} className="shell-find-row"
+    {shown && <div id="shell-find-results" className="shell-find-results" role={inspect ? "group" : "listbox"} aria-label="Topics found">
+      {results.length ? results.map(({ thread, points }, i) => <div key={thread.id} className={inspect ? "bring-here-result" : undefined}>
+      <button type="button" role={inspect ? undefined : "option"} aria-selected={inspect ? undefined : i === at} className="shell-find-row"
         aria-keyshortcuts={i === at ? "Enter" : undefined} onPointerDown={(event) => event.preventDefault()} onClick={() => { go(thread); setQuery(""); inputRef.current?.blur(); }}>
         <span className="shell-find-title">{thread.title}</span>
         <span className="shell-find-meta">{points} {points === 1 ? "point" : "points"}</span>
         {i === at && <Keycap>↵</Keycap>}
-      </button>) : <p className="shell-find-none">{NAMES.findNone}</p>}
+      </button>
+      {inspect && <button type="button" className="shell-link bring-here-action" aria-label={`${NAMES.inspectHere}: ${thread.title}`}
+        onPointerDown={(event) => event.preventDefault()} onClick={(event) => inspect(thread.id, event.currentTarget)}>{NAMES.inspectHere}</button>}
+      </div>) : <p className="shell-find-none">{NAMES.findNone}</p>}
     </div>}
   </div>;
 }
@@ -272,9 +278,10 @@ const ago = (time: number, now: number) => {
   return hours < 24 ? `${hours} hr` : `${Math.floor(hours / 24)} d`;
 };
 
-export const HistoryTab = memo(function HistoryTab({ entries, undoId, now, recap, onUndo, onShow }: {
+export const HistoryTab = memo(function HistoryTab({ entries, undoId, now, recap, onUndo, onShow, inspectAction }: {
   entries: Entry[]; undoId: number | null; now: number; recap: (() => void) | null;
   onUndo: (entry: Entry) => void; onShow: (threadId: string) => void;
+  inspectAction?: (threadId: string) => ReactNode;
 }) {
   return <div className="shell-history">
     {recap && <button type="button" className="shell-row-button" onClick={recap} aria-keyshortcuts="R">
@@ -287,6 +294,7 @@ export const HistoryTab = memo(function HistoryTab({ entries, undoId, now, recap
           <time dateTime={new Date(entry.at).toISOString()} title={new Date(entry.at).toLocaleTimeString()}>{ago(entry.at, now)}</time>
           {entry.detail && <><span aria-hidden="true">·</span><span>{entry.detail}</span></>}
           {entry.threadId && <button type="button" className="shell-link" onClick={() => onShow(entry.threadId!)} aria-keyshortcuts="Enter">Show</button>}
+          {entry.threadId && inspectAction?.(entry.threadId)}
           {canUndo(entry, undoId) && <button type="button" className="shell-link" onClick={() => onUndo(entry)} aria-keyshortcuts={entry.undo?.kind === "turn" ? modAria("Z") : undefined}>
             {NAMES.history.undo}{entry.undo?.kind === "turn" && <Keycap>{mod("Z")}</Keycap>}</button>}
           {entry.undone && <span>{NAMES.history.undone}</span>}

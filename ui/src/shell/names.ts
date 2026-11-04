@@ -20,6 +20,8 @@ export const NAMES = {
   close: "Close",
   backToMap: "Back to the Canvas",
   show: "Show",
+  inspectHere: "Inspect here",
+  openOriginal: "Open original",
   tabs: { talk: "Talk", history: "History", catalog: "Features", settings: "Settings" },
   composer: { idle: "Type a thought · Enter adds it", firstTap: "Tap to talk", firstType: "or type a thought", call: "Type to the call" },
   held: { label: "Held for a pause", asks: "asks when you stop", answer: "Answer", later: "Later" },
@@ -58,6 +60,7 @@ export type FeatureName = { name: string; aka?: string; does?: string; lives?: s
 /** The app's features by id (a feature's folder name, or a built-in's own id): what the shell calls each. A feature
  *  missing here shows its brick.json name and line. */
 export const FEATURE_NAMES: Record<string, FeatureName> = {
+  "bring-here": { name: "Bring here", does: "Inspect a live topic beside Find or History without moving the Canvas. Open original goes to its place.", lives: "Find and History" },
   // Built in: switched here, as the features are.
   partner: { name: "Conversation partner", does: "E2A2O answers explicit questions with short spoken replies using Meta. Say ‘Partner, …’ for a follow-up. Cancel a reply at any time.", lives: "Beside your words and in Talk" },
   cards: { name: "Cards", aka: "List view", does: "Every topic as a card of its points, in a list you scroll and search.", lives: "A view" },
