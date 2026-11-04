@@ -112,3 +112,22 @@ crop to invent a result. The end card uses the current app icon.
 Focused verification: `node film/cut-check.mjs`. It checks cache reuse, isolated
 shot and clip changes, recovery after one missing clip, concatenation, captions,
 cropping, and the preview/final profiles without rendering the whole film.
+
+## Directed shots
+
+A plane can enter with `tilt: [x,y,z]` and settle to `tiltTo: [x,y,z]` over
+`settleSeconds` (default 0.7). Rotation uses smooth interpolation independently
+of the slow `drift` and `zoom` camera. `background: "meta"` selects the Meta-blue
+stage gradient. `fullFrame: true` removes the plane edge for an already-rendered
+wall movie. The end card has a centered icon/name, a `tagline`, and plain
+`credits` beneath it.
+
+An optional `frames: {preview: integer, final: integer}` pins each shot's frame
+allocation. This lets fractional-second chapter cards share rounding within a
+chapter while the complete cut ends at exactly the intended time. Cache keys
+include that allocation. Every assembled cut writes a `.times.txt` sidecar
+with actual frame-aligned start times, stable shot ids, and durations.
+
+`node film/direction-check.mjs /path/to/shots.json` checks the directed 150-second
+edit's chapter clocks, frame allocations, readable settling, repeatable camera,
+and end-card wording. Its screenshots stay with the external media.
