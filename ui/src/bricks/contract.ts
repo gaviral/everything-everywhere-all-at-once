@@ -143,6 +143,7 @@ export interface Job {
 export interface MapSnapshot {
   /** Optional browser presentation: chronological turns with linked topics. Missing/off keeps the current Canvas. */
   readonly conversationSpine?: boolean;
+  readonly terse?: boolean;
   /** Allowances from USAGE_FILE and the core's rolling-hour model budget; null with no readable file or connection. */
   readonly usage: UsageSnapshot | null;
   /** The helpers' jobs, in the order each first came (the oldest first, the newest last), each in its latest state; the

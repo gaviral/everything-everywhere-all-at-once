@@ -5,9 +5,10 @@ import { useSyncExternalStore } from "react";
 import { talkOn, watchTalk } from "../talk-preset";
 import type { BrickKind } from "../bricks/contract";
 
-export type BuiltIn = { id: "conversation-spine" | "partner" | "listening" | "recap" | "import" | "export" | "cards" | "pictures" | "semantic-zoom"; kind: BrickKind; defaultOn: boolean };
+export type BuiltIn = { id: "terse" | "conversation-spine" | "partner" | "listening" | "recap" | "import" | "export" | "cards" | "pictures" | "semantic-zoom"; kind: BrickKind; defaultOn: boolean };
 
 export const BUILT_INS: readonly BuiltIn[] = [
+  { id: "terse", kind: "view", defaultOn: false },
   { id: "conversation-spine", kind: "view", defaultOn: false },
   { id: "partner", kind: "input", defaultOn: false },
   // The views beside the Canvas: off until switched on; each then has its Show.

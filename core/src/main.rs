@@ -26,6 +26,7 @@ mod pictures;
 mod placer;
 mod positions;
 mod refiner;
+mod terse;
 mod sample;
 mod trace;
 mod recap;
@@ -1303,6 +1304,7 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/ws", get(connect))
         .route("/room", get(room_info))
+        .route("/terse", post(terse::read))
         .route("/import", post(import::prepare).layer(DefaultBodyLimit::max(import::MAX_BYTES)))
         .nest_service("/images", ServeDir::new(images))
         .fallback_service(ServeDir::new(&ui).fallback(ServeFile::new(format!("{ui}/index.html"))))
