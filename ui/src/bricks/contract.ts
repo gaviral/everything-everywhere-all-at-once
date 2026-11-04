@@ -129,6 +129,8 @@ export interface MapSnapshot {
   readonly speakers: ReadonlyMap<string, Speaker>;
   /** Who is at this window: "you" alone, or the name they joined a room with. A thought's `speaker` is the same. */
   readonly me: string;
+  /** The newest turn you've read, shared by Talk and canvas views; absent until one has been read. */
+  readonly readThrough?: string | null;
   /** Your words as they're heard, not yet final: what the dock's live line shows while you talk, growing as you go,
    *  "" once the turn ends (it then comes as a thought) or while you're quiet. Only yours, and only in the tab whose
    *  mic is on: in a room the other person's words never reach this window, nor do your other tabs'. */
@@ -139,6 +141,8 @@ export interface MapSnapshot {
 
 /** What a brick may do. Each does what its button in the app does, with the same answer on screen. */
 export interface BrickActions {
+  /** Counts a visible thought as read, advancing the shared Talk/canvas position (never moving it back). */
+  readThought(thoughtId: string): void;
   /** Adds a thought as if typed in the composer: it lands on a thread a few seconds later, and its `landed` says this
    *  brick added it (`by`). False when it couldn't go (too long, or too many waiting for the core); the window says why. */
   addThought(text: string): boolean;

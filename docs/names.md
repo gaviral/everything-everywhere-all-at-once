@@ -25,7 +25,7 @@ The screen, the help list and the docs use the names in the first column. Code, 
 | **Features** | | brick, Apps bar | `brick.json`, `ui/src/bricks/`, `BrickSlot`, the file `docs/bricks.md`; saved switches in `localStorage` |
 | **Features page** | | Catalog | `Catalog.tsx`, `openCatalog`, `data-guide="catalog"`; `core/src/catalog.rs` is the command list |
 | **Notification history** | recent notices | Notice timeline | feature id `notice-timeline` |
-| **Read marker** | where you stopped | Read progress | feature id `read-progress` |
+| **Mark replies as read** | remember replies you've viewed; a dot means unread and a line shows where you stopped | Read marker, Read progress | feature id `read-progress` |
 | **Keyboard shortcuts** | keyboard controls | Keys | feature id `keys` |
 | **Source attribution** | source tag, added by | Brick chip | feature id `brick-chip` |
 | **AI helper** | | Friend | the participant name `Friend` in saved maps and on the wire; shown as AI helper |

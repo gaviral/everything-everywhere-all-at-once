@@ -1,7 +1,7 @@
 {
   "id": "read-progress",
-  "name": "Read marker",
-  "does": "Keeps your place in other participants' thoughts, by scrolling or tapping a point.",
+  "name": "Mark replies as read",
+  "does": "Remembers replies you view or tap. A dot means unread; a line shows where you left off.",
   "kind": "input",
   "defaultOn": false,
   "demoSafe": true

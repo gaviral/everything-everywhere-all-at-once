@@ -10,6 +10,7 @@ import { hearFrom, watchPoint } from "./guide-core";
 import { placedBy, watchDecided } from "./route";
 import { moveToTopic, renameTopic } from "./topics-core";
 import { watchSpeaking } from "./talk/call-core";
+import { useReadPosition } from "./talk/read";
 import { useJobs } from "./work-jobs";
 import "./bricks.css";
 
@@ -19,7 +20,7 @@ export type BrickHost = { map: MapSnapshot; on: BrickOn; actionsFor: (info: Bric
 
 /** The app's side of the actions (App.tsx, the playground): a brick's own, and for `hint`, the brick's name to show. A
  *  topic's rename or a move goes to the core by itself (topics-core.ts) unless the host answers it (the playground). */
-export type HostActions = Omit<BrickActions, "hint" | "renameTopic" | "moveToTopic"> & { hint(text: string, target: string | null, by: string): boolean }
+export type HostActions = Omit<BrickActions, "hint" | "renameTopic" | "moveToTopic" | "readThought"> & { hint(text: string, target: string | null, by: string): boolean }
   & Partial<Pick<BrickActions, "renameTopic" | "moveToTopic">>;
 
 /** How long a landing whose model is still to be told waits for it (its route comes right after its changes, so a few
@@ -36,7 +37,11 @@ const MODEL_WAIT_MS = 1000;
  *  brick is handed only map, actions and on (BrickMount). */
 export function useBrickHost(world: World, revision: number, me: string, connected: boolean, rooms: ReadonlyMap<string, string>, partial: string, act: HostActions, destination?: BrickProps["destination"], usage: UsageSnapshot | null = null): BrickHost & Pick<ReturnType<typeof brickEvents>, "emit"> {
   const jobs = useJobs();
-  const map = useMemo(() => snapshotOf(world, me, connected, rooms, partial, jobs, usage), [world, me, connected, rooms, partial, jobs, usage]);
+  const snapshot = useMemo(() => snapshotOf(world, me, connected, rooms, partial, jobs, usage), [world, me, connected, rooms, partial, jobs, usage]);
+  const reading = useReadPosition(snapshot);
+  const map = useMemo(() => ({ ...snapshot, readThrough: reading.mark }), [snapshot, reading.mark]);
+  const read = useRef(reading.read);
+  read.current = reading.read;
   const latest = useRef(act);
   useLayoutEffect(() => { latest.current = act; });
   const [sends] = useState(senders);
@@ -45,6 +50,7 @@ export function useBrickHost(world: World, revision: number, me: string, connect
   const actionsFor = useMemo(() => (info: BrickInfo): BrickActions => {
     let actions = made.current.get(info.id);
     if (!actions) made.current.set(info.id, actions = {
+      readThought: (id) => read.current(id),
       addThought: (text) => {
         const sent = latest.current.addThought(text);
         if (sent) sends.sent(text, info);
