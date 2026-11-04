@@ -15,8 +15,15 @@ export class SketchTransport {
   watch(hear: () => void) { this.listeners.add(hear); return () => { this.listeners.delete(hear); }; }
   private changed() { for (const hear of this.listeners) hear(); }
   setEnabled(enabled: boolean) {
-    this.unsubscribe?.(); this.unsubscribe = undefined; this.enabled = enabled;
-    if (enabled) this.unsubscribe = this.adapter.subscribe(m => this.receive(m));
+    this.unsubscribe?.(); this.unsubscribe = undefined; this.enabled = false;
+    try {
+      this.adapter.setEnabled(enabled);
+      if (enabled) this.unsubscribe = this.adapter.subscribe(m => this.receive(m));
+      this.enabled = enabled;
+    } catch {
+      this.notice = 'Connection unavailable. Sketch exchange stays off; your drawings are kept.';
+      this.changed(); return;
+    }
     this.notice = enabled ? 'Ready to exchange sketches with selected sessions.' : 'Sketch exchange is off. Saved sketches remain in this view.';
     this.changed();
   }
@@ -70,5 +77,9 @@ export class SketchTransport {
     }
     this.changed();
   }
-  dispose() { this.unsubscribe?.(); this.unsubscribe = undefined; this.listeners.clear(); }
+  dispose() {
+    this.unsubscribe?.(); this.unsubscribe = undefined; this.enabled = false;
+    try { this.adapter.setEnabled(false); } catch { /* local session stays off */ }
+    this.listeners.clear();
+  }
 }

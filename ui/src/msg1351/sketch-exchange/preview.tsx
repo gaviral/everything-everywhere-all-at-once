@@ -6,6 +6,7 @@ const sessions: Session[] = [{ id:'tablet', label:'Sketch tablet' }, { id:'tv', 
 const adapters = sessions.map(self => {
   const channel = new BroadcastChannel('msg1351-sketch-exchange-preview');
   const adapter: HostAdapter = { self, targets: sessions.filter(s => s.id !== self.id),
+    setEnabled: () => { /* Preview subscribes only while enabled; no remote relay. */ },
     send: m => channel.postMessage(m),
     subscribe: hear => { const listener = (e: MessageEvent) => hear(e.data); channel.addEventListener('message', listener); return () => channel.removeEventListener('message', listener); },
   };
