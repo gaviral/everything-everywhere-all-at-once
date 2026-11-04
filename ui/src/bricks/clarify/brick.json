@@ -1,0 +1,9 @@
+{
+  "id": "clarify",
+  "name": "Ask about words",
+  "does": "Underlines a word Muse Spark can't place, and asks about it when you pause.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": true,
+  "flag": "clarify"
+}
