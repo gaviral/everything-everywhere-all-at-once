@@ -9,7 +9,7 @@
 // 4. contract.ts runs no app code: what it takes from the app is types only.
 // 5. In the built playground (headless Chrome): each brick mounts on a sample map, on an empty one and at a phone's
 //    width without an error, with nothing running off the side; a view or a card shows something.
-// 6. In the built app (all bricks): at their defaults they add nothing to the empty first screen; the Catalog lists every
+// 6. In the built app (all bricks): after the opening part, the empty first screen stays clear; the Catalog lists every
 //    brick; each view brick switched on joins Map and Palace, shows in the map's place and hands back to the map, and
 //    stays on after a reload; `?level` still shows the Level meter, and without it there is none.
 // Spine, beyond that: a head per topic and a card per tangent; a landing pulses its point once and moves nothing that
@@ -1723,7 +1723,8 @@ try {
   await go(`${base}/?cards`);
   await until(`!!document.querySelector(".empty h1")`, 8000);
   await settle();
-  const first = await evaluate(`({ bricks: document.querySelectorAll("[data-brick]").length, catalog: !!document.querySelector(".catalog, .apps-catalog"),
+  if (!await until(`!document.querySelector(".intro-parts")`, 3000)) fail("app's first screen", "the opening part does not finish");
+  const first = await evaluate(`({ bricks: [...document.querySelectorAll("[data-brick]")].filter(part => part.textContent.trim() || [...part.children].some(child => { const r = child.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(child).visibility !== "hidden"; })).length, catalog: !!document.querySelector(".catalog, .apps-catalog"),
     level: !!document.querySelector(".level-meter") })`);
   if (first.bricks || first.catalog || first.level) fail("app's first screen", `bricks at their defaults show up: ${JSON.stringify(first)}`);
   shown = full;

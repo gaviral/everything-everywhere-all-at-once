@@ -1,0 +1,13 @@
+/* The visual part never intercepts typing, taps, selection or capture controls. */
+.intro-parts { position: fixed; inset: 0; z-index: 60; pointer-events: none; user-select: none; color: var(--ink); font-weight: 600; }
+.intro-parts-paper { position: absolute; inset: 16vh 0 20vh; background: radial-gradient(ellipse at center, var(--bg) 20%, color-mix(in srgb, var(--bg) 96%, transparent) 45%, transparent 72%); }
+.intro-parts-name { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; padding-bottom: min(8vh, 100px); font-size: min(12.5vw, 17vh); line-height: 1.06; letter-spacing: -.055em; }
+.intro-parts-line { white-space: nowrap; }
+.intro-parts-line:last-child { display: flex; gap: .23em; }
+.intro-parts-word { display: inline-block; transform-origin: top left; }
+.intro-parts-lead { position: relative; display: inline-block; line-height: 1; }
+.intro-parts-tail { display: inline-block; }
+.intro-parts-number { position: absolute; top: 0; left: 0; opacity: 0; }
+.intro-parts-measure { position: absolute; top: 45%; left: 50%; transform: translate(-50%, -50%); display: flex; font-size: clamp(48px, 8vw, 240px); letter-spacing: .14em; line-height: 1; visibility: hidden; }
+.intro-parts-hint { position: absolute; left: 0; right: 0; bottom: max(24vh, 170px); margin: 0; text-align: center; color: var(--muted); font-size: clamp(12px, .9vw, 32px); font-weight: 400; letter-spacing: .03em; }
+@media (prefers-reduced-motion: reduce) { .intro-parts { display: none; } }
