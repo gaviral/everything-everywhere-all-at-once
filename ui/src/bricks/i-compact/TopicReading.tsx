@@ -15,7 +15,7 @@ export function TopicReading({ topic, children, scope, example, connected, actio
     if (event.target === event.currentTarget) expand(event.currentTarget.open);
   }}>
     <summary>
-      <span><span className="i-compact-eyebrow">{topic.parent ? "Supporting topic" : "The main thread"}</span>
+      <span><span className="i-compact-eyebrow">{topic.parent ? "Supporting topic" : "The main topic"}</span>
         <h2 id={headingId(topic.id)}>{topic.title}</h2>
         <span className="i-compact-meta">{topic.sources.length} source {topic.sources.length === 1 ? "point" : "points"}
           {uncertain > 0 && ` · ${uncertain} with uncertainty`}{stale && " · Synthesis invalidated"}</span>

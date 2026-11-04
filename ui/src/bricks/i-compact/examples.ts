@@ -14,8 +14,8 @@ export function exampleTopics(changed: boolean): ReadingTopic[] {
     ] },
     { id: "example-permission", title: "Permission comes before invitations", parent: "example-pilot", sources: [
       { id: "example-room", speaker: "Jordan", ai: false,
-        concise: "The room is available. The permit is still pending.",
-        original: "The room is available on Saturday. We still do not have the permit, so please do not treat the room booking as permission to launch.",
+        concise: "The room is available. The permit is still pending.", // names-ok: physical venue, not a Shared map
+        original: "The room is available on Saturday. We still do not have the permit, so please do not treat the room booking as permission to launch.", // names-ok: physical venue, not a Shared map; preserve the example's original wording
         uncertainty: "Permit pending", reason: "" },
     ] },
   ];

@@ -21,7 +21,7 @@ assert.equal(types.status, 0, `Scoped TypeScript: ${types.stdout}${types.stderr}
 await build({ configFile: false, root: directory, plugins: [react()], logLevel: 'warn',
   build: { outDir: join(artifacts, 'built'), emptyOutDir: false, rolldownOptions: { input: join(directory, 'preview.html') } } });
 const server = createServer((request, response) => {
-  const pathname = new URL(request.url, 'http://fixture.invalid').pathname;
+  const pathname = new URL(request.url, 'http://127.0.0.1').pathname;
   const file = resolve(artifacts, 'built', pathname === '/' ? 'preview.html' : `.${pathname}`);
   if (!file.startsWith(join(artifacts, 'built') + '/')) { response.writeHead(404).end(); return; }
   try {
