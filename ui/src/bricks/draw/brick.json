@@ -1,0 +1,9 @@
+{
+  "id": "draw",
+  "name": "Draw",
+  "does": "Draw on the screen and say what each part is. Muse Spark reads it and draws back.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": true,
+  "flag": "draw"
+}

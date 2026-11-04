@@ -59,6 +59,12 @@ export default function FlowCanvas({ map, actions, on, destination }: BrickProps
   const [testing, setTesting] = useState(false);
   const [saved, setSaved] = useState(false);
   useBrickEvent(on, "notice", event => { if (event.kind === "error") { setError(event.text); setListening(false); } });
+  // Draw hands over boxes it read from a sketch.
+  useEffect(() => {
+    const load = (event: Event) => { setPipeline((event as CustomEvent<Pipeline>).detail); setOpen(true); };
+    addEventListener("e2a2o:flow-load", load);
+    return () => removeEventListener("e2a2o:flow-load", load);
+  }, []);
   const busyRef = useRef(false);
   const [voiceReady, setVoiceReady] = useState(false);
   const actNow = useRef<(text: string) => void>(() => {});
