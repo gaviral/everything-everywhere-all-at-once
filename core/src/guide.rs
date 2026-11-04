@@ -93,7 +93,8 @@ impl Runtime {
     pub fn publish_core(&self, core: &Core, job: Job) {
         let mut jobs = self.jobs.lock().unwrap();
         let row = jobs.iter().position(|m| matches!(m, ServerMsg::Job { job: old, .. } if old.id == job.id));
-        let message = ServerMsg::Job { job, by: "Helpers".into(), at_ms: crate::now_ms(), from: 0 };
+        let result_id = core.helpers.result_id(&job.id);
+        let message = ServerMsg::Job { job, result_id, by: "Helpers".into(), at_ms: crate::now_ms(), from: 0 };
         if let Some(row) = row { jobs[row] = message.clone(); }
         else {
             if jobs.len() >= 60 { jobs.pop_front(); }
@@ -138,7 +139,7 @@ impl Runtime {
         if !allowed(core, speaker, pace, refused) {
             return;
         }
-        let message = ServerMsg::Job { job, by: speaker.into(), at_ms: crate::now_ms(), from: window };
+        let message = ServerMsg::Job { job, result_id: None, by: speaker.into(), at_ms: crate::now_ms(), from: window };
         if let Some(row) = row {
             jobs[row] = message.clone();
         } else {
@@ -681,7 +682,7 @@ mod tests {
             super::job(&core, "First", 42, &mut Pace::default(), job);
             let outgoing = updates.try_recv().unwrap();
             assert!(outgoing.to.is_none());
-            assert!(matches!(outgoing.message, crate::protocol::ServerMsg::Job { job, by, at_ms, from }
+            assert!(matches!(outgoing.message, crate::protocol::ServerMsg::Job { job, by, at_ms, from, .. }
                 if job.id == id && job.parent.as_deref() == Some(parent) && by == "First" && at_ms > 0 && from == 42));
         }
         assert!(updates.try_recv().is_err());

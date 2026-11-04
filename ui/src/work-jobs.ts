@@ -7,6 +7,7 @@ import type { Job, JobStatus, HelperKind, JobOutcome } from "./bricks/contract";
 
 /** What the core sends (the guide's `Job`, plus who and when). */
 export type JobMsg = {
+  result_id?: string;
   type: "job";
   id: string;
   title: string;
@@ -40,7 +41,7 @@ export function merge(old: Job | undefined, job: JobMsg): Job {
   const again = !!old && old.ended_ms !== undefined && job.status === "running";
   return {
     id: job.id, title: job.title, status: job.status, result: job.result, parent: job.parent, demo: job.demo, by: job.by, at_ms: job.at_ms,
-    helper_kind: job.helper_kind, requested_count: job.requested_count, outcome: job.outcome,
+    helper_kind: job.helper_kind, requested_count: job.requested_count, outcome: job.outcome, result_id: job.result_id,
     started_ms: job.started_ms ?? (again ? job.at_ms : old?.started_ms ?? (job.status === "running" && !job.helper_kind ? job.at_ms : undefined)),
     ended_ms: again ? undefined : job.ended_ms ?? old?.ended_ms ?? (ended(job.status) && !job.helper_kind ? job.at_ms : undefined),
   };
@@ -59,6 +60,7 @@ export function receiveJob(message: { type: string }): boolean {
   if (message.type !== "job") return false;
   const job = message as JobMsg;
   if (!text(job.id) || !job.id || !text(job.title) || !STATUSES.includes(job.status) || !text(job.by) || typeof job.demo !== "boolean"
+    || (job.result_id != null && (!text(job.result_id) || !job.result_id || job.result_id.length > 100))
     || (job.helper_kind != null && !["thinking", "coding"].includes(job.helper_kind))
     || (job.requested_count != null && (!Number.isSafeInteger(job.requested_count) || job.requested_count < 1))
     || (job.outcome != null && !["done", "failed", "stopped", "partial", "no_change", "dry_run"].includes(job.outcome))

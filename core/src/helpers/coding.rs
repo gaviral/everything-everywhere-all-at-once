@@ -226,6 +226,7 @@ pub(super) enum ValidationStatus {
 
 #[derive(Clone, Debug)]
 pub(super) struct ResultRecord {
+    pub child_id: String,
     pub worktree: PathBuf,
     pub base: String,
     pub branch: String,
@@ -334,10 +335,11 @@ async fn prepare(core: &Core, run: &Run) -> anyhow::Result<(PathBuf, Vec<Work>)>
         std::fs::write(&brief, format!(
             "Coding helper {} of {}. Task: {}.\nMake a separate bounded proposal focused on {focus}. Inspect this repository and make only a small proposed change for the task. Leave it uncommitted for review. Work only in this worktree. Do not commit, push, merge, or open a PR. Do not include personal paths, private data, secrets, .env files, journals, or personal quotes. Use only the verified Meta provider and model. Do not invoke other agents or providers. Do not run git add or git commit.\n",
             i + 1, run.ask.count, run.ask.topic))?;
-        let result_id = format!("{}:{i}", parent(run));
+        let result_id = uuid::Uuid::new_v4().to_string();
         settings.results.lock().unwrap().insert(
             result_id.clone(),
             ResultRecord {
+                child_id: format!("{}:{i}", parent(run)),
                 worktree: path.clone(),
                 base: base.clone(),
                 branch: branch.clone(),
@@ -384,6 +386,58 @@ fn set_exit(core: &Core, job: &Work, exit: ExitStatus) {
     }
 }
 
+// Keep access to coding settings inside helpers; callers receive no runner or local path.
+impl super::Runtime {
+    #[cfg(test)]
+    pub(crate) fn register_test_result(&self, child: &str, record: crate::helper_result::Record) -> String {
+        let id = uuid::Uuid::new_v4().to_string();
+        self.coding.results.lock().unwrap().insert(id.clone(), ResultRecord {
+            child_id: child.into(), worktree: record.worktree, base: record.base, branch: "fixture".into(),
+            exit: match record.status.as_str() { "failed" => ExitStatus::Exited(Some(7)), "stopped" => ExitStatus::Stopped, _ => ExitStatus::Completed },
+            validation: ValidationStatus::NotRun,
+            runner: provider::resolve(&Settings::default()).unwrap(),
+        });
+        id
+    }
+
+    pub(crate) fn result_id(&self, child: &str) -> Option<String> {
+        self.coding.results.lock().unwrap().iter()
+            .find(|(_, record)| record.child_id == child).map(|(id, _)| id.clone())
+    }
+
+    pub(crate) fn result_record(&self, id: &str) -> Option<crate::helper_result::Record> {
+        let records = self.coding.results.lock().unwrap();
+        let record = records.get(id)?;
+        Some(crate::helper_result::Record {
+            worktree: record.worktree.clone(), base: record.base.clone(),
+            status: match record.exit {
+                ExitStatus::NotStarted => "created",
+                ExitStatus::Running => "running",
+                ExitStatus::Exited(Some(0)) | ExitStatus::Completed => "completed",
+                ExitStatus::Stopped => "stopped",
+                _ => "failed",
+            }.into(),
+            exit_code: if let ExitStatus::Exited(code) = record.exit { code } else { None },
+            validation: match record.validation { ValidationStatus::NotRun => "not_run" }.into(),
+        })
+    }
+}
+
+// The built-in adapter calls start only after context is ready, at the actual
+// provider invocation. Mirror that event in its result record, just as spawn does.
+struct Execution<'a> { inner: super::Execution<'a>, job: &'a Work }
+impl<'a> Execution<'a> {
+    fn new(core: &'a Core, run: &'a Run, i: usize, provider: &'a str, model: &'a str, identity: Value, job: &'a Work) -> Self {
+        Self { inner: super::Execution::new(core, run, i, provider, model, identity), job }
+    }
+    fn start(&self) {
+        set_exit(self.inner.core, self.job, ExitStatus::Running);
+        self.inner.start();
+    }
+    fn completed(&self, at: u64) { self.inner.completed(at); }
+    fn end(&self, at: u64, outcome: &str) { self.inner.end(at, outcome); }
+}
+
 async fn worker(core: &Core, run: &Run, _folder: &Path, i: usize, job: &Work) -> bool {
     if run.stopped.load(Ordering::Relaxed) {
         set_exit(core, job, ExitStatus::Stopped);
@@ -427,7 +481,7 @@ async fn work(core: &Core, run: &Run, i: usize, job: &Work) -> anyhow::Result<Co
     let runner = core.helpers.coding.results.lock().unwrap().get(&job.result_id)
         .context("Unknown coding result identity")?.runner.clone();
     if runner.executable.is_none() {
-        let execution = Execution::new(core, run, i, runner.provider, runner.model, json!({"result":job.result_id}));
+        let execution = Execution::new(core, run, i, runner.provider, runner.model, json!({"result":job.result_id}), job);
         let result = provider::work(core, run, job, &execution).await;
         let at = crate::now_ms();
         execution.completed(at);
@@ -443,7 +497,7 @@ async fn work(core: &Core, run: &Run, i: usize, job: &Work) -> anyhow::Result<Co
         }
         set_exit(core, job, ExitStatus::Completed);
         row(core, run, Some(i), &title(i), "preparing", Some("Checking local outcome".into()));
-        let changed = !git(&job.path, &["diff", "--numstat", "HEAD"]).await?.trim().is_empty();
+        let changed = crate::helper_result::has_changes(&job.path, &core.helpers.result_record(&job.result_id).context("Unknown result")?.base).await?;
         let outcome = if changed { "done" } else { "no_change" };
         execution.end(at, outcome);
         return Ok(Completion { summary: if changed {
@@ -457,7 +511,7 @@ async fn work(core: &Core, run: &Run, i: usize, job: &Work) -> anyhow::Result<Co
         .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null())
         .kill_on_drop(true).spawn().context("Couldn't start HELPERS_CMD")?;
     set_exit(core, job, ExitStatus::Running);
-    let execution = Execution::new(core, run, i, runner.provider, runner.model, json!({"pid":child.id().unwrap()}));
+    let execution = Execution::new(core, run, i, runner.provider, runner.model, json!({"pid":child.id().unwrap()}), job);
     execution.start();
     let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
     let status: anyhow::Result<std::process::ExitStatus> = loop {
@@ -488,7 +542,7 @@ async fn work(core: &Core, run: &Run, i: usize, job: &Work) -> anyhow::Result<Co
     ensure!(!run.stopped.load(Ordering::Relaxed), "Stopped");
     ensure!(status.success(), "HELPERS_CMD exited unsuccessfully; dirty worktree retained");
     // Inspect the proposal without staging or committing it, even after success.
-    let changed = !git(&job.path, &["diff", "--numstat", "HEAD"]).await?.trim().is_empty();
+    let changed = crate::helper_result::has_changes(&job.path, &core.helpers.result_record(&job.result_id).context("Unknown result")?.base).await?;
     let outcome = if changed { "done" } else { "no_change" };
     execution.end(at, outcome);
     Ok(Completion { summary: if changed {
@@ -558,3 +612,7 @@ async fn stop_child(child: &mut Child) {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+#[path = "../helper_result/coding_tests.rs"]
+mod result_lifecycle_tests;

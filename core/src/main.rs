@@ -19,6 +19,7 @@ mod find;
 mod github;
 mod guide;
 mod helpers;
+mod helper_result;
 mod import;
 mod messages;
 mod notes;
@@ -1352,6 +1353,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/ws", get(connect))
         .route("/room", get(room_info))
         .route("/terse", post(terse::read))
+        .route("/helper-result", post(helper_result::read))
         .route("/import", post(import::prepare).layer(DefaultBodyLimit::max(import::MAX_BYTES)))
         .nest_service("/images", ServeDir::new(images))
         .fallback_service(ServeDir::new(&ui).fallback(ServeFile::new(format!("{ui}/index.html"))))
