@@ -18,6 +18,7 @@ mod explain;
 mod find;
 mod github;
 mod guide;
+mod helpers;
 mod import;
 mod messages;
 mod notes;
@@ -26,6 +27,7 @@ mod pictures;
 mod placer;
 mod positions;
 mod refiner;
+mod terse;
 mod sample;
 mod trace;
 mod recap;
@@ -117,6 +119,7 @@ pub struct Core {
     pub trace: trace::Trace,
     /// The preset, and the message counting down on its card (messages.rs).
     pub messages: messages::Runtime,
+    helpers: helpers::Runtime,
     /// The GitHub card's reading of `gh`, in the Full preset (github.rs).
     pub github: github::Runtime,
     /// Whether a note really writes into Notes, and the notes this run wrote (notes.rs).
@@ -577,13 +580,14 @@ impl Core {
     /// `add_turn`, saying why when `typed` filler is set aside. Only a live originating window may opt into the partner.
     fn take_turn(self: &Arc<Self>, speaker: &str, text: &str, search: bool, typed: bool, speak: bool, window: Option<u64>) {
         self.touch();
+        if typed { messages::speech_end(self, speaker, false); }
         // These are window preferences, never thoughts or requests for the model.
         if let Some(show) = notice_control(text) {
             self.send_to(speaker, ServerMsg::NoticeControl { show });
             return;
         }
         // "Stop" while the speaker's message counts down is only that, before anything else reads it (messages.rs).
-        if messages::said(self, speaker, text) {
+        if helpers::said(self, speaker, text) || messages::said(self, speaker, text) {
             return;
         }
         // The latest thing said, by when (see `Thought::said_at`).
@@ -1310,6 +1314,7 @@ async fn main() -> anyhow::Result<()> {
         usage: usage::Runtime::from_env().await,
         trace: trace::Trace::from_env(Path::new(&data)),
         messages: messages::Runtime::from_env(),
+        helpers: helpers::Runtime::from_env(),
         github: github::Runtime::from_env(),
         notes: notes::Runtime::from_env(),
         positions: positions::Runtime::default(),
@@ -1342,6 +1347,7 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/ws", get(connect))
         .route("/room", get(room_info))
+        .route("/terse", post(terse::read))
         .route("/import", post(import::prepare).layer(DefaultBodyLimit::max(import::MAX_BYTES)))
         .nest_service("/images", ServeDir::new(images))
         .fallback_service(ServeDir::new(&ui).fallback(ServeFile::new(format!("{ui}/index.html"))))
@@ -1586,6 +1592,7 @@ async fn room_info(
         _ => (None, None),
     };
     Json(serde_json::json!({ "room": core.room.is_some(), "member": member, "taken": taken, "tunnel": tunnel,
+        "email": core.messages.settings.preset == messages::Preset::Full && !core.messages.settings.hosted,
         "hosted": hosted(), "calendar_file": !apple::reachable(), "sample": sample::available(), "samples": sample::listed(), "models": models,
         "code": code, "invite": invite }))
 }
@@ -1744,6 +1751,7 @@ async fn connect(
     // Before this window counts as open (`session`), so a count that ends while it connects can't send first: with none
     // of the speaker's windows open it ends unsent (messages.rs `finish`), and once this one is, the Stop already went.
     if let Some(id) = join.stop {
+        helpers::stop(&core, id);
         messages::stop(&core, id);
     }
     // Bounded (protocol.rs `FRAME_MAX`): axum's default is 64 MiB a message.
@@ -1813,7 +1821,7 @@ fn catch_up_with_jobs(core: &Core, speaker: &str, jobs: Vec<ServerMsg>) -> Vec<S
     // The message card comes before the world: a window that was showing one counting reads the snapshot as the end of
     // what the core says about it, so a card the core no longer has (it restarted) goes. A reload mid-count gets the
     // card back with its Stop; one whose count ended while the window was away gets how it ended.
-    let mut messages: Vec<ServerMsg> = crate::messages::card_for(core, speaker).into_iter().collect();
+    let mut messages: Vec<ServerMsg> = crate::helpers::card_for(core, speaker).or_else(|| crate::messages::card_for(core, speaker)).into_iter().collect();
     // The call comes before the world too: a window that hears the world with no call before it knows the call it
     // showed is over (ui/src/talk/call-core.ts), say after a restart.
     messages.extend(call::message(core));
@@ -1822,6 +1830,7 @@ fn catch_up_with_jobs(core: &Core, speaker: &str, jobs: Vec<ServerMsg>) -> Vec<S
         Arc::make_mut(&mut world).captions.retain(|c| c.to.as_deref().is_none_or(|to| to == speaker));
     }
     messages.extend([ServerMsg::Snapshot { world }, core.placing.message()]);
+    if helpers::available(core) && core.is_host(speaker) { messages.push(ServerMsg::HelpersAvailable); }
     messages.push(usage::message(core));
     messages.extend(core.snapshot().speech_drafts.values().filter(|draft| draft.speaker == speaker)
         .map(|draft| ServerMsg::RecoverableSpeech { id: draft.id.clone(), text: draft.text.clone() }));
@@ -1931,6 +1940,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                     if on && partner.is_none() { partner = Some(conversation::enable(&core, &speaker, window)); }
                     else if !on { partner = None; }
                 }
+                Ok(ClientMsg::Email { on }) if !ai => messages::email_switch(&core, &speaker, on),
                 Ok(ClientMsg::PartnerCancel) => conversation::cancel(&core, &speaker),
                 Ok(ClientMsg::Recap { period }) => recap::request(core.clone(), speaker.clone(), period),
                 Ok(ClientMsg::ComposeApp { request }) => apps::compose(core.clone(), request),
@@ -1977,7 +1987,9 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                     core.send_to(&speaker, ServerMsg::Notice { message: "Only the host can add this: it goes into their apps.".into() });
                 }
                 // The message card's Stop, or Esc: anyone who sees it may stop it; stopping never sends anything.
+                Ok(ClientMsg::HelpersSwitch { on }) => helpers::switch(&core, &speaker, on),
                 Ok(ClientMsg::StopSend { id }) => {
+                    helpers::stop(&core, id);
                     messages::stop(&core, id);
                 }
                 // The note card's Open in Notes: only a note this run wrote, only for the host (notes.rs).
@@ -2227,6 +2239,7 @@ impl Core {
             usage: Default::default(),
             trace: Default::default(),
             messages: Default::default(),
+            helpers: Default::default(),
             github: Default::default(),
             notes: Default::default(),
             positions: Default::default(),
@@ -3480,7 +3493,7 @@ mod tests {
                 tunnel: tunneled.then(|| crate::tunnel::Tunnel::parse("https://quiet-river-12.trycloudflare.com").unwrap()),
                 ..Room::from("k7m2x9qpab")
             };
-            let settings = messages::Settings { preset: messages::Preset::Full, contacts: vec![("Mia".into(), "+15550100".into())], live: false };
+            let settings = messages::Settings { preset: messages::Preset::Full, contacts: vec![("Mia".into(), "+15550100".into())], live: false, ..messages::Settings::default() };
             let sender: messages::Sender = Arc::new(|_, _| Box::pin(async { panic!("the test must never send a message") }));
             let core = Arc::new(Core { room: Some(room), messages: messages::Runtime::with(settings, sender), ..Core::test(journal, world) });
             let routes = axum::Router::new()
@@ -3748,7 +3761,7 @@ mod tests {
             *count.lock().unwrap() += 1;
             Box::pin(async { Ok(()) })
         });
-        let settings = messages::Settings { preset: messages::Preset::Full, contacts: vec![("Mia".into(), "+15550100".into())], live: true };
+        let settings = messages::Settings { preset: messages::Preset::Full, contacts: vec![("Mia".into(), "+15550100".into())], live: true, ..messages::Settings::default() };
         let core = Arc::new(Core { messages: messages::Runtime::with(settings, sender), ..Core::test(journal, world) });
         core.add_thought("you", "Ask Mia to confirm what to bring");
         for _ in 0..100 {

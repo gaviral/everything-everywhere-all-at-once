@@ -181,6 +181,13 @@ export default function WorkSpine({ map }: BrickProps) {
   const now = useNow(jobs);
   const fresh = useFresh(jobs);
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
+  const seenSwarms = useRef(new Set<string>());
+  useEffect(() => {
+    const fresh = jobs.filter((job) => job.id.startsWith("helpers:") && !job.parent && !seenSwarms.current.has(job.id));
+    if (!fresh.length) return;
+    fresh.forEach((job) => seenSwarms.current.add(job.id));
+    setOpen((was) => new Set([...was, ...fresh.map((job) => job.id)]));
+  }, [jobs]);
   const toggle = useCallback((id: string) => setOpen((was) => { const next = new Set(was); if (!next.delete(id)) next.add(id); return next; }), []);
   const ai = useCallback((name: string) => !!map.speakers.get(name)?.ai, [map.speakers]);
   const shared: Shared = { jobs, now, open, toggle, fresh, ai };

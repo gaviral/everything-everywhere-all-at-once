@@ -10,7 +10,7 @@ export default defineConfig(({ mode }) => ({
   plugins: [react()],
   build: mode === "bricks" ? { emptyOutDir: false, rolldownOptions: { input: "bricks.html" } } : {},
   server: {
-    proxy: { "/ws": { target: "ws://localhost:4321", ws: true }, "/room": "http://localhost:4321", "/import": "http://localhost:4321" },
+    proxy: { "/terse": "http://localhost:4321", "/ws": { target: "ws://localhost:4321", ws: true }, "/room": "http://localhost:4321", "/import": "http://localhost:4321" },
     fs: { allow: [".", "../samples"] },
   },
 }));

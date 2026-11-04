@@ -1,0 +1,62 @@
+[
+  {
+    "source_file": "cjs/use-sync-external-store-shim.development.js",
+    "source_sha256": "6dfd5d60543b0a24a524d1366758ff6303fc67604a69eb1536d0b70c47af0e8d",
+    "line": 1,
+    "text": "/**\n * @license React\n * use-sync-external-store-shim.development.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/use-sync-external-store-shim.native.development.js",
+    "source_sha256": "77fdf6e7158ca42db77846603e5404d6c1eae8e39c027ae6688ec31960130d10",
+    "line": 1,
+    "text": "/**\n * @license React\n * use-sync-external-store-shim.native.development.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/use-sync-external-store-shim.native.production.js",
+    "source_sha256": "854acd16966761052074efc076dda867c4fd2c3db41cb3b85ee8d15aaf072a21",
+    "line": 1,
+    "text": "/**\n * @license React\n * use-sync-external-store-shim.native.production.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/use-sync-external-store-shim.production.js",
+    "source_sha256": "e8c2f1808804d75c9e0ffab8c37329b34f356140275dea0efe1e75684ded14fa",
+    "line": 1,
+    "text": "/**\n * @license React\n * use-sync-external-store-shim.production.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/use-sync-external-store-shim/with-selector.development.js",
+    "source_sha256": "47600087cfa6f998386b2d2b46072b28564d2992099676b0d3eed8c0031f78b9",
+    "line": 1,
+    "text": "/**\n * @license React\n * use-sync-external-store-shim/with-selector.development.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/use-sync-external-store-shim/with-selector.production.js",
+    "source_sha256": "fc76f309604db72c728d7c46cc593c6bba65e3f3d00dd38a1c32032927bb94d8",
+    "line": 1,
+    "text": "/**\n * @license React\n * use-sync-external-store-shim/with-selector.production.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/use-sync-external-store-with-selector.development.js",
+    "source_sha256": "48111cde39f0b32a3dbb4cdedecf31939450b233e7deedb0da9b74d58e4f97ac",
+    "line": 1,
+    "text": "/**\n * @license React\n * use-sync-external-store-with-selector.development.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/use-sync-external-store-with-selector.production.js",
+    "source_sha256": "d634a0554277dcca162f5c1ae28978c5bf0f3c0f56f16e35e8926bd31021781e",
+    "line": 1,
+    "text": "/**\n * @license React\n * use-sync-external-store-with-selector.production.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/use-sync-external-store.development.js",
+    "source_sha256": "bd999528bc05772118316ace694df775169d2b6dece86a486d7a8a8567a50e39",
+    "line": 1,
+    "text": "/**\n * @license React\n * use-sync-external-store.development.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/use-sync-external-store.production.js",
+    "source_sha256": "4ed641853adbce751186824e8e661b7218a559cf7c148b810bd8d9bf29dc3a31",
+    "line": 1,
+    "text": "/**\n * @license React\n * use-sync-external-store.production.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  }
+]

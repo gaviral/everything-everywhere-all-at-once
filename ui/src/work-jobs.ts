@@ -16,6 +16,7 @@ export type JobMsg = {
   demo: boolean;
   by: string;
   at_ms: number;
+  started_ms?: number;
 };
 
 const STATUSES: readonly string[] = ["running", "done", "failed", "waiting"];
@@ -29,13 +30,13 @@ let jobs: readonly Job[] = [];
 const listeners = new Set<() => void>();
 const changed = () => { for (const listener of listeners) listener(); };
 
-/** The job `message` makes of `old` (undefined: a first sighting). Start and end are only ever what this window saw. */
+/** Merge a state change; in-core helpers supply an execution start, other jobs keep the first start seen here. */
 export function merge(old: Job | undefined, job: JobMsg): Job {
   // A job that ended and runs again starts over; otherwise the first sighting of each stands.
   const again = !!old && old.ended_ms !== undefined && job.status === "running";
   return {
     id: job.id, title: job.title, status: job.status, result: job.result, parent: job.parent, demo: job.demo, by: job.by, at_ms: job.at_ms,
-    started_ms: again ? job.at_ms : old?.started_ms ?? (job.status === "running" ? job.at_ms : undefined),
+    started_ms: job.started_ms ?? (again ? job.at_ms : old?.started_ms ?? (job.status === "running" ? job.at_ms : undefined)),
     ended_ms: again ? undefined : old?.ended_ms ?? (ended(job.status) ? job.at_ms : undefined),
   };
 }
@@ -53,7 +54,7 @@ export function receiveJob(message: { type: string }): boolean {
   if (message.type !== "job") return false;
   const job = message as JobMsg;
   if (!text(job.id) || !job.id || !text(job.title) || !STATUSES.includes(job.status) || !text(job.by) || typeof job.demo !== "boolean"
-    || !Number.isFinite(job.at_ms) || (job.result != null && !text(job.result)) || (job.parent != null && !text(job.parent))) return true;
+    || !Number.isFinite(job.at_ms) || (job.started_ms != null && !Number.isFinite(job.started_ms)) || (job.result != null && !text(job.result)) || (job.parent != null && !text(job.parent))) return true;
   const at = jobs.findIndex((old) => old.by === job.by && old.id === job.id);
   const next = merge(jobs[at], job);
   jobs = at < 0 ? [...jobs, next].slice(-KEPT) : jobs.map((old, i) => (i === at ? next : old));

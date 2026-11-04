@@ -19,6 +19,8 @@ const used = new Set([...quoted, ...templates].map((s) => s.trim().split(/\s+/))
   .filter((words) => words.every((w) => /^[a-z][\w-]*$/.test(w))).flat());
 const css = [...files("src/", (f) => f.endsWith(".css")), ...files("src/shell/", (f) => f.endsWith(".css"))].join("\n").replace(/\/\*[\s\S]*?\*\//g, "");
 const classes = new Set([...css.matchAll(/\.([a-zA-Z][\w-]*)/g)].map((m) => m[1]).filter((c) => !/^\d/.test(c)));
-const unused = [...classes].filter((c) => !used.has(c)).sort();
+// React Flow emits its node wrapper; Full content sizes that wrapper without owning its markup.
+const generated = new Set(/<ReactFlow\b/.test(code) ? ["react-flow__node"] : []);
+const unused = [...classes].filter((c) => !used.has(c) && !generated.has(c)).sort();
 assert.deepEqual(unused, [], "styled classes no code uses: drop their rules");
 console.log(`css-check: ok (${classes.size} classes)`);

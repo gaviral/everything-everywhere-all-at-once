@@ -1,0 +1,94 @@
+import assert from 'node:assert/strict';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { uiServer } from './ui-server.mjs';
+import { ready, standInCore, openPage, sleep } from './headless.mjs';
+const at = Date.UTC(2026,10,3,12);
+const threads = ['Launch plan','Budget choices','Release checks'].map((title,i) => ({id:`t${i}`,title,parent_id:i===2?'t0':null,status:'open',last_point:'',touched_ms:at,tags:[],picture:null,dropped_by:''}));
+const thoughts = Array.from({length:20},(_,i) => ({id:`p${i}`,speaker:i%2?'Sam':'Helper',text:`We should review milestone ${i} before Friday so everyone can prepare their own materials. Keep all supporting details available when someone asks.`,point:'Review milestone',thread_id:`t${i%3}`,placed:true,complete:true,unclear:'',at_ms:at+i*1000,place_ms:0}));
+const server = await uiServer();
+try {
+  const {fallback,words,cacheKey,groupsOf} = await server.ssrLoadModule('/src/bricks/spine/terse-text.ts');
+  const {BUILT_INS} = await server.ssrLoadModule('/src/shell/features.ts');
+  assert.equal(BUILT_INS.find(b=>b.id==='terse').defaultOn,false);
+  for(const t of thoughts) assert.ok(words(fallback(t.text))<=12);
+  assert.notEqual(cacheKey(thoughts[0],''),cacheKey({...thoughts[0],text:'Corrected'},''));
+  assert.notEqual(cacheKey(thoughts[0],''),cacheKey(thoughts[0],'Other parent'));
+  assert.equal(groupsOf({thoughts,threads},false).length,3);
+  assert.equal(groupsOf({thoughts,threads},true).flatMap(g=>g.thoughts).length,20);
+  assert.ok(fallback('One sentence. Another sentence.').includes('One sentence.'));
+} finally {await server.close();}
+assert.equal(ready(),'');
+const world = {threads,thoughts,active:'t0',active_by:{you:'t0'},stay_here:null,anchors:{},notes:{},suggestions:[],actions:[],merged:{},apps:[],apps_seeded:true,recaps:[],proposals:[],ai:['Helper']};
+const core = await standInCore(()=>[{type:'snapshot',world}]);
+let browser;
+try {
+  browser = await openPage('about:blank',{width:1440,height:900});
+  const {page,evaluate,until} = browser;
+  await page('Page.enable');
+  await page('Page.addScriptToEvaluateOnNewDocument',{source:`localStorage.setItem('e2a2o.toured','1');window.errors=[];addEventListener('error',e=>{if(!e.message.startsWith('ResizeObserver')) errors.push(e.message)});`});
+  const url=`http://127.0.0.1:${core.port}/`;
+  await page('Page.navigate',{url});
+  assert.ok(await until(`!!document.querySelector('.spine-ready .spine-point')`,10000));
+  const geometry=()=>evaluate(`JSON.stringify([...document.querySelectorAll('.react-flow__node')].map(e=>({id:e.dataset.id,at:e.style.transform,text:e.textContent})))`);
+  const before=await geometry();
+  const key=async(key,code,n)=>{for(const type of ['keyDown','keyUp'])await page('Input.dispatchKeyEvent',{type,key,code,windowsVirtualKeyCode:n});};
+  const click=async selector=>{
+    await sleep(150);
+    const p=await evaluate(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});e.scrollIntoView({block:'nearest'});const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);
+    assert.ok(await evaluate(`!!document.elementFromPoint(${p.x},${p.y})?.closest(${JSON.stringify(selector)})`),`reachable ${selector}`);
+    for(const type of ['mousePressed','mouseReleased'])await page('Input.dispatchMouseEvent',{type,...p,button:'left',clickCount:1});
+  };
+  const toggle=async()=>{await key('c','KeyC',67);assert.ok(await until(`!!document.querySelector('[data-row="terse"]')`));await click('[data-row="terse"] button[role="switch"]');await key('Escape','Escape',27);};
+  await toggle();
+  assert.ok(await until(`document.querySelectorAll('.spine-terse-line').length===20`));
+  assert.equal(await evaluate(`document.querySelectorAll('.spine-terse-group').length`),3);
+  assert.ok(await evaluate(`!!document.querySelector('.spine-terse-branch .spine-terse-branch')`),'thread hierarchy');
+  assert.ok(await evaluate(`[...document.querySelectorAll('.spine-terse-words')].every(e=>e.textContent.trim().split(/\\s+/).length<=12)`));
+  // No endpoint/key: the original's first sentence cut remains quietly.
+  await sleep(1000);
+  assert.ok(await evaluate(`document.querySelector('[data-terse-id="p0"] .spine-terse-words').textContent.startsWith('“We should review milestone 0')`));
+  await click('[data-terse-id="p0"]');
+  assert.ok(await until(`document.querySelector('.spine-terse-original').open`));
+  assert.equal(await evaluate(`document.querySelector('.spine-terse-original p').textContent`),thoughts[0].text);
+  await key('Escape','Escape',27);
+  assert.ok(await until(`!document.querySelector('.spine-terse-original').open`));
+  await click('.spine-terse-parent');
+  assert.equal(await evaluate(`document.querySelectorAll('.spine-terse-line').length`),7,'fold parent includes descendant thread');
+  await click('.spine-terse-parent');
+  // Intercept only the derived endpoint; source data remains the synthetic snapshot.
+  const batches=[];
+  await page('Fetch.enable',{patterns:[{urlPattern:'*/terse*',requestStage:'Request'}]});
+  browser.on('Fetch.requestPaused', async event => {
+    const ids=JSON.parse(event.request.postData).ids;
+    batches.push(ids);
+    const visible=await evaluate(`[...document.querySelectorAll('[data-terse-id]')].filter(e=>{const r=e.getBoundingClientRect();return r.bottom>80&&r.top<innerHeight}).map(e=>e.dataset.terseId)`);
+    assert.ok(ids.every(id=>visible.includes(id)),'only visible thoughts requested');
+    assert.ok(ids.length<=12,'bounded batch');
+    const lines=ids.map(id=>{const t=thoughts.find(t=>t.id===id);return {id,source:t.text,parent:threads.find(g=>g.id===t.thread_id).title,line:`"review milestone ${id.slice(1)}" **Friday**`};});
+    await page('Fetch.fulfillRequest',{requestId:event.requestId,responseCode:200,responseHeaders:[{name:'Content-Type',value:'application/json'}],body:Buffer.from(JSON.stringify({lines})).toString('base64')});
+  });
+  await page('Page.reload');
+  assert.ok(await until(`!!document.querySelector('.spine-terse-words strong')`,10000),'batched derived lines arrive');
+  assert.ok(batches.length>0);
+  assert.ok(await evaluate(`[...document.querySelectorAll('.spine-terse-words')].every(e=>e.textContent.trim().split(/\\s+/).length<=12)`));
+  const screenshot=async name=>{if(!process.env.SHOTS)return;mkdirSync(process.env.SHOTS,{recursive:true});const shot=await page('Page.captureScreenshot',{format:'png'});writeFileSync(`${process.env.SHOTS}/${name}.png`,Buffer.from(shot.data,'base64'));};
+  await screenshot('i-terse-desktop');
+  await click('.spine-terse-toolbar button:first-child');
+  assert.equal(await evaluate(`document.querySelectorAll('.spine-terse-group').length`),20,'Time preserves chronological runs');
+  await click('.spine-terse-toolbar button:last-child');
+  await page('Page.reload');
+  assert.ok(await until(`document.querySelectorAll('.spine-terse-line').length===20`,10000),'reload keeps setting');
+  await page('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:false});
+  await sleep(400);
+  assert.ok(await evaluate(`document.querySelector('.spine-terse').scrollWidth<=innerWidth`),'phone fits');
+  await click('[data-terse-id="p0"]');
+  assert.ok(await until(`document.querySelector('.spine-terse-original').open`));
+  await click('.spine-terse-close');
+  await screenshot('i-terse-phone');
+  await page('Emulation.setDeviceMetricsOverride',{width:1440,height:900,deviceScaleFactor:1,mobile:false});
+  await toggle();
+  assert.ok(await until(`!!document.querySelector('.spine-ready .spine-point')`,10000));
+  assert.equal(await geometry(),before,'Terse off restores default nodes, words and positions');
+  assert.deepEqual(await evaluate('errors'),[]);
+  console.log('PASS terse: 20 thoughts/3 threads, <=12 words, nested fold, original, Time/Topics, reload, desktop/phone, default unchanged');
+} finally {await browser?.close();core.close();}

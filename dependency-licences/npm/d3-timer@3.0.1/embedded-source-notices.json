@@ -1,0 +1,14 @@
+[
+  {
+    "source_file": "dist/d3-timer.js",
+    "source_sha256": "775a04a85c1bd07c8d008928635436cbcd1f1d5ffd84101551c3376b2bdc34be",
+    "line": 1,
+    "text": "// https://d3js.org/d3-timer/ v3.0.1 Copyright 2010-2021 Mike Bostock\n"
+  },
+  {
+    "source_file": "dist/d3-timer.min.js",
+    "source_sha256": "911ceda305f014b6b53ca68d5c896a9a387da120cfd56a421a2c60cca2fc9b36",
+    "line": 1,
+    "text": "// https://d3js.org/d3-timer/ v3.0.1 Copyright 2010-2021 Mike Bostock\n"
+  }
+]

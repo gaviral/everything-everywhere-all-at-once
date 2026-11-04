@@ -1,0 +1,8 @@
+{
+  "id": "decisions",
+  "name": "Decisions",
+  "does": "See recorded decisions, newest first, and open the words behind each one.",
+  "kind": "view",
+  "defaultOn": false,
+  "demoSafe": true
+}

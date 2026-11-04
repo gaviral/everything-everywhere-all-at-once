@@ -1,0 +1,32 @@
+[
+  {
+    "source_file": "CONTRIBUTING.md",
+    "source_sha256": "d1649737d4b282ef5beb0af325a4861919e66312c59924368f3592474f6d9436",
+    "line": 20,
+    "text": "## Copyright Notices\n"
+  },
+  {
+    "source_file": "src/lib.rs",
+    "source_sha256": "e63f19a92cf0d975228612ceb4a57f1dbe5d749dd9ce54bb251a6ff3bd3ee781",
+    "line": 1,
+    "text": "// Copyright Mozilla Foundation\n//\n// Licensed under the Apache License (Version 2.0), or the MIT license,\n// (the \"Licenses\") at your option. You may not use this file except in\n// compliance with one of the Licenses. You may obtain copies of the\n// Licenses at:\n//\n//    https://www.apache.org/licenses/LICENSE-2.0\n//    https://opensource.org/licenses/MIT\n//\n// Unless required by applicable law or agreed to in writing, software\n// distributed under the Licenses is distributed on an \"AS IS\" BASIS,\n// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n// See the Licenses for the specific language governing permissions and\n// limitations under the Licenses.\n"
+  },
+  {
+    "source_file": "src/utf16.rs",
+    "source_sha256": "61337acd5cc51ccd523e82965cee99ecd9e795935b65c1474c08f17c348922f6",
+    "line": 1,
+    "text": "// Copyright Mozilla Foundation\n//\n// Licensed under the Apache License (Version 2.0), or the MIT license,\n// (the \"Licenses\") at your option. You may not use this file except in\n// compliance with one of the Licenses. You may obtain copies of the\n// Licenses at:\n//\n//    https://www.apache.org/licenses/LICENSE-2.0\n//    https://opensource.org/licenses/MIT\n//\n// Unless required by applicable law or agreed to in writing, software\n// distributed under the Licenses is distributed on an \"AS IS\" BASIS,\n// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n// See the Licenses for the specific language governing permissions and\n// limitations under the Licenses.\n"
+  },
+  {
+    "source_file": "src/utf8.rs",
+    "source_sha256": "1beed1d7bb3e8f75125db543894a57c1773484001e8c82637a6cb3a8e6c02e2e",
+    "line": 1,
+    "text": "// Copyright Mozilla Foundation\n//\n// Licensed under the Apache License (Version 2.0), or the MIT license,\n// (the \"Licenses\") at your option. You may not use this file except in\n// compliance with one of the Licenses. You may obtain copies of the\n// Licenses at:\n//\n//    https://www.apache.org/licenses/LICENSE-2.0\n//    https://opensource.org/licenses/MIT\n//\n// Unless required by applicable law or agreed to in writing, software\n// distributed under the Licenses is distributed on an \"AS IS\" BASIS,\n// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n// See the Licenses for the specific language governing permissions and\n// limitations under the Licenses.\n"
+  },
+  {
+    "source_file": "src/utf8.rs",
+    "source_sha256": "1beed1d7bb3e8f75125db543894a57c1773484001e8c82637a6cb3a8e6c02e2e",
+    "line": 1724,
+    "text": "// Any copyright to the test code below this comment is dedicated to the\n// Public Domain. http://creativecommons.org/publicdomain/zero/1.0/\n"
+  }
+]

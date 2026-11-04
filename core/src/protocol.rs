@@ -62,7 +62,13 @@ pub enum ServerMsg {
     /// The ready-to-send message card (messages.rs), to the asker's windows: `counting` with `in_ms` left (it sends
     /// when the count ends unless stopped), then `stopped`, `sent`, `dry_run` or `failed`, with `message` saying so.
     /// `live`: the end of the count really sends (else a dry run).
-    SendCard { id: u64, to: String, text: String, state: crate::messages::SendState, in_ms: u64, live: bool, message: String },
+    HelpersAvailable,
+    SendCard { #[serde(default, skip_serializing_if = "Option::is_none")] purpose: Option<String>, id: u64, to: String, text: String,
+        #[serde(skip_serializing_if = "crate::messages::Channel::is_messages")]
+        channel: crate::messages::Channel,
+        #[serde(skip_serializing_if = "String::is_empty")]
+        subject: String,
+        state: crate::messages::SendState, in_ms: u64, live: bool, message: String },
     /// The GitHub card (github.rs), to the asker's windows: `loading` as soon as it's asked, then `ready` with the pull
     /// requests (at most `ROWS`, `more` when GitHub has others) or `failed` with `message` saying why in one line.
     PullsCard { id: u64, title: String, repo: String, state: crate::github::CardState, pulls: Vec<crate::github::Pull>, more: bool, message: String },
@@ -227,6 +233,7 @@ pub enum ClientMsg {
     Heartbeat { id: String },
     RecoverSpeech { id: String, keep: bool },
     Partner { on: bool },
+    Email { on: bool },
     PartnerCancel,
     Recap { #[serde(default)] period: crate::recap::Period },
     ComposeApp { request: String },
@@ -263,6 +270,7 @@ pub enum ClientMsg {
     Approve { id: String },
     /// The message card's Stop, or Esc while it counts down: it goes down unsent (messages.rs).
     StopSend { id: u64 },
+    HelpersSwitch { on: bool },
     /// The note card's Open in Notes: Notes shows the note that card saved (notes.rs). It never changes the note.
     OpenNote { id: u64 },
     /// "Try a sample map" on an empty map: fill it with the sample (sample.rs); `name` picks one of the offered

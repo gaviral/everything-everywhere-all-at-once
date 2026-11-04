@@ -6,6 +6,8 @@
 #   PUBLIC_URL=https://….trycloudflare.com PORT=4410 sh scripts/precheck.sh   # a trial's core (scripts/trial.sh prints it)
 # FAIL lines stop a release (non-zero exit); WARN lines are known open decisions.
 cd "$(dirname "$0")/.." || exit 1
+# Static boundary runs before builds, page checks, or live probes.
+python3 scripts/tree-guard.py || exit 1
 failed=0
 pass() { echo "PASS  $1"; }
 fail() { echo "FAIL  $1"; failed=1; }
@@ -66,7 +68,7 @@ ui_checks() {
 if [ "${PRECHECK_PAGES:-}" = only ]; then ui_checks; exit "$failed"; fi
 
 check ".gitignore covers .env and data/" "grep -qx '.env' .gitignore && grep -qx 'data/' .gitignore"
-check "no journal or data files tracked" "! git ls-files | grep -qE 'journal|^data/'"
+check "tree guard regression tests pass" "PYTHONDONTWRITEBYTECODE=1 python3 scripts/tree-guard-test.py"
 check "release safety regression tests pass" "PYTHONDONTWRITEBYTECODE=1 python3 scripts/release-safety-test.py > /dev/null 2>&1"
 if secrets=$(python3 scripts/secret-scan.py 2>&1); then pass "no credentials or private .env files in tracked files or reachable git objects"
 else fail "secret scan blocks release (values redacted):"; printf '%s\n' "$secrets" | sed 's/^/        /'; fi
@@ -164,5 +166,5 @@ for at in $(grep -rn --exclude-dir=target 'stand-in:' core ui/src | cut -d: -f1,
 # Commit messages go public with the repo; scripts/release.sh lists each one and blocks on it.
 n=$(git log --format=%B HEAD | grep -cE '/[U]sers/[A-Za-z]|/home/[A-Za-z]|/private/(tmp|var)|/var/folders')
 [ "$n" = 0 ] || warn "commit messages name local paths: scripts/release.sh lists the commits"
-[ $failed = 0 ] && echo "OK: nothing blocks a release." || echo "Fix the FAIL lines first."
+[ $failed = 0 ] && echo "OK: selected precheck checks passed; history, film and release clearance remain separate." || echo "Fix the FAIL lines first."
 exit $failed

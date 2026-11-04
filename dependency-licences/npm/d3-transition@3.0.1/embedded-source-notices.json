@@ -1,0 +1,14 @@
+[
+  {
+    "source_file": "dist/d3-transition.js",
+    "source_sha256": "440815280b247b9aaede2e17c0cde10e1deb86300dceadc8fd1cac678b183f2c",
+    "line": 1,
+    "text": "// https://d3js.org/d3-transition/ v3.0.1 Copyright 2010-2021 Mike Bostock\n"
+  },
+  {
+    "source_file": "dist/d3-transition.min.js",
+    "source_sha256": "c248d97f6c131af7f4a12a3ff1f2ed83f1cc6c0e17fc764a198b6ee452e6621b",
+    "line": 1,
+    "text": "// https://d3js.org/d3-transition/ v3.0.1 Copyright 2010-2021 Mike Bostock\n"
+  }
+]

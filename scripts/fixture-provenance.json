@@ -1,0 +1,370 @@
+{
+  "version": 1,
+  "fixtures": {
+    "samples/debug-break.jsonl": {
+      "kind": "synthetic",
+      "provenance": "Authored synthetic sample map, confirmed handwritten in rules audit Demo honesty (2026-11-03); not captured personal state.",
+      "sha256": "9e7533d1bd6511b4dd64e9ba52c62d8ed0e2be5e4a72d63231598e28675dc127"
+    },
+    "samples/demo-jobs.json": {
+      "kind": "synthetic",
+      "provenance": "Authored simulated jobs, retaining demo=true labels; audit finding 6.",
+      "sha256": "13d94acbc8e5a06d56028f46ebe1b73a291c4bc00fac33a58bcf7d0c7d25c88b"
+    },
+    "samples/founder-day.jsonl": {
+      "kind": "synthetic",
+      "provenance": "Authored synthetic sample map, confirmed handwritten in rules audit Demo honesty (2026-11-03); not captured personal state.",
+      "sha256": "e2462d7fabf36065db420069f5b9487e81fe643e0388ecd36f4b7fdffcee8c26"
+    },
+    "samples/house-walk.jsonl": {
+      "kind": "synthetic",
+      "provenance": "Authored synthetic sample map, confirmed handwritten in rules audit Demo honesty (2026-11-03); not captured personal state.",
+      "sha256": "cbe3890a10560ea9f6113b04f69e0a38c21c7143d9d1d208156385d424d911b2"
+    },
+    "samples/images/debug-break/T1-0b7326f6d5034205bc101a5e54424fed-palace.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "a4d4cfe30536c4e0d9bbcc1659530db632e3ef93c7091ac3634a0c2230fcc4c0"
+    },
+    "samples/images/debug-break/T1-0b7326f6d5034205bc101a5e54424fed-small.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "3db1814d333338cb51989b231cd42b47b9b38487bb695c987419fcd43ae79def"
+    },
+    "samples/images/debug-break/T2-872ecdc9851747cb8b43decda884df5f-palace.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "150084ab0629f659a60bd9238c6c7081c5f772d3b2df26ec75c6742fc2394f50"
+    },
+    "samples/images/debug-break/T2-872ecdc9851747cb8b43decda884df5f-small.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "fbc52f0c6f0fd45b1fe47185839f708f4dff903ec86195d14780236a72e7d759"
+    },
+    "samples/images/debug-break/T3-e375cf7ef7524a8689aca2a8031310a8-palace.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "57366f1fd25d561fa584d4634fe24da3a7835c39e5e63f460e5c7c0f2f341715"
+    },
+    "samples/images/debug-break/T3-e375cf7ef7524a8689aca2a8031310a8-small.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "f864c5017f0a07f52456549b52c0a544bdeaa174cec5554ad15e5044ca4b75dc"
+    },
+    "samples/images/founder-day/T1-987e92be818f4c0ba997a3c2ba0f6238-palace.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "c714d194aed6e40fe9f43ddf099a5309a46d9c4c0acd26276cff12263b52c0de"
+    },
+    "samples/images/founder-day/T1-987e92be818f4c0ba997a3c2ba0f6238-small.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "8d4eeaecc37d5f22fbc0a3f797ff6d3de55da6e42bed34729864660a8b0fc34f"
+    },
+    "samples/images/founder-day/T2-f6231bcb3c7c46ac87faaf9b394cea7f-palace.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "8de87c2a8d10f1562fc5381013c164d009e553dcfa41a8b96f9e8e4345a6bd81"
+    },
+    "samples/images/founder-day/T2-f6231bcb3c7c46ac87faaf9b394cea7f-small.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "c717f7e4fdfb92805d9aae1d78fbd848b165a335ef63694341d35f7ed1c31333"
+    },
+    "samples/images/founder-day/T3-ce80357e05594f18b9dfb471c0db55a4-palace.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "8cebb4978009fc5de5489428c22138098aa99c8078381531d44d3b27428168ab"
+    },
+    "samples/images/founder-day/T3-ce80357e05594f18b9dfb471c0db55a4-small.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "285a41fd003a8145478b67d17cb57f33e7401f895c1c9ee58baefdddc08e7d26"
+    },
+    "samples/images/founder-day/T4-822a0d6b949342948ad7df86ad8fa7fc-palace.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "aa51d7cd489eb84b582ee3dea909c702d4a286d47da385532a452b99de2995a8"
+    },
+    "samples/images/founder-day/T4-822a0d6b949342948ad7df86ad8fa7fc-small.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "186efc72a422f5bd8698a83f4cec92f7e7c8542e064ea1792b145821434353eb"
+    },
+    "samples/images/founder-day/T5-2430d6a490144f1f8c83ec68cabfdb73-palace.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "5ffbcd39ed17176d0c1993e7f9df65cca8df0fe32568ab10e9062fb8f98dde4d"
+    },
+    "samples/images/founder-day/T5-2430d6a490144f1f8c83ec68cabfdb73-small.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "04d69a25d6c659abefa21f61f6e50bba728591aed67ff437f209a787196acf2f"
+    },
+    "samples/images/founder-day/T6-e84ca2a598c54a0a85e87cefa17d2f6b-palace.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "dd8d68b991a89e2af084cebac7a64dc264c519a4318bdadd2236d818d032b2f8"
+    },
+    "samples/images/founder-day/T6-e84ca2a598c54a0a85e87cefa17d2f6b-small.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "8df5250d193cb8d435f5d3572042037689da42ef7366d8a8a3fd9746e60b585a"
+    },
+    "samples/images/founder-day/T7-3232b4cafdc24b1e9f2cef71006f3042-palace.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "4aba1ce83dc323b2c4b03ab4d855dba7493b89d720ffabedd9b73c22eabd0161"
+    },
+    "samples/images/founder-day/T7-3232b4cafdc24b1e9f2cef71006f3042-small.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "81ff52f80d561104aad06d41936b90511b35384f005f2edec0e10a6bc3990e63"
+    },
+    "samples/images/founder-day/T8-db18c3ad8c6a489397220889a18d5144-palace.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "635ce66d19178a213f1d8dfe9165b79acdda896f48e75f6e6bcb91feb08ba0dd"
+    },
+    "samples/images/founder-day/T8-db18c3ad8c6a489397220889a18d5144-small.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "faf16b8d166c6624f52a65b3cf763b26b44cd5d5c90e1288933a65045127ccc4"
+    },
+    "samples/images/house-walk/T1-a717b19783ed4c709574cf33c53ed996-palace.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "7ab251c90e8ad300e005980ec229246000a6cdf0bfa5271ecdfc524a93f73751"
+    },
+    "samples/images/house-walk/T1-a717b19783ed4c709574cf33c53ed996-small.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "3f7d2ae71b2dc049b3ed23620701766d3235e0b5c25e2c087bce0ee0ec33da2d"
+    },
+    "samples/images/house-walk/T2-a24feabd06424448bd8d2d6ae7dde3f4-palace.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "3b5dcd67c17accc1a1a7357e41b94b2ac8f4e2617e6c294133ce7c6147d982ff"
+    },
+    "samples/images/house-walk/T2-a24feabd06424448bd8d2d6ae7dde3f4-small.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "c18ef794c96452d4673c4f9aabbba4c7af40e121b0f22aedbee5ea6d9eac828e"
+    },
+    "samples/images/house-walk/T3-20dc0374ef2242c48120a55631afce0e-palace.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "6aa081042f98e29206a390b69f44f2c08657e3123815dfd55854ae8c55b4d859"
+    },
+    "samples/images/house-walk/T3-20dc0374ef2242c48120a55631afce0e-small.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "1ff80b699d254984762f93a9315bdfcbfa9266d78d33995ab825bf5fee77a1fa"
+    },
+    "samples/images/house-walk/T4-edb48ec3140340e3a31f32d149d10df9-palace.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "1d8b7201fc889a19c9eaa2395166b954034c55c19d9dc6225753e85b2271cc7e"
+    },
+    "samples/images/house-walk/T4-edb48ec3140340e3a31f32d149d10df9-small.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "d3f3a7fb8f073dc73ed6c465154bd33944a6dd4b6b43b5a6366ca2689f03fd56"
+    },
+    "samples/images/student-week/T1-bd42b23eb79442baa2cf8a2033608b11-palace.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "84f05da5220e095ed1c18d9744e8bb8a19795dbee74ff6193d36468b0aceb02d"
+    },
+    "samples/images/student-week/T1-bd42b23eb79442baa2cf8a2033608b11-small.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "11641390f6a5481f7558d4f6ff426553cab5a6b989cda32c48a7a081ec780dc9"
+    },
+    "samples/images/student-week/T2-71f263c13cca4062a33e638cab3264db-palace.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "e21d5d7f567b1d86974e7010aa4a824510a162da5625ad4c6e16f6aeb8e121e1"
+    },
+    "samples/images/student-week/T2-71f263c13cca4062a33e638cab3264db-small.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "0a60d84e0884a7f6c064d4a4c3a839970e712055e26df13e70060f48ec64d66f"
+    },
+    "samples/images/student-week/T3-deec9cff921948d2a8f0155263282952-palace.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "8b6e4c10c8098682b9a0948da8d62a3123ec7da0872810dd24b67ca85c9d1e79"
+    },
+    "samples/images/student-week/T3-deec9cff921948d2a8f0155263282952-small.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "2502ccd26fe517a8fcd600248380b4a142f3a61570a76b075b9b3e699b28bd27"
+    },
+    "samples/images/student-week/T4-b1d4a24cc88f4998a563ab085133b81c-palace.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "c567f8cfa4b01945084a4687db426b2abe3bc887b9ed602507452fe71fd2313b"
+    },
+    "samples/images/student-week/T4-b1d4a24cc88f4998a563ab085133b81c-small.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "7bf9ae4c178eb18e9709c97545e80c6d37d1a4a443143d8d5c4039fb35048bc0"
+    },
+    "samples/images/student-week/T5-204f841d8c574f58ba2e434b8a5d84c3-palace.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "d683f18f09c3e03ee8b86b3352900b0368134effffae816148d18184bb47e09c"
+    },
+    "samples/images/student-week/T5-204f841d8c574f58ba2e434b8a5d84c3-small.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "482fb867bed08332bf43407d7b2a53c5cf519756f57aede40f6a733fd22bf48e"
+    },
+    "samples/images/student-week/T6-ed5e0197f16b455bab5292a62e068f1c-palace.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "6485070817a6cea9e442514a7f235a5523e5fe3ad5921463ea21ec461cc8e9bb"
+    },
+    "samples/images/student-week/T6-ed5e0197f16b455bab5292a62e068f1c-small.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "f9f17b08292ef13c4f6befe53dca1b208128a5dbf19f4e851fb03342325909db"
+    },
+    "samples/images/student-week/T7-af024ca151fb4e07987c5401e59646e5-palace.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "9e61a8d55c42b957efdddf089ec934fbf22a03b678bb59aa567cb8aef0244514"
+    },
+    "samples/images/student-week/T7-af024ca151fb4e07987c5401e59646e5-small.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "4572c1dc2def9801a86b0df5b7d7e91159ee905c622763c941a90b0eeb6109a8"
+    },
+    "samples/images/student-week/T8-393897624fe54c768d79993f438ccdb6-palace.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "e67b7c17ae2622b8806663894738688ddb5753883e90f53672228d1a5c98a0e9"
+    },
+    "samples/images/student-week/T8-393897624fe54c768d79993f438ccdb6-small.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "9bee8293dc00bc775fa40f2587b69243add9685dec395ec9a808aed5f893902a"
+    },
+    "samples/images/team-sync/T1-43abef0cc08f44ce8197619a034c0109-palace.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "7045f055eb6c59dff194a9fe3e6464bd3f86252955cc06c2d738a6112dba0e54"
+    },
+    "samples/images/team-sync/T1-43abef0cc08f44ce8197619a034c0109-small.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "7406fe62252c276615366c0bdcf77306d9c61ef10368385303dd4bdab187a3b3"
+    },
+    "samples/images/team-sync/T2-308a90a477e34e6db28b331fc7d5c1d2-palace.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "1d2d77b8ef98e711babf2b7f195dce8d16411ed866d801762b84a5e893b76e30"
+    },
+    "samples/images/team-sync/T2-308a90a477e34e6db28b331fc7d5c1d2-small.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "ebfb7e5c1660b7878566a6774b75e29e40f806f7dfc3929d7e86bb59f9cb091c"
+    },
+    "samples/images/team-sync/T3-4bdbd1fc190547d28bd5b3e8acd255d0-palace.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "7558a541ca158585270a8d42f16b4907c5deb891b85c6687d6356f20f0abd819"
+    },
+    "samples/images/team-sync/T3-4bdbd1fc190547d28bd5b3e8acd255d0-small.webp": {
+      "kind": "synthetic",
+      "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
+      "sha256": "06040681abd05eb9fd7dee4b64454854d07f7fcba84a494126dff468ebcdd09e"
+    },
+    "samples/student-week.jsonl": {
+      "kind": "synthetic",
+      "provenance": "Authored synthetic sample map, confirmed handwritten in rules audit Demo honesty (2026-11-03); not captured personal state.",
+      "sha256": "a15d4b95b523719c424d9bd0a90229da56c4837767d0dd78d68a9e6fa3e364e6"
+    },
+    "samples/team-sync.jsonl": {
+      "kind": "synthetic",
+      "provenance": "Authored synthetic sample map, confirmed handwritten in rules audit Demo honesty (2026-11-03); not captured personal state.",
+      "sha256": "a8992130e045d711d8220174bbac6a83dda8f57e5b1fc20722adf9427f798aa2"
+    },
+    "scripts/beat5-requests.jsonl": {
+      "kind": "synthetic",
+      "provenance": "Authored scripted regression/demo scenario, reviewed synthetic input, not a captured conversation; existing audit confirms handwritten sample scenarios.",
+      "sha256": "502053e5469e785f8f5fe1ee9fec507527d473d8fad23026942b164c8b7cafa7"
+    },
+    "scripts/burst-talk.jsonl": {
+      "kind": "synthetic",
+      "provenance": "Authored scripted regression/demo scenario, reviewed synthetic input, not a captured conversation; existing audit confirms handwritten sample scenarios.",
+      "sha256": "a9046d763fd5fd5693c10db306d6d3e8c4bd89c4e066ca0cfac230fc744e346d"
+    },
+    "scripts/chunk-cases.jsonl": {
+      "kind": "synthetic",
+      "provenance": "Authored scripted regression/demo scenario, reviewed synthetic input, not a captured conversation; existing audit confirms handwritten sample scenarios.",
+      "sha256": "5be29bccb7ecfe9ea7a75307c2a67878e9bc12922ab2e1e16913397267afdef1"
+    },
+    "scripts/composer-requests.jsonl": {
+      "kind": "synthetic",
+      "provenance": "Authored scripted regression/demo scenario, reviewed synthetic input, not a captured conversation; existing audit confirms handwritten sample scenarios.",
+      "sha256": "16eb65c738c81c4f37f3665a09d7d2d69296165fc4a2f0f4da3477e050ed0b7d"
+    },
+    "scripts/demo-talk-v3.jsonl": {
+      "kind": "synthetic",
+      "provenance": "Authored scripted regression/demo scenario, reviewed synthetic input, not a captured conversation; existing audit confirms handwritten sample scenarios.",
+      "sha256": "53cb8232f9da1866075adf110456f36b27f5bed9df1e68e222da095c16cc3a4e"
+    },
+    "scripts/demo-talk-v4.jsonl": {
+      "kind": "synthetic",
+      "provenance": "Authored scripted regression/demo scenario, reviewed synthetic input, not a captured conversation; existing audit confirms handwritten sample scenarios.",
+      "sha256": "9e779d77ae541385fa846458b4deeba1cef0fedbb80e2f9ec698e82682d923ee"
+    },
+    "scripts/demo-talk.jsonl": {
+      "kind": "synthetic",
+      "provenance": "Authored scripted regression/demo scenario, reviewed synthetic input, not a captured conversation; existing audit confirms handwritten sample scenarios.",
+      "sha256": "5816bd79445afbf1de04b45ae0e0fdf6881dd013f1e515ab977a2f0b2770a64c"
+    },
+    "scripts/montage-talk.jsonl": {
+      "kind": "synthetic",
+      "provenance": "Authored scripted regression/demo scenario, reviewed synthetic input, not a captured conversation; existing audit confirms handwritten sample scenarios.",
+      "sha256": "dc9d26a1776b48d76556e7ffe46bcaeefe90256d037e31b4442aebf62e470383"
+    },
+    "scripts/room-talk.jsonl": {
+      "kind": "synthetic",
+      "provenance": "Authored scripted regression/demo scenario, reviewed synthetic input, not a captured conversation; existing audit confirms handwritten sample scenarios.",
+      "sha256": "15dfec1d23392c0b853eb58dbe151fe8408e606eafa0cb68b937d1f35c2ea042"
+    },
+    "scripts/routing-cases.jsonl": {
+      "kind": "synthetic",
+      "provenance": "Authored scripted regression/demo scenario, reviewed synthetic input, not a captured conversation; existing audit confirms handwritten sample scenarios.",
+      "sha256": "47a5f5b59721758fd8647fa5fcae19b5f46a0a75e3dc164492e7ddcb7decf740"
+    },
+    "scripts/rules-talk.jsonl": {
+      "kind": "synthetic",
+      "provenance": "Authored scripted regression/demo scenario, reviewed synthetic input, not a captured conversation; existing audit confirms handwritten sample scenarios.",
+      "sha256": "ce94bfd2844c9b1f68b927504dca01232cc66539ed08d75e5596a42046d7ca83"
+    },
+    "scripts/story-talk.jsonl": {
+      "kind": "synthetic",
+      "provenance": "Authored scripted regression/demo scenario, reviewed synthetic input, not a captured conversation; existing audit confirms handwritten sample scenarios.",
+      "sha256": "d51a0e371dcd63081d140ee6260d4e2d7c8833c498ee734e320419be98158deb"
+    },
+    "ui/public/sample-chats.json": {
+      "kind": "synthetic",
+      "provenance": "Synthetic sample export explicitly authored in introducing commit 5992c4f, confirmed by audit Demo honesty. Fictional Lisbon/Porto scenario.",
+      "sha256": "41ded1336d4f849fab37d1d087c0389468b1a04a0939d3f16260e8f2dbb27649"
+    },
+    "docs/compaction-check.md": {
+      "kind": "synthetic",
+      "provenance": "Explanatory regression summary replacing the preserved raw report; audit finding 1 confirms synthetic replacement. Contains workshop/rehearsal scenario description only.",
+      "sha256": "7dcee5afb04b76a835dc4998a9e8776b5b2b7a9cbf87c06dc3839e2feebe960b"
+    },
+    "docs/trace.md": {
+      "kind": "synthetic",
+      "provenance": "Historical trace of synthesized demo talk, explicitly labelled synthetic evidence at bd04356 on 2026-11-02. Derived model output from scripted inputs, not owner dictation. Does not validate the current release or film.",
+      "sha256": "4a3aba253503e7c4ec069395e4636a0f17fc4a0680b931e7dad8387d57c324c0"
+    }
+  }
+}

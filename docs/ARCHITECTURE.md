@@ -32,6 +32,10 @@ Browser, one page per window (ui/src)
   feedback.ts    every action in the window (click, key, drag, form) and what it shows pressed, working, done and failed; not shipped, only read by `scripts/feedback-check.mjs`, which fails on a handler with no entry
   Moves.tsx      a point's Move (a list of topics to type into, or drag onto a card) and a click on a title to rename it, each with Undo
   moves-core.ts  the rules behind it, mirroring moves.rs (where a moved point lands, a merge of the two topics past)
+  BringHere.tsx read-only temporary topic inspection, with close and reveal-original actions
+  FullContent.tsx complete source words in a temporary pan-and-zoom dialog, wrapping and camera restoration
+  film-stage.ts live DOM staging, title cards and word sequences for the film-only controls
+  shapes-core.tsx local shape definitions and instances, canvas attachment and placement; no persistence or core messages
   positions-core.ts places on the canvas as the window holds them, mirroring positions.rs (only for what's on the map; two nulls put it back in the layout; gone with what it placed)
   annotate-core.ts comments as the window holds them, mirroring annotate.rs (a comment is a tangent anchored to words), the comment as sent, and the topics a feature is handed with their anchors
   topics-core.ts themes (named `topic` in code) as the window holds them, mirroring topics.rs (by the ids as given, only for a topic on the map), each topic's theme and the themes in order as features get them, and a feature's rename or move sent to the core
@@ -120,18 +124,20 @@ Core, one process (core/src: axum, tokio)
   find.rs        "where did I talk about …?": Take me there
   spoken.rs      the command pack: "add … to X", "new topic about …", "expand …", "forget it", "stop listening"
   moves.rs       move a thought and rename a topic, said or clicked, each undone in one step; the refiner never merges two topics a move set apart
+  terse.rs       optional short presentation lines from existing thoughts; keeps source words and journal unchanged
   positions.rs   places on the canvas, a person's or an AI participant's: each step to every window at once, at most one journal line per item every 250 ms; no model call
   annotate.rs    comments, a person's or an AI participant's: the first on words starts their tangent under the point's topic, tied to them; a later one answers in it; journaled, to every window; no model call
   topics.rs      themes (on screen; `topic` in code): the AI sorts top-level topics under at most 6 short names, reusing the names there (a topic keeps its theme once given); a pass at most once a minute while a topic waits, never while a thought is placed or mid-sentence, only with calls to spare; a person's rename or move wins; journaled, to every window
   call.rs        who's here and since when, mic on, the floor from asr.rs's live words, read marks (`read`, thought_id), the AI helper's interruption level (`level`: glance|hand|note|speak|stop, default speak); never journaled; once two are here, `call` goes to every window and before the world in catch-up; alone, nothing sent. A Remote (`?remote` on the socket, `call::join_remote`) is listed with `remote: true` and is never one of the two: it starts no call and counts toward none, and once one has joined `call` is told with `started_ms` 0 until a call starts, so the shared map never hides a window
   catalog.rs     the command list (one definition per request); "No, I meant …", "scratch that", "this", a spoken yes or no
   apps.rs        watchers, prompts, publishers; the app builder
+  helpers.rs     host-only thinking and coding helpers: launch card, cancellation and Work spine rows; helpers/coding.rs runs local commands in isolated Git worktrees and commits as E2A2O Helper
   clock.rs       local wall-clock time from the system's date, so timers keep their hour
   model.rs       a refused or busy key (a fallback for a Contributor-mode default stays, unused); the hourly call cap
   usage.rs       reads USAGE_FILE at startup and every 60 seconds, pushes usage messages and replays the latest on joining, with model.rs's own rolling-hour call count; never journaled
   import.rs      past AI chats into topics
   apple.rs       AppleScript into Reminders and Calendar; off a Mac, or hosted (E2A2O_HOSTED=1), the window's calendar file instead
-  messages.rs    presets (Demo: the core alone; Full: every connector, PRESET=full) and the Messages card: "ask Mia to …" counts down, "stop", Esc or Stop takes it down, and only an ended count sends, to an allow-listed contact (MESSAGES_TO), from the host, with MESSAGES_SEND=on (else a dry run)
+  messages.rs    presets (Demo: the core alone; Full: every connector, PRESET=full) and the shared Messages/Email card: "ask Mia to …" or "email Mia that …" counts down, "stop", Esc or Stop takes it down, and only an ended count sends, to an allow-listed contact (MESSAGES_TO), from the host, with MESSAGES_SEND=on or EMAIL_SEND=on for its channel (else a dry run); email is Full/local only, has a Features switch, uses EMAIL_TO and Mail.app, and derives the subject by rule
   github.rs      the GitHub card (Full only, not hosted, the host's only): "show me the open pull requests" reads gh pr list / view, read-only, and says in one line when gh is missing, signed out or slow
   notes.rs       Full preset: "save this topic as a note" shows the note (points in order, decisions and unfinished marked, tangents under headings) and writes it into Apple Notes from the host with NOTES_WRITE=on (else a dry run); Open in Notes; it never changes or deletes a note; off when hosted
   sample.rs      "Try a sample map": an empty map filled with the student's week, or a shorter sample, from samples/

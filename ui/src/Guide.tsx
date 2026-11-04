@@ -15,7 +15,8 @@
 //    a phone) while you talk or type, and is asked at your next pause: its caption with Go ahead ↵ · Later L · Drop it
 //    esc and an arrow at what it's about. Talking over it before you could read it puts it back; after, answers it.
 //    A question that reads "A, or B?" is a choice, and Go ahead doesn't fit one: it offers A and B (1, 2 or the arrows
-//    move to one, Enter or a click sends it to the asker), Answer ↵ for words of your own, Later L and Drop it esc.
+//    move to one, Enter or a click sends it to the asker), Answer ↵ for words of your own, Later L and Drop it esc. Its card in
+//    the held stack offers the same two answers (a press sends one to the asker) above Answer ↵ and Later L.
 //  - The caption and the arrow draw in the top layer (manual popovers), over an open sheet too.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
@@ -24,7 +25,7 @@ import type { BrickOn } from "./bricks/contract";
 import type { World } from "./core";
 import { Markdown } from "./md";
 import {
-  aimAt, answerAsk, AROUND, askAtPause, askMs, askNow, busy, captionMs, captionRead, closeAnswer, current, dismissPoint, dropHeld as dropGuideHeld, dropIt, echoOf, goAhead, GUTTER, heard,
+  aimAt, answerAsk, answerHeld, AROUND, askAtPause, askMs, askNow, busy, captionMs, captionRead, closeAnswer, current, dismissPoint, dropHeld as dropGuideHeld, dropIt, echoOf, goAhead, GUTTER, heard,
   inLine, instead, label, later, laterHeld, mainWords, NATURAL_PAUSE_MS, nextAsk, openAnswer, overMs, pages, pauseIn, plain, pointer, RING_PAD, shape, stepBack,
   useGuide, useWindowOn, watchGuide, type Box, type Held, type Plan, type Said, type Shown, type Where,
 } from "./guide-core";
@@ -645,6 +646,8 @@ function Line({ said, point, where, ai, raise, on }: { said: Said | null; point:
 
 /** Sends an answer to whoever asked: the core routes it to their windows (`answer`, core/src/guide.rs). */
 const sendAnswer = (to: string, text: string) => sendToCore({ type: "answer", to, text });
+/** What a send the connection refused says; the question stays as it was. */
+const NOT_SENT = "Not sent: the connection is down. Try again in a moment.";
 
 /** What a question that reads "A, or B?" offers, in place of Go ahead (which fits an AI helper's own offer, not a choice):
  *  A and B as buttons that send the answer to whoever asked (1 and 2 move to them), Answer ↵ for words of your own, Later
@@ -657,7 +660,7 @@ function Answers({ said, choices, micOn }: { said: Said; choices: string[]; micO
   const typing = !!said.typing;
   const by = said.ask!.by;
   useEffect(() => { if (typing) field.current?.focus(); }, [typing]);
-  const send = (answer: string) => setProblem(answerAsk(said.n, answer, sendAnswer) === "failed" ? "Not sent: the connection is down. Try again in a moment." : "");
+  const send = (answer: string) => setProblem(answerAsk(said.n, answer, sendAnswer) === "failed" ? NOT_SENT : "");
   const submit = (event: FormEvent) => { event.preventDefault(); send(words); };
   return <>
     <span className="guide-asks guide-choices" role="group" aria-label={`Answers to ${by}`}>
@@ -741,6 +744,11 @@ function HeldStack({ held, ai }: { held: readonly Held[]; ai: (name: string) => 
 
 function HeldCard({ item, ai }: { item: Held; ai: boolean }) {
   const question = item.kind === "question";
+  // A question that reads "A, or B?" offers A and B here too, before it is asked (the stage's caption offers them when it is): a
+  // press sends that answer to whoever asked, and the stage says what went. Any other question keeps Answer and Later alone.
+  const choices = useMemo(() => (question ? options(plain(item.text)) : []), [question, item.text]);
+  const [problem, setProblem] = useState("");
+  const pick = (choice: string) => setProblem(answerHeld(item.n, choice, sendAnswer) === "failed" ? NOT_SENT : "");
   const state = item.state === "waiting" ? (question ? "asks when you stop" : "says when you stop") : item.state === "later" ? "Later" : "Talked over";
   const urgent = item.urgent && item.state === "waiting";
   const open = question ? "Answer" : item.state === "over" ? "Continue" : "Go ahead";
@@ -750,6 +758,12 @@ function HeldCard({ item, ai }: { item: Held; ai: boolean }) {
       <span className="guide-held-state">{urgent && <span className="guide-urgent">Interrupt · </span>}{state}</span>
     </div>
     <p className="guide-held-text"><Markdown text={question ? mainWords(item.text) : item.text} /></p>
+    {choices.length > 0 && <div className="guide-held-choices" role="group" aria-label={`Answers to ${item.by}`}>
+      {choices.map((choice) => <button key={choice} type="button" className="guide-btn guide-choice" onClick={() => pick(choice)}>
+        <span className="guide-choice-words">{choice}</span>
+      </button>)}
+    </div>}
+    {problem && <p className="guide-problem" role="alert">{problem}</p>}
     <div className="guide-held-acts">
       <button type="button" className="guide-btn" onClick={() => askNow(item.n)} aria-keyshortcuts={SHELL2 ? "Enter" : undefined}>{open}{SHELL2 && <kbd>↵</kbd>}</button>
       {item.state === "waiting"
