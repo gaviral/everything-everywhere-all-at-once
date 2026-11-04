@@ -11,6 +11,8 @@ import "./kit.css";
 
 const BUILD_ALL = /\b(build|make|do) (it |that |this )?all( of)?( that| this| it)?\b|\bbuild everything\b/i;
 const opensAtOnce = () => new URLSearchParams(location.search).has("crew");
+/** `?crewfault`: one part breaks on purpose, labelled on screen, so a real repair can be seen. */
+const faultOn = () => new URLSearchParams(location.search).has("crewfault");
 
 /** The person keeps talking while it builds, so the bottom bar with their live words stays in view. */
 function useBarHeight(open: boolean) {
@@ -36,6 +38,7 @@ export default function Crew({ on, actions, map }: BrickProps) {
   const [busy, setBusy] = useState("");
   const [clock, setClock] = useState(0);
   const heardUpTo = useRef(0);
+  const faulted = useRef(false);
   const latest = useRef<Run | null>(null);
   const change = useCallback((next: (old: Run) => Run) => setRun(old => { const value = old ? next(old) : old; latest.current = value; return value; }), []);
 
@@ -50,7 +53,9 @@ export default function Crew({ on, actions, map }: BrickProps) {
     set({ stage: "building" });
     try {
       const made = (latest.current ? merged(latest.current) : []).map(done => done.name);
-      let built = await buildPart(id, part, made);
+      const faulty = faultOn() && !faulted.current;
+      if (faulty) faulted.current = true;
+      let built = await buildPart(id, part, made, faulty ? { fault: true } : undefined);
       set({ stage: "trying", spec: built.spec, commit: built.commit, ms: built.ms, reused: built.reused });
       if (built.broke) {
         set({ stage: "fixing", why: built.broke });
@@ -72,6 +77,7 @@ export default function Crew({ on, actions, map }: BrickProps) {
     setOpen(true);
     setBusy("Splitting what you said into parts…");
     setRun(null);
+    faulted.current = false;
     const at = Date.now();
     try {
       const plan = await planParts(words);
@@ -134,6 +140,6 @@ export default function Crew({ on, actions, map }: BrickProps) {
         <textarea value={typed} onChange={event => setTyped(event.target.value)} aria-label="What should be built" placeholder="Say it all, or type it here. Time left until seven, what's left to hand in, a water reminder…" />
         <button disabled={!typed.trim() || !!busy}>{busy || "Build all that"}</button>
       </form>}
-    {run?.commits && <p className="crew-foot">{run.commits} real commits · parts kept for next time: {run.catalog}</p>}
+    {run?.commits && <p className="crew-foot">{run.commits} real commits · parts kept for next time: {run.catalog}{faultOn() ? " · one fault added on purpose" : ""}</p>}
   </div>;
 }

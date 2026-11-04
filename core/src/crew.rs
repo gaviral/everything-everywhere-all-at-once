@@ -184,6 +184,9 @@ pub struct BuildRequest {
     broke: Option<String>,
     #[serde(default)]
     before: Option<Value>,
+    /// A fault added on purpose, labelled on screen, so a real repair can be seen.
+    #[serde(default)]
+    fault: bool,
 }
 
 fn build_body(request: &BuildRequest) -> Value {
@@ -211,6 +214,8 @@ pub async fn build(State(core): State<Arc<Core>>, Json(request): Json<BuildReque
                 serde_json::from_str::<Value>(text)?
             }
         };
+        let mut spec = spec;
+        if request.fault { spec.as_object_mut().map(|fields| fields.remove("title")); }
         let checked = sound_spec(&spec).err();
         let message = match (&reused, &request.broke) {
             (Some(_), _) => format!("Reuse {}", request.part.name),
