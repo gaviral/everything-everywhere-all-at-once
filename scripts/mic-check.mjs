@@ -94,7 +94,7 @@ function browser({ chromium = true, honorsRate = true, refusesMixedRates = false
     resume() { this.state = "running"; log.push("resume"); return Promise.resolve(); }
     close() { this.state = "closed"; return Promise.resolve(); }
   }
-  class FakeNode { constructor() { this.port = { postMessage() {} }; } connect(next) { return next; } disconnect() {} }
+  class FakeNode { constructor() { this.port = { postMessage() {}, close() {} }; } connect(next) { return next; } disconnect() {} }
   const navigator = { userActivation: { isActive: active }, ...(chromium ? { userAgentData: {} } : {}), mediaDevices: { getUserMedia: async () => {
     clickDone = true;
     log.push("getUserMedia");

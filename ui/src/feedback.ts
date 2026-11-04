@@ -34,6 +34,8 @@ const OFFLINE = "disabled while the core is away";
 const NOT_CONNECTED = "notice: “Not connected — try again when connected.”";
 
 export const ACTIONS: Action[] = [
+  { id: "partner-cancel", how: "click", at: [["PartnerStatus.tsx", "onClick={() => {"]], pressed: PRESS, waits: "core",
+    done: "browser speech stops immediately; the core cancels a pending answer and shows Reply cancelled", failed: "a disconnected socket clears the thinking state" },
   // The new shell: corners, Find, held questions and the rail.
   { id: "catalog-corner", how: "click", at: [["App.tsx", `toggleTab("catalog")`], ["shell/Shell.tsx", "onClick={onClick} data-guide={guide}"]], pressed: PRESS,
     done: "the rail opens at the Features tab, or closes; the button stays pressed while it's open" },

@@ -8,6 +8,7 @@ mod apple;
 mod apps;
 mod asr;
 mod call;
+mod conversation;
 mod catalog;
 mod chunks;
 mod clock;
@@ -28,6 +29,7 @@ mod refiner;
 mod sample;
 mod trace;
 mod recap;
+mod replies;
 mod protocol;
 mod moves;
 mod spoken;
@@ -73,6 +75,7 @@ pub struct Core {
     recap: recap::Runtime,
     apps: apps::Runtime,
     guide: guide::Runtime,
+    conversation: conversation::Runtime,
     world: Mutex<Arc<World>>,
     journal: Mutex<Journal>,
     /// Last save-failure notice, shared by all write paths without taking their locks.
@@ -213,6 +216,21 @@ impl Core {
         let _ = self.updates.send(Outgoing { to: Some(speaker.into()), message, speak: false });
     }
 
+    /// Selected command outcomes only, live and private, behind Conversation partner.
+    pub fn reply_to(&self, speaker: &str, text: &str) {
+        if !conversation::enabled(self, speaker) { return; }
+        let text = replies::brief(text, 60, 400);
+        if text.is_empty() { return; }
+        let _ = self.updates.send(Outgoing {
+            to: Some(speaker.into()), message: ServerMsg::CommandReply { text }, speak: true,
+        });
+    }
+
+    fn command_notice(&self, speaker: &str, message: String) {
+        self.send_to(speaker, ServerMsg::Notice { message: message.clone() });
+        self.reply_to(speaker, &message);
+    }
+
     /// Takes the speaker to a thread as a new move (a click, a search's answer): a search still looking stops,
     /// and so does a "new thread" asked for before it, since the speaker is somewhere again.
     pub fn focus(self: &Arc<Self>, speaker: &str, thread_id: &str) {
@@ -264,36 +282,27 @@ impl Core {
             (w.active_by.get(speaker).map(|id| w.resolve(id)), w.thoughts.iter().rev().find(|t| t.speaker == speaker).map(|t| t.id.clone()))
         };
         let back_already = self.came_back.lock().unwrap().get(speaker) == Some(&mark(&world));
-        if let Some(id) = way_back(&world, speaker, now_ms()).filter(|_| !back_already) {
-            let title = world.thread(&id).map(|t| t.title.clone()).unwrap_or_default();
-            self.send_to(speaker, ServerMsg::Notice { message: format!("Back to {title}") });
+        if let Some(id) = way_back(&world, speaker, now_ms()).map(|id| world.resolve(&id)).filter(|id| !back_already && world.thread(id).is_some()) {
+            let (thought_id, message) = replies::anchor(&world, speaker, &id, "Back to", now_ms());
             self.rule_step(Some(speaker), "back");
             drop(world);
             self.move_to(speaker, &id);
+            self.send_to(speaker, ServerMsg::Found { thread_id: id, thought_id, message: message.clone() });
+            self.reply_to(speaker, &message);
             self.came_back.lock().unwrap().insert(speaker.into(), mark(&self.snapshot()));
             return;
         }
-        // Nothing to go back to: they're where they were. Their newest point on the thread they're on, else the
-        // newest anyone made there, else their latest anywhere, by when it was said (a split turn's rest, said at the
-        // same time, comes later in the list).
-        let now = now_ms();
-        let newest = |keep: &dyn Fn(&Thought) -> bool| world.thoughts.iter().filter(|t| t.placed && keep(t)).max_by_key(|t| t.said_at(now));
-        let here = world.active_by.get(speaker).map(|id| world.resolve(id));
-        let on_here = |t: &Thought| here.is_some() && t.thread_id.as_deref().map(|id| world.resolve(id)) == here;
-        let latest = newest(&|t| t.speaker == speaker && on_here(t)).or_else(|| newest(&on_here)).or_else(|| newest(&|t| t.speaker == speaker));
-        match latest.and_then(|t| Some((t, world.thread(&world.resolve(t.thread_id.as_deref()?))?))) {
-            Some((thought, thread)) => self.send_to(
-                speaker,
-                ServerMsg::Found {
-                    thread_id: thread.id.clone(),
-                    thought_id: Some(thought.id.clone()),
-                    message: match thought.point.trim() {
-                        "" => format!("You're on {}", thread.title),
-                        point => format!("You're on {}: “{point}”", thread.title),
-                    },
-                },
-            ),
-            None => self.send_to(speaker, ServerMsg::Notice { message: nothing_yet(&world) }),
+        // Stay on their own current topic, else their latest placed words. Use the same anchor as a return.
+        let here = world.active_by.get(speaker).map(|id| world.resolve(id))
+            .filter(|id| world.thread(id).is_some())
+            .or_else(|| world.thoughts.iter().filter(|t| t.placed && t.speaker == speaker)
+                .max_by_key(|t| t.said_at(now_ms())).and_then(|t| t.thread_id.as_deref()).map(|id| world.resolve(id)));
+        if let Some(id) = here {
+            let (thought_id, message) = replies::anchor(&world, speaker, &id, "You're on", now_ms());
+            self.send_to(speaker, ServerMsg::Found { thread_id: id, thought_id, message: message.clone() });
+            self.reply_to(speaker, &message);
+        } else {
+            self.command_notice(speaker, nothing_yet(&world));
         }
     }
 
@@ -309,12 +318,12 @@ impl Core {
         match next {
             Some(thread) if Some(&thread.id) == active => self.only_one(speaker, &thread.title),
             Some(thread) => {
-                self.send_to(speaker, ServerMsg::Notice { message: format!("On to {}", thread.title) });
+                self.command_notice(speaker, format!("On to {}", thread.title));
                 let id = thread.id.clone();
                 drop(world);
                 self.move_to(speaker, &id);
             }
-            None => self.send_to(speaker, ServerMsg::Notice { message: nothing_yet(&world) }),
+            None => self.command_notice(speaker, nothing_yet(&world)),
         }
     }
 
@@ -330,24 +339,24 @@ impl Core {
         match previous {
             Some(thread) if Some(&thread.id) == active => self.only_one(speaker, &thread.title),
             Some(thread) => {
-                self.send_to(speaker, ServerMsg::Notice { message: format!("Previous: {}", thread.title) });
+                self.command_notice(speaker, format!("Previous: {}", thread.title));
                 let id = thread.id.clone();
                 drop(world);
                 self.move_to(speaker, &id);
             }
-            None => self.send_to(speaker, ServerMsg::Notice { message: nothing_yet(&world) }),
+            None => self.command_notice(speaker, nothing_yet(&world)),
         }
     }
 
     /// "Next one" or "last one" on the only thread: no move, but an answer.
     fn only_one(&self, speaker: &str, title: &str) {
-        self.send_to(speaker, ServerMsg::Notice { message: format!("{title} is the only topic so far") });
+        self.command_notice(speaker, format!("{title} is the only topic so far"));
     }
 
     /// "New thread": nothing to place, and the speaker's next thought starts one (placer.rs `NewThreads`).
     fn new_thread(&self, speaker: &str) {
         self.new_threads.ask(speaker);
-        self.send_to(speaker, ServerMsg::Notice { message: "New topic: your next thought starts it".into() });
+        self.command_notice(speaker, "New topic: your next thought starts it".into());
     }
 
     /// Whether the speaker's window runs on this machine. Alone, only this machine's pages get in.
@@ -366,22 +375,22 @@ impl Core {
     /// `add_thought`, where a search the turn asks looks only when `search`: not in the words a stopped search
     /// held, which were said before what stopped it (see `find::stop`).
     fn add_turn(self: &Arc<Self>, speaker: &str, text: &str, search: bool) {
-        self.take_turn(speaker, text, search, false, false);
+        self.take_turn(speaker, text, search, false, false, None);
     }
 
     /// Typed words: as said ones, except that a line of only filler ("ok", "cool") is answered instead of vanishing
     /// without a trace: typing it was deliberate, and nothing on screen would say where it went.
     pub fn add_typed(self: &Arc<Self>, speaker: &str, text: &str) {
-        self.take_turn(speaker, text, true, true, false);
+        self.take_turn(speaker, text, true, true, false, None);
     }
 
-    fn receive_typed(self: &Arc<Self>, speaker: &str, id: &str, text: &str, speak: bool) {
+    fn receive_typed(self: &Arc<Self>, speaker: &str, id: &str, text: &str, speak: bool, window: Option<u64>) {
         if uuid::Uuid::parse_str(id).is_err() { return; }
         // Two reconnecting windows can retry the same entry at once.
         let _receipt = self.typed_receipts.lock().unwrap();
         let key = (speaker.to_string(), id.to_string());
         if !self.snapshot().received_text.contains(&key) {
-            self.take_turn(speaker, text, true, true, speak);
+            self.take_turn(speaker, text, true, true, speak, window);
             let change = Change::TextReceived { speaker: speaker.into(), id: id.into() };
             let mut world = self.world.lock().unwrap();
             if let Err(e) = self.journal.lock().unwrap().append(&change) {
@@ -393,8 +402,8 @@ impl Core {
         self.send_to(speaker, ServerMsg::TextReceived { id: id.into() });
     }
 
-    /// `add_turn`, saying why when `typed` filler is set aside.
-    fn take_turn(self: &Arc<Self>, speaker: &str, text: &str, search: bool, typed: bool, speak: bool) {
+    /// `add_turn`, saying why when `typed` filler is set aside. Only a live originating window may opt into the partner.
+    fn take_turn(self: &Arc<Self>, speaker: &str, text: &str, search: bool, typed: bool, speak: bool, window: Option<u64>) {
         self.touch();
         // These are window preferences, never thoughts or requests for the model.
         if let Some(show) = notice_control(text) {
@@ -413,9 +422,9 @@ impl Core {
         if let Some((before, stop)) = spoken::stop_tail(text) {
             // "Thanks, stop listening": only courtesy before it, nothing for the map.
             if !courtesy(before) {
-                self.add_turn(speaker, before, search);
+                self.take_turn(speaker, before, search, false, false, window);
             }
-            return self.add_turn(speaker, stop, search);
+            return self.take_turn(speaker, stop, search, false, false, window);
         }
         // The AI's open question on the speaker's latest words ("Did you mean …?") takes a spoken yes, no or short fix
         // first: "yeah" is filler otherwise.
@@ -443,8 +452,10 @@ impl Core {
             self.run_command(speaker, job);
         }
         if !said.trim().is_empty() && (!filler(said, asked) || self.snapshot().stay_here.is_some()) {
-            let id = self.keep_speaking(speaker, said, speak);
-            catalog::kept(self, speaker, said, vec![id]);
+            if !window.is_some_and(|window| conversation::request(self, speaker, window, said)) {
+                let id = self.keep_speaking(speaker, said, speak);
+                catalog::kept(self, speaker, said, vec![id]);
+            }
         }
         if let Some(job) = then {
             self.run_command(speaker, job);
@@ -1085,6 +1096,7 @@ async fn main() -> anyhow::Result<()> {
         recap: recap::Runtime::default(),
         apps: apps::Runtime::default(),
         guide: guide::Runtime::default(),
+        conversation: conversation::Runtime::default(),
         world: Mutex::new(world.into()),
         journal: Mutex::new(journal),
         journal_save_notice_at: Mutex::new(None),
@@ -1679,6 +1691,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
     // The item whose place was refused last, so a run of refusals on it is said once (positions.rs).
     let mut refused: Option<String> = None;
     let mut pace = guide::Pace::default();
+    let mut partner: Option<conversation::Here> = None;
     while let Some(message) = incoming.next().await {
         // A frame past `FRAME_MAX` (only a script sends one: the page checks first) ends the window here.
         let message = match message {
@@ -1690,6 +1703,11 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
         };
         match message {
             Message::Text(text) => match serde_json::from_str::<ClientMsg>(text.as_str()) {
+                Ok(ClientMsg::Partner { on }) if !ai && !remote => {
+                    if on && partner.is_none() { partner = Some(conversation::enable(&core, &speaker, window)); }
+                    else if !on { partner = None; }
+                }
+                Ok(ClientMsg::PartnerCancel) => conversation::cancel(&core, &speaker),
                 Ok(ClientMsg::Recap { period }) => recap::request(core.clone(), speaker.clone(), period),
                 Ok(ClientMsg::ComposeApp { request }) => apps::compose(core.clone(), request),
                 Ok(ClientMsg::DecideApp { build_id, keep }) => {
@@ -1704,13 +1722,12 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                     core.send_to(&speaker, ServerMsg::Notice { message: protocol::THOUGHT_TOO_LONG.into() });
                 }
                 Ok(ClientMsg::Text { text, speak, id }) if !text.trim().is_empty() => {
-                    if let Some(id) = id { core.receive_typed(&speaker, &id, text.trim(), speak && ai); }
-                    else if speak && ai { core.take_turn(&speaker, text.trim(), true, true, true); }
-                    else { core.add_typed(&speaker, text.trim()); }
+                    if let Some(id) = id { core.receive_typed(&speaker, &id, text.trim(), speak && ai, Some(window)); }
+                    else { core.take_turn(&speaker, text.trim(), true, true, speak && ai, Some(window)); }
                 }
                 // A listener whose voice service ended has a closed channel; start a fresh one.
                 Ok(ClientMsg::Listen { on: true }) if audio.as_ref().is_none_or(|tx| tx.is_closed()) => {
-                    audio = Some(start_listening(&core, &speaker, &listens));
+                    audio = Some(start_listening(&core, &speaker, &listens, window));
                 }
                 Ok(ClientMsg::Listen { on: false }) => { audio = None; apps::disconnect(&core, &volume_source); }
                 Ok(ClientMsg::Sample { name }) => sample::fill(&core, &speaker, name.as_deref()),
@@ -1913,12 +1930,12 @@ async fn write(out: &mut SplitSink<WebSocket, Message>, message: &impl serde::Se
 /// Relays a window's microphone to Voice Transcribe until the window stops it or the service ends, then says
 /// listening stopped, unless the window has started listening again since (`listens` counts its sessions).
 /// Returns where the window's audio goes.
-fn start_listening(core: &Arc<Core>, speaker: &str, listens: &Arc<std::sync::atomic::AtomicU64>) -> mpsc::Sender<Vec<u8>> {
+fn start_listening(core: &Arc<Core>, speaker: &str, listens: &Arc<std::sync::atomic::AtomicU64>, window: u64) -> mpsc::Sender<Vec<u8>> {
     let (tx, rx) = mpsc::channel(256);
     let n = listens.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
     let (core, speaker, listens) = (core.clone(), speaker.to_string(), listens.clone());
     tokio::spawn(async move {
-        let ended = asr::run(core.clone(), speaker.clone(), rx).await;
+        let ended = asr::run(core.clone(), speaker.clone(), rx, window).await;
         if let Err(e) = &ended {
             tracing::warn!("listening stopped: {e:#}");
         }
@@ -1948,6 +1965,7 @@ impl Core {
             recap: Default::default(),
             apps: Default::default(),
             guide: Default::default(),
+            conversation: Default::default(),
             world: Mutex::new(world.into()),
             journal: Mutex::new(journal),
             journal_save_notice_at: Mutex::new(None),
@@ -2065,7 +2083,7 @@ mod tests {
         assert_eq!(core.snapshot().thoughts.len(), 1, "retry must not add another thought");
         let (journal, world) = crate::Journal::open(&path).unwrap();
         let restarted = Arc::new(Core::test(journal, world));
-        restarted.receive_typed("you", &id, "Keep these words after a dropped connection", false);
+        restarted.receive_typed("you", &id, "Keep these words after a dropped connection", false, None);
         assert_eq!(restarted.snapshot().thoughts.len(), 1, "receipt is replayed after restart");
         server.abort();
         std::fs::remove_file(path).unwrap();
@@ -2077,7 +2095,7 @@ mod tests {
             let (core, _queue, path) = keyless(World::default());
             let mut updates = core.updates.subscribe();
             let id = uuid::Uuid::new_v4().to_string();
-            core.receive_typed("Helper", &id, "The workshop starts tomorrow", speak);
+            core.receive_typed("Helper", &id, "The workshop starts tomorrow", speak, None);
             let mut added = 0;
             while let Ok(update) = updates.try_recv() {
                 if matches!(update.message, ServerMsg::Change { change: Change::ThoughtAdded { .. } }) {
@@ -2086,7 +2104,7 @@ mod tests {
                 }
             }
             assert_eq!(added, 1);
-            core.receive_typed("Helper", &id, "The workshop starts tomorrow", speak);
+            core.receive_typed("Helper", &id, "The workshop starts tomorrow", speak, None);
             let receipt = updates.try_recv().unwrap();
             assert!(matches!(receipt.message, ServerMsg::TextReceived { .. }));
             assert!(!receipt.speak);
@@ -2512,7 +2530,7 @@ mod tests {
     /// The kind of answer a message is to a request, if it is one.
     fn answered(message: &ServerMsg) -> Option<String> {
         Some(match message {
-            ServerMsg::Notice { message } if message.starts_with("Back to ") => "back".into(),
+            ServerMsg::Found { message, .. } if message.starts_with("Back to ") => "back".into(),
             ServerMsg::Notice { message } if message.starts_with("On to ") => "next".into(),
             ServerMsg::Notice { message } if message.starts_with("Previous: ") => "previous".into(),
             ServerMsg::Notice { message } if message.starts_with("New topic: “") => "new thread with".into(),
@@ -3542,7 +3560,7 @@ mod tests {
                 line("j", "Cake", 10_000, "Leo spilled juice")],
             "Cake",
         ));
-        assert_eq!(ask(&core), ["Back to Groceries"]);
+        assert_eq!(ask(&core), ["Groceries: Back to Groceries: “Eggs and dish soap”"]);
         assert_eq!(ask(&core), ["Groceries: You're on Groceries: “Eggs and dish soap”"]);
         assert_eq!(core.snapshot().active_by.get("you").map(String::as_str), Some("Groceries"));
         let _ = std::fs::remove_file(&path);
@@ -3553,10 +3571,49 @@ mod tests {
                 line("c", "Cake", 10_000, "Cake from Safeway or bake one")],
             "Maya",
         ));
-        assert_eq!(ask(&core), ["Back to Cake"]);
+        assert_eq!(ask(&core), ["Cake: Back to Cake: “Cake from Safeway or bake one”"]);
         assert_eq!(ask(&core), ["Cake: You're on Cake: “Cake from Safeway or bake one”"]);
         assert_eq!(core.snapshot().active_by.get("you").map(String::as_str), Some("Cake"));
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[tokio::test]
+    async fn recovery_speaks_original_words_only_when_enabled_and_targets_the_same_point() {
+        let now = super::now_ms();
+        let original = "Before booking the workshop I need to";
+        let (core, _queue, path) = keyless(World {
+            threads: vec![thread("Workshop", 1, "you"), thread("Supplies", 2, "")],
+            thoughts: vec![
+                Thought { text: original.into(), point: "Book workshop".into(), complete: false, ..said("half", "you", "Workshop", now - 2000) },
+                Thought { text: "Someone else's words".into(), ..said("other", "Sam", "Workshop", now - 1000) },
+                said("detour", "you", "Supplies", now),
+            ],
+            active_by: HashMap::from([("you".into(), "Supplies".into())]),
+            ..World::default()
+        });
+        let mut updates = core.updates.subscribe();
+        core.go_back("you");
+        let off: Vec<_> = std::iter::from_fn(|| updates.try_recv().ok()).collect();
+        assert!(off.iter().all(|out| !out.speak));
+        assert!(off.iter().any(|out| matches!(&out.message, ServerMsg::Found { thought_id, .. } if thought_id.as_deref() == Some("half"))));
+        let enabled = crate::conversation::enable(&core, "you", 1);
+        while updates.try_recv().is_ok() {}
+        core.go_back("you");
+        let on: Vec<_> = std::iter::from_fn(|| updates.try_recv().ok()).collect();
+        let spoken: Vec<_> = on.iter().filter(|out| out.speak).collect();
+        assert_eq!(spoken.len(), 1);
+        assert_eq!(spoken[0].to.as_deref(), Some("you"));
+        assert!(matches!(&spoken[0].message, ServerMsg::CommandReply { text } if text == &format!("You're on Workshop: “{original}”")));
+        assert_eq!(core.snapshot().active_for("you").map(String::as_str), Some("Workshop"));
+        assert!(on.iter().any(|out| matches!(&out.message, ServerMsg::Found { thought_id, .. } if thought_id.as_deref() == Some("half"))));
+        core.send_to("you", ServerMsg::Notice { message: "Routine notification".into() });
+        assert!(!updates.try_recv().unwrap().speak);
+        drop(enabled);
+        while updates.try_recv().is_ok() {}
+        core.go_back("you");
+        assert!(std::iter::from_fn(|| updates.try_recv().ok()).all(|out| !out.speak));
+        assert!(!std::fs::read_to_string(&path).unwrap().contains("command_reply"));
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]

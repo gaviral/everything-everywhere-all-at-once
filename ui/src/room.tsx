@@ -1,3 +1,5 @@
+import { builtInOn, watchBuiltIns } from "./shell/features";
+import { hearPartner, ignorePartner, resetPartner } from "./partner";
 // Rooms: two people think out loud on one map, each on their own laptop. When the core runs with a
 // room code, everyone joins with a short name (remembered in this browser), and a laptop other than
 // the host's also needs the code. Alone, nothing changes: your thoughts are "you".
@@ -145,10 +147,20 @@ export function openSocket(url: string, extra: Record<string, string> = {}): Web
   const query = params.toString();
   const ws = new WebSocket(query ? `${url}?${query}` : url);
   socketNow = ws;
-  ws.addEventListener("open", () => { callOpened(); recheck(); });
-  ws.addEventListener("close", () => { if (socketNow === ws) { socketNow = null; stopPageSpeech(); } callClosed(); recheck(); });
+  let partnerOn: boolean | undefined;
+  const partner = () => {
+    const next = builtInOn("partner");
+    if (ws.readyState !== WebSocket.OPEN || next === partnerOn) return;
+    const was = partnerOn;
+    partnerOn = next;
+    if (!REMOTE) ws.send(JSON.stringify({ type: "partner", on: next }));
+    if (was && !next) { stopPageSpeech(); resetPartner(); }
+  };
+  const unwatchPartner = watchBuiltIns(partner);
+  ws.addEventListener("open", () => { callOpened(); partner(); recheck(); });
+  ws.addEventListener("close", () => { unwatchPartner(); if (socketNow === ws) { socketNow = null; stopPageSpeech(); resetPartner(); } callClosed(); recheck(); });
   // The call's own messages, and the world that ends a catch-up (talk/call-core.ts looks at the start only).
-  ws.addEventListener("message", (event) => { callHeard(event.data); hearPageSpeech(event.data); });
+  ws.addEventListener("message", (event) => { if (ignorePartner(event.data)) return; callHeard(event.data); hearPartner(event.data); hearPageSpeech(event.data); });
   return ws;
 }
 

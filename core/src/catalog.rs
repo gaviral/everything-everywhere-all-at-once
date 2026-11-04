@@ -845,6 +845,7 @@ fn unkeep(core: &Core, speaker: &str, ids: &[String]) -> Option<Undo> {
     changes.extend(repoint(&world, &kept, &thoughts));
     let order = order_of(&world);
     drop(world);
+    crate::conversation::retract(core, &parts);
     core.commit(changes);
     Some(Undo::Restore { thoughts, threads, order, dismissed, merged, on, active })
 }
@@ -888,6 +889,7 @@ pub(crate) fn take_off(core: &Core, ids: &[String]) -> Option<Undo> {
     changes.extend(repoint(&world, &kept, &thoughts));
     let order = order_of(&world);
     drop(world);
+    crate::conversation::retract(core, ids);
     core.commit(changes);
     Some(Undo::Restore { thoughts, threads, order, dismissed, merged: Vec::new(), on: was_on, active })
 }
