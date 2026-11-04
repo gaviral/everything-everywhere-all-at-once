@@ -4,6 +4,7 @@
 //! anywhere joins through an HTTPS tunnel (tunnel.rs).
 
 mod annotate;
+mod draw;
 mod discussion;
 mod research;
 mod apple;
@@ -1601,6 +1602,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/workshop/catalog", get(workshop::catalog))
         .route("/workshop/run", post(workshop::run))
         .route("/workshop/hackathon", get(workshop::hackathon))
+        .route("/draw/read", post(draw::read))
+        .route("/draw/back", post(draw::back))
         .route("/flow/plan", post(flow::plan))
         .route("/flow/finish", post(flow::finish))
         .route("/flow/send", post(flow::send))
