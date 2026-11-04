@@ -1,7 +1,8 @@
 import { cancelPageReply, usePlayback } from "./page-speech";
 import RecoveryPanel from "./RecoveryPanel";
 import { PartnerStatus } from "./PartnerStatus";
-import { SpeechFixesContext, SemanticZoomContext } from "./bricks/contract";
+import { SpeechFixesContext, SemanticZoomContext, ShapesContext } from "./bricks/contract";
+import { useShapes } from "./shapes-core";
 import { switchTalk, useTalk } from "./talk-preset";
 import "./talk-preset.css";
 import { useCardNotice } from "./notice-queue";
@@ -1129,6 +1130,7 @@ export default function App() {
     hint: showHint,
   }, destination, core.usage, core.noKey || core.keyRefused || core.resting);
   const bricksOn = useBricksOn();
+  const shapes = useShapes(bricksOn.has("shapes"));
   const builtIns = useBuiltInsOn();
   // A brick that shows your live words itself (brick.json `showsLiveWords`: Tiny transcript) takes them from the dock.
   const wordsElsewhere = BRICKS.some((brick) => brick.info.showsLiveWords && bricksOn.has(brick.info.id));
@@ -1271,6 +1273,7 @@ export default function App() {
     <WhyContext.Provider value={whyAsk}>
     <SpeechFixesContext.Provider value={speechFixes}>
     <SemanticZoomContext.Provider value={builtIns.has("semantic-zoom")}>
+    <ShapesContext.Provider value={shapes}>
     <StayProvider thread={world.stay_here ?? null} connected={core.connected} stay={core.stay}>
     <div className="app" onClickCapture={(event) => {
       const target = event.target as HTMLElement;
@@ -1398,7 +1401,7 @@ export default function App() {
       </nav>}
       {talk && spine ? <BrickMount brick={spine} host={brickHost} />
         : view === "palace" && world.threads.length > 0 ? <Palace threads={world.threads} active={world.active} onOpen={goBack} />
-        : viewBrick && world.threads.length > 0 ? <BrickMount brick={viewBrick} host={brickHost} /> : <main ref={mapRef} className={talking && world.active && !search ? "map talking" : "map"} aria-label="Cards" data-guide="map">
+        : viewBrick && (world.threads.length > 0 || (shapes.enabled && viewBrick.info.id === "spine")) ? <BrickMount brick={viewBrick} host={brickHost} /> : <main ref={mapRef} className={talking && world.active && !search ? "map talking" : "map"} aria-label="Cards" data-guide="map">
         {/* Before the first snapshot the world is the empty one: nothing, not a welcome to a map that isn't empty. */}
         {world.threads.length === 0 ? (
           core.snapshotRevision === 0 ? null : <div className="empty">
@@ -1532,6 +1535,7 @@ export default function App() {
       }} />
     </div>
     </StayProvider>
+    </ShapesContext.Provider>
     </SemanticZoomContext.Provider>
     </SpeechFixesContext.Provider>
     </WhyContext.Provider>
@@ -1605,6 +1609,7 @@ export default function App() {
     <WhyContext.Provider value={whyAsk}>
     <SpeechFixesContext.Provider value={speechFixes}>
     <SemanticZoomContext.Provider value={builtIns.has("semantic-zoom")}>
+    <ShapesContext.Provider value={shapes}>
     <StayProvider thread={world.stay_here ?? null} connected={core.connected} stay={core.stay}>
     <div className="app shell" onClickCapture={(event) => {
       const target = event.target as HTMLElement;
@@ -1635,7 +1640,7 @@ export default function App() {
           </MovesProvider></TidyProvider></NotesContext.Provider>
         </main>
         : !talk && viewBrick && viewBrick.info.id !== "spine" && !empty ? <BrickMount brick={viewBrick} host={brickHost} />
-        : !empty && spine ? <BrickMount brick={spine} host={brickHost} />
+        : (!empty || shapes.enabled) && spine ? <BrickMount brick={spine} host={brickHost} />
         : <main ref={mapRef} className="shell-main" aria-label="Your map" data-guide="map">
           {/* Before the first snapshot the world is the empty one: nothing, not a welcome to a map that isn't empty. */}
           {core.snapshotRevision > 0 && empty && <Welcome models={!core.noKey ? modelsLine(site.models) : ""} sample={site.sample && !core.listening
@@ -1770,6 +1775,7 @@ export default function App() {
       }} />
     </div>
     </StayProvider>
+    </ShapesContext.Provider>
     </SemanticZoomContext.Provider>
     </SpeechFixesContext.Provider>
     </WhyContext.Provider>
