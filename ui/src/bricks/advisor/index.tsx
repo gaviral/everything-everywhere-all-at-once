@@ -23,7 +23,7 @@ export function AdvisorWorkspace({ provider: injected }: { provider?: AdvisorPro
   const c = useAdvisor(provider);
   const example = provider.kind === "injected";
   return <section className="advisor" aria-label="Advisor mode" data-guide="advisor">
-    <div className="advisor-heading"><div><p className="advisor-eyebrow">Advisor mode · Meta</p><h1>Fast when you need it.<br /><em>Deeper when you choose.</em></h1></div><span className="advisor-badge">{example ? "Example · injected results" : "Live · Meta first pass"}</span></div>
+    <div className="advisor-heading"><div><p className="advisor-eyebrow">Advisor mode · Meta</p><h1>Fast when you need it.<br /><em>Deeper when you choose.</em></h1><p>Get a fast answer, then choose whether to ask for a second perspective.</p></div><span className="advisor-badge">{example ? "Example · injected results" : "Live · Meta first pass"}</span></div>
     {!injected && <div className="advisor-controls"><label>Result source<select value={mode} onChange={event => { const next = event.target.value as typeof mode; setMode(next); c.reset(next === "injected", scenario === "fast-failure"); }}><option value="injected">Injected examples</option><option value="live">Live Meta · fast only</option></select></label>
       {example && <label>Review example<select value={scenario} onChange={event => { const next = event.target.value as Scenario; setScenario(next); c.reset(true, next === "fast-failure"); }}><option value="disagree">Models disagree</option><option value="agree">Models agree</option><option value="review-failure">Larger review fails</option><option value="fast-failure">Fast answer fails</option></select></label>}
     </div>}
@@ -33,5 +33,5 @@ export function AdvisorWorkspace({ provider: injected }: { provider?: AdvisorPro
     <p className="advisor-footnote">No automatic escalation. No capture. No map changes. You make the decision.</p>
   </section>;
 }
-export default function Advisor(_props: BrickProps) { return <AdvisorWorkspace />; }
+export default function Advisor({ actions }: BrickProps) { return <><button className="advisor-back" type="button" onClick={actions.closeView}>Back to map</button><AdvisorWorkspace /></>; }
 export const styles = advisorStyles;

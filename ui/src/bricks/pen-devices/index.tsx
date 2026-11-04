@@ -11,8 +11,10 @@ import "./example.css";
 
 export default function Example({ actions }: BrickProps) {
 const [adapter] = useState(() => new PreviewAdapter());
-return <section className="pen-devices-example" aria-label="Pen and touch example" data-guide="pen-devices">
-<div><strong>Pen and touch · local example</strong><button onClick={() => actions.openCatalog("pen-devices")}>Features</button></div>
+const [open, setOpen] = useState(true);
+return <>{!open && <button className="pen-devices-reopen" type="button" onClick={() => setOpen(true)}>Open Pen and touch</button>}
+<section hidden={!open} className="pen-devices-example" aria-label="Pen and touch example" data-guide="pen-devices">
+<div><strong>Pen and touch · local example</strong><span><button type="button" onClick={() => actions.openCatalog("pen-devices")}>Features</button> <button type="button" onClick={() => setOpen(false)}>Close</button></span></div>
 <p>Choose a destination, press Start drawing, then draw in the surface. Both destinations are local examples.</p><InputSurface enabled adapter={adapter} /><Destination adapter={adapter} />
-</section>;
+</section></>;
 }

@@ -1,4 +1,5 @@
 import { useId, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import type { BrickProps } from "../contract";
 import type { MemoryKind, MemoryRecord, MemorySource, ProjectMemoryProps } from "./contract";
 import { publicExample } from "./contract";
 import { filterRecords, indexRecords, type MemoryIndex } from "./index-records";
@@ -83,7 +84,7 @@ function RecordDetail({ record, index, choose, prefix, headingRef }: { record: M
   </article>;
 }
 
-export default function ProjectMemory({ memory = publicExample }: ProjectMemoryProps) {
+export default function ProjectMemory({ memory = publicExample, actions }: ProjectMemoryProps & Partial<Pick<BrickProps, "actions">>) {
   const index = useMemo(() => indexRecords(memory), [memory]);
   const [kind, setKind] = useState<MemoryKind | "all">("all");
   const [query, setQuery] = useState("");
@@ -109,6 +110,7 @@ export default function ProjectMemory({ memory = publicExample }: ProjectMemoryP
     setKind("all"); setQuery(""); setIncludeSuperseded(true);
   };
   return <section className="project-memory" aria-label="Project memory" data-guide="project-memory">
+    {actions && <button className="project-memory-back" type="button" onClick={actions.closeView}>Back to map</button>}
     <MemoryIntroduction index={index} />
     {memory === publicExample && <ReceiptNotice />}
     <div className="project-memory-workspace">
