@@ -1,0 +1,9 @@
+{
+  "id": "placeholder-mode",
+  "name": "Placeholders",
+  "does": "Masks emails, phone numbers, chosen names and send recipients for filming.",
+  "kind": "card",
+  "defaultOn": false,
+  "demoSafe": true,
+  "flag": "placeholders"
+}
