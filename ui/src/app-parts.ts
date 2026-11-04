@@ -49,7 +49,7 @@ export function appParts(app: MiniApp, state: PartsState): AppPart[] {
     ? part("input:volume", "Microphone levels", "ui/src/apps-audio.ts · volumeReporter", "Local microphone readings, sent to the core",
       offline || (state.microphone ? "" : "Microphone is off in this window"))
     : w.kind === "app_request"
-      ? part("input:apps", "Saved app catalog", "core/src/apps.rs · search", "Apps on the current map")
+      ? part("input:apps", "Saved apps", "core/src/apps.rs · search", "Apps on the current map")
       : w.kind === "time"
         ? part("input:clock", "Core clock", "core/src/apps.rs · run / timer_due", "Checked every second")
         : part("input:thoughts", "Placed thoughts", "core/src/apps.rs · run / on_thought", "New thoughts after placement", model);
