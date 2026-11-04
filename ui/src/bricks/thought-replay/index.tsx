@@ -57,7 +57,7 @@ function ReplayVisit({ map, actions, dismiss, jumped }: BrickProps & { dismiss: 
   return <section ref={root} tabIndex={-1} className="thought-replay" data-guide="thought-replay" aria-label="Thought replay" onKeyDown={event => {
     if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); pause(); dismiss(); }
   }}>
-    <div className="thought-replay-top"><div><p className="thought-replay-eyebrow">FOLLOW THE THREAD</p><h1>How we got here.</h1></div><button type="button" onClick={() => { pause(); dismiss(); }}>Close replay</button></div>
+    <div className="thought-replay-top"><div><p className="thought-replay-eyebrow">FOLLOW THE TRAIL</p><h1>How we got here.</h1></div><button type="button" onClick={() => { pause(); dismiss(); }}>Close replay</button></div>
     <p className="thought-replay-intro">One thought at a time. Room to read. A way back to the source.</p>
     <div className="thought-replay-context"><p role="status">{selection.example ? "Example replay · not live AI" : "Your map · current placed thoughts"}</p>
       <button type="button" onClick={() => patch({ example: !selection.example, stop: null, index: 0 })}>{selection.example ? "Use your map" : "Try example"}</button></div>
