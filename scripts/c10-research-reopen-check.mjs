@@ -57,7 +57,7 @@ try {
   await click('Reopen evidence');
   assert.equal(await evaluate('document.querySelector(".question-research-reader blockquote").textContent'), 'When does the blue venue open?');
   assert.equal(await evaluate('document.querySelector(".question-research textarea").value'), 'Access query in progress', 'reopening preserves the other query draft');
-  assert.equal(await evaluate('document.querySelector(".question-research-reader a").href'), 'https://example.com/hours');
+  assert.equal(await evaluate('document.querySelector(".question-research-reader a").href'), 'https://venue.test/hours');
   await click('Show original thought');
   assert.equal(await evaluate(`document.querySelector('[aria-label="Opened map thought"]').textContent`), 'On the map: When does the blue venue open?');
   assert.ok(await evaluate('!!document.querySelector(".question-research-reader")'), 'evidence stays beside the original after jump');

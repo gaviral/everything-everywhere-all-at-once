@@ -33,7 +33,7 @@ function Preview() {
         if (!thought) return fail;
         const answer: ResearchKept = { id: request.request_id, request_id: request.request_id, thought_id: thought.id, quote: thought.text, source_point: thought.point,
           topic_id: "venue", topic_title: "Venue", owner: "you", query: request.query!, answer: "The venue opens at nine.",
-          citations: [{ title: "Example venue guide", url: "https://example.com/hours", start: 0, end: 23 }],
+          citations: [{ title: "Example venue guide", url: "https://venue.test/hours", start: 0, end: 23 }],
           at_ms: 1793808000000, model: "Synthetic provider fixture", simulated: true, revision: 0, removed: false };
         return new Promise(resolve => setPending(() => () => { setCandidate(answer); setPending(null); resolve({ request_id: request.request_id, ok: true, message: "Synthetic answer ready.", answer }); }));
       }
