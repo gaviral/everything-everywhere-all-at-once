@@ -113,4 +113,4 @@ try {
     if(screenshot)writeFileSync(join(output,'last-ui.png'),Buffer.from(screenshot.data,'base64'));
   }
   await browser?.close();await stop();writeFileSync(join(output,'core.log'),logs.join(''));
-} 
+}
