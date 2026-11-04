@@ -85,7 +85,7 @@ function SectionFold({ section, context, folded, fold }: {
     }}>
       <span className="contextual-folds-fold-mark" aria-hidden="true">⌄</span>
       <span><span className="contextual-folds-topic-title">{section.title}</span>
-        <span className="contextual-folds-topic-context">{section.archived && "Archived · "}{section.passages.length} {section.passages.length === 1 ? "passage" : "passages"}{section.children.length ? ` · ${section.children.length} ${section.children.length === 1 ? "branch" : "branches"}` : ""}</span>
+        <span className="contextual-folds-topic-context">{section.archived && "Archived · "}{section.passages.length} {section.passages.length === 1 ? "passage" : "passages"}{section.children.length ? ` · ${section.children.length} ${section.children.length === 1 ? "tangent" : "tangents"}` : ""}</span>
       </span>
     </summary>
     <div className="contextual-folds-section-body">
