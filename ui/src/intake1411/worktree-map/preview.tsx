@@ -38,7 +38,7 @@ function Preview() {
       <button onClick={() => owner.publish(updatedSnapshot())}>Publish updated snapshot</button>
       <button onClick={() => owner.publish(unknownSnapshot())}>Publish unknown data</button>
       <button onClick={() => owner.publish({ schemaVersion: 0 })}>Publish invalid snapshot</button>
-      <button onClick={() => owner.publish({ ...syntheticSnapshot(), branches: [] })}>Remove branches</button>
+      <button onClick={() => owner.publish({ ...syntheticSnapshot(), branches: [] })}>Remove Git branches</button>
       <button onClick={() => owner.publish(syntheticSnapshot())}>Restore sample</button>
     </section>
     <WorktreeMap enabled={enabled || undefined} adapter={owner.adapter} selection={selection} onRequestClose={() => setEnabled(false)}

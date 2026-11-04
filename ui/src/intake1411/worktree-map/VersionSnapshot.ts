@@ -35,7 +35,7 @@ function uniqueBranches(values: unknown[], mainId: string): readonly VersionBran
   const seen = new Set([mainId]);
   return Object.freeze(values.map(value => {
     const item = branch(value);
-    if (seen.has(item.id)) throw new Error('Duplicate branch identity');
+    if (seen.has(item.id)) throw new Error('Duplicate Git branch identity');
     seen.add(item.id);
     return item;
   }));

@@ -9,7 +9,7 @@ function IdentityFields({ branch, snapshot }: { branch: VersionBranch; snapshot:
     <dt>Lane</dt><dd>{branch.lane?.label ?? 'Unknown'}</dd>
     <dt>Worktree</dt><dd>{branch.worktree?.label ?? 'Unknown'}</dd>
     <dt>Worktree identity</dt><dd><code>{branch.worktree?.id ?? 'Unknown'}</code></dd>
-    <dt>Branch revision</dt><dd><code>{branch.head ?? 'Unknown'}</code></dd>
+    <dt>Git branch revision</dt><dd><code>{branch.head ?? 'Unknown'}</code></dd>
     <dt>Build</dt><dd>{branch.build?.id ?? 'Unknown'}</dd>
     <dt>Build revision</dt><dd><code>{branch.build?.revision ?? 'Unknown'}</code></dd>
     <dt>Base</dt><dd>{known ? parent : 'Unknown'}</dd>
@@ -21,12 +21,12 @@ export function LaneIdentity({ branch, snapshot, detail = false, onInspect, onBa
 }) {
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => { if (detail) heading.current?.focus(); }, [detail]);
-  return <section className="wm-identity" aria-label={detail ? 'Branch detail' : 'Selected branch'}>
+  return <section className="wm-identity" aria-label={detail ? 'Git branch detail' : 'Selected Git branch'}>
     {detail && <button onClick={onBack}>Back to map</button>}
-    <h3 ref={heading} tabIndex={-1}>{branch?.name ?? 'Selected branch unavailable'}</h3>
+    <h3 ref={heading} tabIndex={-1}>{branch?.name ?? 'Selected Git branch unavailable'}</h3>
     {branch ? <>
       <IdentityFields branch={branch} snapshot={snapshot} />
-      {!detail && <button className="wm-primary" onClick={onInspect}>Inspect branch</button>}
-    </> : <p>The selected identity is absent from this snapshot. Your selection is retained; choose another branch or wait for an update.</p>}
+      {!detail && <button className="wm-primary" onClick={onInspect}>Inspect Git branch</button>}
+    </> : <p>The selected identity is absent from this snapshot. Your selection is retained; choose another Git branch or wait for an update.</p>}
   </section>;
 }

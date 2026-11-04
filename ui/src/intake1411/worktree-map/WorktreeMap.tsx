@@ -24,7 +24,7 @@ function ActiveMap({ adapter, selection, onRequestClose }: Pick<WorktreeMapProps
       {visit.view === 'detail' ? <LaneIdentity branch={snapshot.branches.find(branch => branch.id === visit.branchId)} snapshot={snapshot} detail onInspect={selection.inspect} onBack={selection.back} /> :
         <div className="wm-layout"><BranchTree snapshot={snapshot} visit={visit} selection={selection} />
           {visit.branchId ? <LaneIdentity branch={snapshot.branches.find(branch => branch.id === visit.branchId)} snapshot={snapshot} onInspect={selection.inspect} onBack={selection.back} /> :
-            <section className="wm-identity"><h3>Select a branch</h3><p>See the lane, worktree and build supplied by its owner.</p></section>}
+            <section className="wm-identity"><h3>Select a Git branch</h3><p>See the lane, worktree and build supplied by its owner.</p></section>}
         </div>}
     </>}
   </section>;

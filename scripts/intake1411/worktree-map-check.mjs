@@ -156,7 +156,7 @@ async function visibleAcceptance(browser) {
   for (const label of ['Orchard lane', 'Orchard workspace', 'worktree-orchard', 'orchard-build-7', 'orchard-r11', 'orchard-r12']) {
     assert.equal(await evaluate(`document.querySelector('.wm-identity').textContent.includes(${JSON.stringify(label)})`), true, `${label} belongs to selected branch`);
   }
-  await click('Inspect branch');
+  await click('Inspect Git branch');
   await waitFor(`document.activeElement?.tagName === 'H3' && ${text('Back to map')}`, 'detail receives keyboard focus');
   await click('Publish updated snapshot');
   await waitFor(text('orchard-build-8'), 'updated build appears in detail');
@@ -170,8 +170,8 @@ async function visibleAcceptance(browser) {
   await click('Publish unknown data');
   await waitFor(text('sample-unknown'), 'unknown snapshot arrives');
   assert.equal(await evaluate(`[...document.querySelectorAll('.wm-branches button')].every(b => b.textContent.includes('Base: Unknown')) && [...document.querySelectorAll('.wm-fields dd')].filter(dd => dd.textContent === 'Unknown').length === 3`), true, 'missing base, build and build revision are visibly unknown');
-  await click('Remove branches');
-  await waitFor(text('Selected branch unavailable'), 'removed selection is explicitly unavailable');
+  await click('Remove Git branches');
+  await waitFor(text('Selected Git branch unavailable'), 'removed selection is explicitly unavailable');
   await click('Restore sample');
   await waitFor(`${selected}?.textContent.includes('river-notes')`, 'returning stable ID restores visible selection');
   await click('Publish invalid snapshot');
@@ -199,7 +199,7 @@ async function visibleAcceptance(browser) {
   await screenshot('narrow');
   await evaluate(`document.querySelector('.wm').style.fontSize = '200%'`);
   assert.equal(await evaluate('document.documentElement.scrollWidth <= 320'), true, 'enlarged text wraps at narrow width');
-  await click('Inspect branch');
+  await click('Inspect Git branch');
   await waitFor(text('Back to map'), 'enlarged detail reachable');
   await screenshot('enlarged-detail');
   assert.deepEqual(await evaluate('previewErrors'), [], 'no browser runtime errors');
