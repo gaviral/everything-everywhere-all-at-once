@@ -28,9 +28,11 @@ export function selectedThread(doc: Document): string | null {
   return null;
 }
 
-/** The point a node sits in (`point-<thought id>`), for "delete this" (core moves.rs). */
+/** The command thought a node sits in (Spine's explicit target or Cards' point id), for "delete this" (core moves.rs). */
 export function pointOf(node: Node | null): string | null {
   const element = node && "closest" in node ? (node as Element) : node?.parentElement ?? null;
+  const command = element?.closest<HTMLElement>("[data-command-thought]")?.dataset?.commandThought;
+  if (command) return command;
   const id = element?.closest<HTMLElement>("li[id^='point-']")?.id;
   return id?.startsWith("point-") ? id.slice("point-".length) : null;
 }
