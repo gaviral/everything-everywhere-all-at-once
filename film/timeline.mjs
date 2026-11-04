@@ -15,11 +15,12 @@ const words = (value, label) => {
 function plane(clip) {
   if (!clip || typeof clip.clip !== 'string' || !clip.clip) throw new Error('plane needs a clip');
   if (clip.start !== undefined && finite(clip.start, 'start') < 0) throw new Error('start must be nonnegative');
-  for (const key of ['tilt', 'position']) {
-    if (clip[key] !== undefined && (!Array.isArray(clip[key]) || clip[key].length !== (key === 'tilt' ? 3 : 2)))
+  for (const key of ['tilt', 'tiltTo', 'position']) {
+    if (clip[key] !== undefined && (!Array.isArray(clip[key]) || clip[key].length !== (key === 'position' ? 2 : 3)))
       throw new Error(`${key} has the wrong dimensions`);
     clip[key]?.forEach(n => finite(n, key));
   }
+  if (clip.settleSeconds !== undefined) positive(clip.settleSeconds, 'settleSeconds');
   if (clip.width !== undefined) positive(clip.width, 'width');
   if (clip.playSeconds !== undefined && finite(clip.playSeconds, 'playSeconds') < 0) throw new Error('playSeconds must be nonnegative');
   if (clip.crop !== undefined) {

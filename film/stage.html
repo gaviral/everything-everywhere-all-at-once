@@ -11,14 +11,18 @@
   #scene { position: absolute; inset: 0; perspective: 2400px; }
   #camera { position: absolute; inset: 0; transform-style: preserve-3d; }
   .type { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 152px; font-weight: 650; letter-spacing: -.065em; line-height: 1.05; text-align: center; padding: 100px; }
-  .plane { position: absolute; left: 50%; top: 50%; border-radius: 18px; overflow: hidden; background: #fff; box-shadow: 0 55px 90px -30px #0007, 0 12px 28px #0002; border: 1px solid #ffffff80; }
+  .plane { position: absolute; left: 50%; top: 50%; border-radius: 18px; overflow: hidden; background: #fff; box-shadow: 0 65px 130px -25px #001c6680, 0 20px 50px #001b5550; border: 1.5px solid #ffffff9c; }
   video { display: block; width: 100%; height: auto; }
   .wall-tile { position: absolute; width: 1920px; height: 1920px; overflow: hidden; background: #0d1014; outline: 1px solid #48515c; }
   .wall-tile img, .wall-tile video { display: block; width: 100%; height: 100%; object-fit: contain; }
-  .lockup { display: flex; align-items: center; gap: 42px; }
+  .lockup { display: flex; align-items: center; gap: 46px; }
+  .endplate { flex-direction: column; padding: 0; }
+  .endplate .lockup { font-size: 174px; font-weight: 700; }
+  .end-tagline { margin-top: 48px; font-size: 58px; font-weight: 500; letter-spacing: -.035em; }
+  .end-credits { position: absolute; bottom: 58px; width: 100%; font-size: 24px; font-weight: 400; letter-spacing: 0; }
   .caption, .label { position: absolute; z-index: 10; font-size: 27px; letter-spacing: .01em; padding: 12px 20px; border-radius: 10px; background: #101114e8; color: #fff; }
   .caption { right: 48px; bottom: 34px; } .label { left: 48px; top: 34px; }
-  .brand { width: 172px; height: 172px; border-radius: 38px; }
+  .brand { width: 208px; height: 208px; border-radius: 44px; }
   .mark { width: 144px; height: 144px; background: #0866ff; border-radius: 40px; position: relative; box-shadow: 0 16px 45px #0866ff30; }
   .mark::before, .mark::after { content: ""; position: absolute; width: 62px; height: 22px; background: white; border-radius: 15px; left: 41px; transform: rotate(-28deg); }
   .mark::before { top: 47px; } .mark::after { top: 78px; }
@@ -31,10 +35,11 @@
   let active = null;
   let videos = [];
   let wallTiles = [];
+  let planes = [];
   const lerp = (a, b, t) => a + (b - a) * t;
   const ease = t => t * t * (3 - 2 * t);
   const array = value => Array.isArray(value) ? value : [value];
-  const background = value => value === 'muse' ? 'linear-gradient(125deg, #0866ff, #7659ed 60%, #ec91c5)' : value;
+  const background = value => value === 'meta' ? 'radial-gradient(ellipse at 45% 30%, #2683ff, #0866ff 55%, #034ac2)' : value === 'muse' ? 'linear-gradient(125deg, #0866ff, #7659ed 60%, #ec91c5)' : value;
   const bounded = (promise, label) => Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error(label)), 15000))]);
 
   function textPlate(text, className = 'type') {
@@ -44,14 +49,23 @@
     camera.append(node);
     return node;
   }
+  function posePlane(plane, local) {
+    const {node, spec, x, y, z} = plane;
+    const from = spec.tilt ?? [8, -12, -3], to = spec.tiltTo ?? from;
+    const t = ease(Math.min(1, local / (spec.settleSeconds ?? .7)));
+    const [rx, ry, rz] = from.map((v, i) => lerp(v, to[i], t));
+    node.style.transform = `translate(-50%, -50%) translate3d(${x}px, ${y}px, ${z}px) rotateX(${rx}deg) rotateY(${ry}deg) rotateZ(${rz}deg)`;
+    return [rx, ry, rz];
+  }
   async function createPlane(spec, count, i) {
     const node = document.createElement('div');
     node.className = 'plane';
     const x = spec.position?.[0] ?? (count === 1 ? 0 : (i - (count - 1) / 2) * 530);
     const y = spec.position?.[1] ?? (count === 1 ? 0 : (i % 2 ? -65 : 65));
-    const [rx, ry, rz] = spec.tilt ?? [8, -12, -3];
     node.style.width = `${spec.width ?? (count === 1 ? 1380 : 900)}px`;
-    node.style.transform = `translate(-50%, -50%) translate3d(${x}px, ${y}px, ${i * 25}px) rotateX(${rx}deg) rotateY(${ry}deg) rotateZ(${rz}deg)`;
+    const plane = {node, spec, x, y, z: i * 25};
+    planes.push(plane); posePlane(plane, 0);
+    if (spec.fullFrame) Object.assign(node.style, {border: '0', borderRadius: '0', boxShadow: 'none'});
     const video = document.createElement('video');
     video.muted = true; video.playsInline = true; video.preload = 'auto';
     node.append(video); camera.append(node);
@@ -70,22 +84,26 @@
   }
   async function mount(shot) {
     videos.forEach(({ video }) => { video.pause(); video.removeAttribute('src'); video.load(); });
-    videos = []; wallTiles = []; camera.replaceChildren();
+    videos = []; wallTiles = []; planes = []; camera.replaceChildren();
     camera.style.opacity = '1'; camera.style.transformOrigin = '50% 50%';
     for (const key of ['label', 'caption']) {
       const node = stage.querySelector(`.${key}`);
-      node.textContent = shot[key] ?? ''; node.hidden = !shot[key];
+      node.textContent = shot.kind === 'end' ? '' : shot[key] ?? ''; node.hidden = !node.textContent;
     }
     const isText = ['title', 'card', 'list'].includes(shot.kind);
     stage.style.background = background(shot.background ?? (shot.kind === 'card' || shot.kind === 'list' ? shot.colour ?? '#0866FF' : shot.kind === 'end' ? '#ffffff' : shot.kind === 'wall' ? '#000000' : '#08090c'));
     stage.style.color = shot.kind === 'end' ? '#08090c' : '#ffffff';
     if (isText) textPlate('');
     if (shot.kind === 'end') {
-      const plate = textPlate('');
+      const plate = textPlate('', 'type endplate');
       const lockup = document.createElement('div'); lockup.className = 'lockup';
       const mark = document.createElement('img'); mark.className = 'brand'; mark.src = '../ui/public/icons/icon-512.png'; mark.alt = '';
       const name = document.createElement('span'); name.textContent = shot.word ?? 'E2A2O';
-      lockup.append(mark, name); plate.append(lockup);
+      const tagline = document.createElement('div'); tagline.className = 'end-tagline';
+      tagline.textContent = shot.tagline ?? 'Think out loud. Build what you mean.';
+      const credits = document.createElement('div'); credits.className = 'end-credits';
+      credits.textContent = shot.credits ?? 'Muse Spark · Muse Image · Muse Voice Transcribe · AI-generated narration using Deepgram Aura';
+      lockup.append(mark, name); plate.append(lockup, tagline, credits);
     }
     const clips = shot.kind === 'plane' ? [shot] : shot.kind === 'planes' ? shot.clips : [];
     // Sequential loading keeps plane order stable even when decode times differ.
@@ -117,13 +135,14 @@
     }
     if (shot.kind === 'card') camera.firstChild.textContent = shot.word;
     if (shot.kind === 'list') camera.firstChild.textContent = shot.names[Math.min(shot.names.length - 1, Math.floor((local + 1e-8) / shot.seconds))];
+    const tilts = planes.map(plane => posePlane(plane, local));
     const wall = shot.kind === 'wall' ? drawWall(shot, local, camera, wallTiles) : null;
     await Promise.all(videos.map(({ video, spec }) => seek(video, (spec.start ?? 0) +
       (spec.loop ? local % (spec.loopSeconds ?? video.duration - (spec.start ?? 0)) : Math.min(local, spec.playSeconds ?? local)))));
     await document.fonts.ready;
     await Promise.all([...camera.querySelectorAll('img')].map(img => img.decode()));
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    return { kind: shot.kind, text: camera.textContent, times: videos.map(({ video }) => video.currentTime), wall };
+    return { kind: shot.kind, text: camera.textContent, times: videos.map(({ video }) => video.currentTime), tilts, wall };
   };
 </script>
 </html>
