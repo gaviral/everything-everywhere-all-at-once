@@ -12,8 +12,6 @@
 // 6. In the built app (all bricks): at their defaults they add nothing to the empty first screen; the Catalog lists every
 //    brick; each view brick switched on joins Map and Palace, shows in the map's place and hands back to the map, and
 //    stays on after a reload; `?level` still shows the Level meter, and without it there is none.
-// Bubbles, beyond that: one bubble per thread, a landing ripples only its bubble (in the playground and from the core)
-//    and moves none, and a bubble opens its thread on the map, moving your place there; topics tint and filter bubbles.
 // Spine, beyond that: a head per topic and a card per tangent; a landing pulses its point once and moves nothing that
 //    was there; a drag places a point where it's dropped (asked as a position, a mark left on its line) and its pin puts
 //    it back; a thread opens on the map. Your thought on its way has a dashed slot (`data-slot="slot:<id>"`) under the
@@ -274,7 +272,7 @@ const wordsIn = (text) => new Set([...text.matchAll(/"([^"\\\n]*)"|'([^'\\\n]*)'
 // The net catches what it says it does: each kind of breach, planted in a brick named "pin", is caught.
 {
   const dir = join(bricksDir, "pin");
-  for (const planted of [`import { World } from "../../core";`, `import x from "../bubbles/index";`, `import lodash from "lodash";`, `const m = import("../../App");`, `return <header>Pin</header>;`,
+  for (const planted of [`import { World } from "../../core";`, `import x from "../countdown/index";`, `import lodash from "lodash";`, `const m = import("../../App");`, `return <header>Pin</header>;`,
     `return <i data-guide="composer" />;`, `return <i data-guide={\`mic\`} />;`]) {
     assert.ok(sourceProblems(dir, "index.tsx", planted).length, `the check misses: ${planted}`);
   }
@@ -438,7 +436,7 @@ try {
       if (state.sideways > 1) fail(where, `the page scrolls sideways by ${state.sideways} px`);
     }
   }
-  // The proof bricks do what they say: the template hears a landing; Bubbles ripples where a thought lands.
+  // The proof bricks do what they say: the template hears a landing.
   await width(1280, 860);
   // Countdown: a panel that keeps its deadlines in this browser (`e2a2o.countdown`). Its logic runs in the playground on
   // a clock the check holds (and ticks by hand, as the 30 s timer and a return to the tab would): an empty store says
@@ -971,53 +969,6 @@ try {
     }
     await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "no-preference" }] });
     await width(1280, 860);
-  }
-  if (checked.includes("bubbles")) {
-    await go(`${base}/bricks.html?brick=bubbles&sample=student-week`);
-    await until(`!!document.querySelector(".bubbles-bubble")`, 8000);
-    const n = await evaluate(`({ bubbles: document.querySelectorAll(".bubbles-bubble").length, threads: Number(document.querySelector(".playground-map").textContent.match(/(\\d+) topics/)[1]) })`);
-    if (n.bubbles !== n.threads) fail("bubbles", `${n.bubbles} bubbles for ${n.threads} threads`);
-    const before = await evaluate(`[...document.querySelectorAll(".bubbles-bubble")].map((b) => b.style.left + b.style.top).join("|")`);
-    await evaluate(`[...document.querySelectorAll(".playground-bar button")].find((b) => b.textContent === "Add a thought").click()`);
-    if (!await until(`!!document.querySelector(".bubbles-ripple")`, 4000)) fail("bubbles", "no ripple where the thought landed");
-    const after = await evaluate(`[...document.querySelectorAll(".bubbles-bubble")].map((b) => b.style.left + b.style.top).join("|")`);
-    if (before !== after) fail("bubbles", "a landing moved bubbles (each keeps its place)");
-    await evaluate(`document.querySelector(".bubbles-face").click()`);
-    if (!await until(`document.querySelector(".playground-log").textContent.includes("openThread")`, 2000)) fail("bubbles", "a bubble doesn't open its thread");
-
-    // Named topics tint every branch with its top thread and hold just that topic in view.
-    await go(`${base}/bricks.html?brick=bubbles&sample=student-week`);
-    if (!await until(`document.querySelectorAll(".bubbles-topic").length === 3`, 8000)) fail("bubbles", "the sample's three topic chips never showed");
-    await settle();
-    const chips = await evaluate(`[...document.querySelectorAll(".bubbles-topic")].map((b) => b.textContent.trim())`);
-    if (JSON.stringify(chips) !== JSON.stringify(["School and projects · 5", "Money · 2", "Family · 1"])) fail("bubbles", `topic chips: ${JSON.stringify(chips)}`);
-    if (await evaluate(`!!document.querySelector('.bubbles-topic[data-topic=""]')`)) fail("bubbles", "the sorted sample has a Not sorted yet chip");
-    const tints = await evaluate(`Object.fromEntries([...document.querySelectorAll(".bubbles-face")].map((face) => {
-      const li = face.closest("li.bubbles-bubble");
-      return [face.dataset.thread, { room: li.style.getPropertyValue("--room").trim(), sorted: li.classList.contains("bubbles-sorted"), color: getComputedStyle(face).borderTopColor }];
-    }))`);
-    for (const [index, ids] of [["T1", "T3", "T4", "T6", "T8"], ["T2", "T7"], ["T5"]].entries()) {
-      for (const id of ids) if (!tints[id]?.sorted || tints[id].room !== `var(--bubbles-topic-${index})`) fail("bubbles", `${id} doesn't have its topic's tint (${JSON.stringify(tints[id])})`);
-    }
-    if (new Set([tints.T1?.color, tints.T2?.color, tints.T5?.color]).size !== 3) fail("bubbles", "three topics don't give faces three different border colors");
-    await evaluate(`document.querySelector('.bubbles-topic[data-topic="Money"]').click()`);
-    if (!await until(`document.querySelector('.bubbles-topic[data-topic="Money"]')?.getAttribute("aria-pressed") === "true" && document.querySelectorAll(".bubbles-faded").length === 6 && [...document.querySelectorAll('.bubbles-face[data-thread="T2"], .bubbles-face[data-thread="T7"]')].every((face) => !face.closest("li").classList.contains("bubbles-faded"))`, 2000)) fail("bubbles", "holding Money doesn't fade exactly the other six bubbles");
-    await evaluate(`document.querySelector('.bubbles-topic[data-topic="Money"]').click()`);
-    if (!await until(`!document.querySelector(".bubbles-faded")`, 2000)) fail("bubbles", "clicking Money again doesn't release its bubbles");
-    await evaluate(`document.querySelector('.bubbles-topic[data-topic="Family"]').click()`);
-    if (!await until(`document.querySelector('.bubbles-topic[data-topic="Family"]')?.getAttribute("aria-pressed") === "true" && document.querySelectorAll(".bubbles-faded").length === 7`, 2000)) fail("bubbles", "Family wasn't held before Escape");
-    for (const type of ["keyDown", "keyUp"]) await cdp("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
-    if (!await until(`!document.querySelector(".bubbles-faded")`, 2000)) fail("bubbles", "Escape doesn't release the held topic");
-    if (!await evaluate(`document.querySelector('.bubbles-face[data-thread="T2"]')?.getAttribute("aria-label").includes(", in Money")`)) fail("bubbles", "T2's accessible name doesn't include its topic");
-    await width(390, 844);
-    await settle();
-    if (!await evaluate(`[...document.querySelectorAll(".bubbles-topic")].every((b) => { const r = b.getBoundingClientRect(); return r.right <= innerWidth && r.height >= 32; })`)) fail("bubbles", "a topic chip runs off the phone or is less than 32 px tall");
-    await width(1280, 860);
-    if (await evaluate(`document.querySelector(".playground").dataset.errors`) !== "0") fail("bubbles", "topic interactions raised a playground error");
-    await go(`${base}/bricks.html?brick=bubbles&sample=debug-break`);
-    if (!await until(`!!document.querySelector(".bubbles-bubble")`, 8000)) fail("bubbles", "debug-break's bubbles never showed");
-    if (!await evaluate(`!document.querySelector(".bubbles-topics, .bubbles-sorted") && document.querySelector(".bubbles-bubble")?.style.getPropertyValue("--room").trim().startsWith("var(--room-")`)) fail("bubbles", "an unsorted map doesn't keep room colors without topic chips");
-    if (await evaluate(`document.querySelector(".playground").dataset.errors`) !== "0") fail("bubbles", "the unsorted sample raised a playground error");
   }
   // Read progress: an input, so it needs the app's cards (the playground draws none). Nothing on an empty map or one
   // where every point is yours; a tap on another's point marks it, kept over a reload, with a dot on the one after it
@@ -1870,22 +1821,9 @@ try {
   for (const { id, name } of viewBricks) {
     await evaluate(`[...document.querySelectorAll(".palace-switch button")].find((b) => b.textContent === ${JSON.stringify(name)}).click()`);
     if (!await until(`!!document.querySelector('main.brick-view[data-brick="${id}"]')?.textContent.trim() && !document.querySelector("main.map")`, 4000)) fail(name, "doesn't show in the map's place");
-    if (id === "bubbles") {
-      core.send({ type: "change", change: { type: "topics_assigned", assigned: [{ thread_id: "T1", topic: "Money" }, { thread_id: "T2", topic: "Home" }, { thread_id: "T3", topic: "Home" }] } });
-      const chips = ["Money · 1", "Home · 3", "Not sorted yet · 2"];
-      if (!await until(`JSON.stringify([...document.querySelectorAll('[data-brick="bubbles"] .bubbles-topic')].map((b) => b.textContent.trim())) === ${JSON.stringify(JSON.stringify(chips))}`, 3000)) fail("Bubbles", "topics assigned by the core don't show the ordered chips with branches and unsorted threads counted");
-      const drawn = await evaluate(`document.querySelectorAll("[data-brick=bubbles] .bubbles-bubble").length`);
-      if (drawn !== full.threads.length) fail("Bubbles", `${drawn} bubbles for ${full.threads.length} threads`);
-      // A thought the core places reaches the brick as `landed` (the app's host, not the playground's): its bubble ripples.
-      core.send({ type: "change", change: { type: "thought_added", thought: thought("landing-1", "Flights to Lisbon booked", "T3") } });
-      if (!await until(`!!document.querySelector('[data-brick="bubbles"] [data-thread="T3"] .bubbles-ripple')`, 3000)) fail("Bubbles", "a thought landing in the app doesn't ripple its bubble");
-      if (await evaluate(`document.querySelectorAll(".bubbles-ripple").length`) !== 1) fail("Bubbles", "a landing rippled more than its own bubble");
-      const target = await evaluate(`(() => { const face = document.querySelectorAll(".bubbles-face")[2]; face.click(); return face.dataset.thread; })()`);
-      if (!await until(`document.querySelector(".palace-switch button[aria-pressed=true]")?.textContent === "Cards" && !!document.getElementById(${JSON.stringify(`thread-${target}`)})`, 3000)) fail("Bubbles", "a bubble doesn't open the map at its thread");
-      await sleep(200);
-      if (!core.heard.some((m) => m.type === "focus" && m.thread_id === target)) fail("Bubbles", `opening ${target} didn't move your place there (no focus sent)`);
-    }
     if (id === "spine") {
+      // The theme fixture belongs to this view's checks, independently of any other view.
+      core.send({ type: "change", change: { type: "topics_assigned", assigned: [{ thread_id: "T1", topic: "Money" }, { thread_id: "T2", topic: "Home" }, { thread_id: "T3", topic: "Home" }] } });
       await until(`!!document.querySelector(".spine-frame.spine-ready")`, 4000);
       core.send({ type: "change", change: { type: "thought_added", thought: thought("landing-2", "Seeds for the garden", "T2") } });
       // A pulse, or under Reduce Motion (this machine's own, if a check before handed it back) a ring that stays a second.

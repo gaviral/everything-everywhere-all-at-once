@@ -729,27 +729,22 @@ try {
   await until(`document.querySelector('[data-guide="mic"]')?.getAttribute("aria-pressed") !== "true"`, 3000);
 
   step("a view brick");
-  // A view brick marks its threads `data-thread` (bricks/contract.ts): with Bubbles on, a thread is its bubble.
-  await evaluate(`localStorage.setItem("e2a2o.bricks", JSON.stringify({ bubbles: true }))`);
-  await cdp("Page.reload", {});
-  assert.ok(await until(`!!document.querySelector('[data-guide="view:bubbles"]')`, 8000), "Bubbles is on");
-  await sleep(500);
-  await click('[data-guide="view:bubbles"]');
-  assert.ok(await until(`!!document.querySelector('[data-thread="T3"]')`, 4000), "the bubbles show");
+  // Canvas exposes the same thread target contract as the Cards view.
+  await click('[data-guide="view:spine"]');
+  assert.ok(await until(`!!document.querySelector('.spine-frame.spine-ready .spine-head[data-thread="T1"]')`, 8000), "Canvas is ready");
   await sleep(800);
-  guide("point", "thread:T3", "Your midterm is this bubble.");
-  assert.ok(await until(`document.querySelector(".guide-layer")?.dataset.state === "aimed"`, 2000), "the arrow is on the bubble");
+  guide("point", "thread:T1", "Your rent is this topic.");
+  assert.ok(await until(`document.querySelector(".guide-layer")?.dataset.state === "aimed"`, 2000), "the arrow is on the Canvas topic");
   await sleep(600);
-  const bubble = await evaluate(`(() => { const r = document.querySelector('[data-thread="T3"]').getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; })()`);
+  const canvasTopic = await box('.spine-head[data-thread="T1"]');
   const at3 = await tip();
-  assert.ok(Math.min(Math.abs(at3.y - (bubble.top - TIP_GAP)), Math.abs(at3.y - (bubble.bottom + TIP_GAP)), Math.abs(at3.x - (bubble.left - TIP_GAP)), Math.abs(at3.x - (bubble.right + TIP_GAP))) <= 1.5,
-    `the arrow lands on the bubble (${JSON.stringify({ at3, bubble })})`);
-  assert.equal(await words(), "✦ Claude Your midterm is this bubble.");
-  await shot("5b-point-bubble");
+  assert.ok(Math.min(Math.abs(at3.y - (canvasTopic.top - TIP_GAP)), Math.abs(at3.y - (canvasTopic.bottom + TIP_GAP)), Math.abs(at3.x - (canvasTopic.left - TIP_GAP)), Math.abs(at3.x - (canvasTopic.right + TIP_GAP))) <= 1.5,
+    `the arrow lands on the Canvas topic (${JSON.stringify({ at3, canvasTopic })})`);
+  assert.equal(await words(), "✦ Claude Your rent is this topic.");
+  await shot("5b-point-canvas");
   await key("Escape", 27);
-  await evaluate(`localStorage.removeItem("e2a2o.bricks")`);
-  await cdp("Page.reload", {});
-  assert.ok(await until(`!!document.querySelector('[data-guide="thread:T1"]') && !document.querySelector('[data-guide="view:bubbles"]')`, 8000), "back to the Map, Bubbles off");
+  await click('[data-guide="view:map"]');
+  assert.ok(await until(`!!document.querySelector('[data-guide="thread:T1"]') && !document.querySelector('.spine-frame')`, 8000), "back to Cards");
   await sleep(600);
 
   step("Reduce Motion");
