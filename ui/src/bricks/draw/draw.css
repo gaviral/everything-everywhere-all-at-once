@@ -4,9 +4,9 @@
   --draw-person: #ffd84d;
   --draw-ai: #7fe3d4;
   --draw-hand: "Bradley Hand", "Noteworthy", "Segoe Print", "Comic Sans MS", cursive;
-  position: fixed; inset: 0; z-index: 900; background: var(--draw-paper); overflow: hidden;
+  display: grid; grid-template-rows: minmax(0, 1fr) auto; position: fixed; inset: 0; z-index: 900; background: var(--draw-paper); overflow: hidden;
 }
-.draw-page { position: absolute; inset: 0; transform-origin: 0 40%; transition: transform 620ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.draw-page { position: relative; grid-row: 1; min-height: 0; min-width: 0; transform-origin: 0 40%; transition: transform 620ms cubic-bezier(0.2, 0.8, 0.2, 1); }
 /* When the AI draws back, the person's page slides aside: two drawings, side by side. */
 .draw-page-shared { transform: scale(0.54); }
 /* Drawing over the app itself: the page shows through, to mark up what's on screen. */
@@ -33,7 +33,7 @@
 }
 .draw-question span { text-decoration: underline dotted var(--draw-person) 3px; text-underline-offset: 8px; }
 .draw-said {
-  position: absolute; left: 3%; bottom: 3%; max-width: 62%; margin: 0;
+  position: relative; grid-row: 2; min-width: 0; max-height: 35vh; overflow: auto; overflow-wrap: anywhere; margin: 0; padding: 12px 3% 18px;
   color: #fff; font-size: clamp(24px, 2.6vw, 54px); line-height: 1.2; font-weight: 600; text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
   animation: draw-appear 420ms ease-out both;
 }

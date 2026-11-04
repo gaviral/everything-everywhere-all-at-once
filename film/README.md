@@ -5,6 +5,8 @@ FFprobe on PATH. Set `CHROME_PATH` if Chrome is outside its usual installation.
 No packages, network services, microphone, or model runtime are involved.
 
 ```sh
+node film/cut.mjs /path/to/shots.json --preview --out /path/to/preview.mp4
+node film/cut.mjs /path/to/shots.json --final --out /path/to/final.mp4
 node film/render.mjs film/shots.example.json --preview
 node film/render.mjs film/shots.example.json --clips-dir film/clips --out film/renders/final.mp4
 node film/render.mjs film/shots.example.json --preview --from 2 --to 5
@@ -31,7 +33,7 @@ All direction lives in the JSON `shots` array:
 | `wall` | `seconds` (usually 8), `tiles` array of `{image}` or `{clip, start?, loopSeconds?}`; first tile is a clip |
 | `card` | `word`, `seconds`, `colour` (default Meta blue) |
 | `list` | `names`, `seconds` **per name**, `colour`; finish with `and much more` |
-| `end` | `word` (default E2A2O), `seconds`; original geometric mark and name |
+| `end` | `word` (default E2A2O), `seconds`; current app icon and name |
 
 Camera controls on any shot: `drift: {from: [x,y], to: [x,y]}` and
 `zoom: [from,to]`, with smooth interpolation. Coordinates refer to the
@@ -51,8 +53,7 @@ unlicensed material in the submission.
 
 The original compositions use sparse typography, drifting UI planes, rapid
 feature cards, and a quiet brand hold. Reference artwork, music, wording and
-shot layouts are not included. The sample end mark is a placeholder original
-graphic; replace it in the stage when final identity art is ready.
+shot layouts are not included. The end card uses the current app identity icon.
 
 Decision: Chrome DevTools runs over an inherited pipe, so rendering opens no
 listening ports. Scratch Chrome profiles remain in the system temporary
@@ -111,3 +112,48 @@ second and lifts to white, retaining “Recorded demonstrations”. All movement
 and video seeking are evaluated at frame time. `wall-field-check.mjs` checks
 complete square coverage and writes eight actual review frames; review those
 at film size before accepting a take.
+
+## Incremental cut
+
+`cut.mjs` is the working-film entrypoint. By default its shots, `cuts/`, and
+`renders/` live in the external film media folder. Use `--cuts-dir` and
+`--out` to select another media root. Preview is 960×540 at 15 fps; final is 1920×1080 at
+30 fps. Three independent shots render at a time, directly into encoders.
+
+Each cut is named by SHA-256 of the shot, rendering code, logo, profile, and
+source clip bytes. Moving a shot in the sequence does not invalidate it.
+Changing a clip invalidates only shots using that clip; changing shared stage
+code invalidates all affected compositions. Complete cuts are checked before
+reuse. A failed shot is reported while the other workers continue. Rerun the
+same command to resume. The full film joins only when every shot succeeds,
+using FFmpeg stream copy. Prior full-film versions and interrupted partials
+are retained. The adjacent JSON reports cached/rendered shots and failures.
+
+Planes accept `crop: [x,y,width,height]` in normalized source coordinates and
+`playSeconds` to hold the last real frame after that much source playback.
+`label` and `caption` remain fixed and readable outside camera motion. Mark
+each shortened wait with `caption: "wait shortened"`. Never use a hold or a
+crop to invent a result. The end card uses the current app icon.
+
+Focused verification: `node film/cut-check.mjs`. It checks cache reuse, isolated
+shot and clip changes, recovery after one missing clip, concatenation, captions,
+cropping, and the preview/final profiles without rendering the whole film.
+
+## Directed shots
+
+A plane can enter with `tilt: [x,y,z]` and settle to `tiltTo: [x,y,z]` over
+`settleSeconds` (default 0.7). Rotation uses smooth interpolation independently
+of the slow `drift` and `zoom` camera. `background: "meta"` selects the Meta-blue
+stage gradient. `fullFrame: true` removes the plane edge for an already-rendered
+wall movie. The end card has a centered icon/name, a `tagline`, and plain
+`credits` beneath it.
+
+An optional `frames: {preview: integer, final: integer}` pins each shot's frame
+allocation. This lets fractional-second chapter cards share rounding within a
+chapter while the complete cut ends at exactly the intended time. Cache keys
+include that allocation. Every assembled cut writes a `.times.txt` sidecar
+with actual frame-aligned start times, stable shot ids, and durations.
+
+`node film/direction-check.mjs /path/to/shots.json` checks the directed 150-second
+edit's chapter clocks, frame allocations, readable settling, repeatable camera,
+and end-card wording. Its screenshots stay with the external media.

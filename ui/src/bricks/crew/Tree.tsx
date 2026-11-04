@@ -22,7 +22,8 @@ function Branch({ part, x }: { part: PartRun; x: number }) {
     <path className="crew-line" d={line} pathLength={1} style={{ strokeDashoffset: 1 - CLIMB[part.stage] }} />
     {moving && <circle className="crew-message" r={7}><animateMotion dur={part.stage === "trying" ? "0.9s" : "1.5s"} repeatCount="indefinite" path={line} /></circle>}
     <circle className="crew-leaf" cx={x} cy={LEAF} r={15}>{part.why && <title>{part.why}</title>}</circle>
-    <text className="crew-leaf-mark" x={x} y={LEAF + 6}>{part.stage === "merged" ? "✓" : part.stage === "off" ? "×" : ""}</text>
+    <text className="crew-leaf-mark" x={x} y={LEAF + 6}>{part.stage === "merged" ? "✓" : part.stage === "off" ? "×" : part.stage === "fixing" ? "!" : ""}</text>
+    {part.stage === "fixing" && <text className="crew-leaf-state" x={x} y={LEAF - 32}>failed · repairing</text>}
     {wrapped(part.name).map((words, index) => <text key={index} className="crew-leaf-name" x={x} y={LEAF + 42 + index * 24}>{words}</text>)}
     {part.ms !== undefined && <text className="crew-leaf-time" x={x} y={LEAF + 92}>{part.reused ? "reused" : `${(part.ms / 1000).toFixed(1)} s`}{part.fixed ? " · fixed" : ""}</text>}
   </g>;
