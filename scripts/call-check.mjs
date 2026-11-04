@@ -22,11 +22,12 @@ import { ready, standInCore, openPage, sleep } from "./headless.mjs";
 
 // ---- 1. The rules.
 const server = await uiServer();
-let T, C, A;
+let T, C, A, M;
 try {
   T = await server.ssrLoadModule("/src/talk/turns.ts");
   C = await server.ssrLoadModule("/src/talk/call-core.ts");
   A = await server.ssrLoadModule("/src/annotate-core.ts");
+  M = await server.ssrLoadModule("/src/bricks/spine/margin.tsx");
 } finally { await server.close(); }
 
 const minute = 60_000;
@@ -37,6 +38,18 @@ const said = (id, speaker, text, at, extra = {}) => ({ id, speaker, text, point:
   const turns = T.turnsOf(t, [{ id: "T1" }, { id: "N1", anchor: { thought_id: "b", quote: "brings a dessert" } }]);
   assert.deepEqual(turns.map((x) => [x.key, x.speaker, x.parts.length]), [["f", "Sam", 1], ["a", "Sam", 2], ["c", "Maya", 1], ["e", "Friend", 1]], "in the order said; a split turn is one; no empty turn");
   assert.deepEqual(turns[2].note, { threadId: "N1", thoughtId: "b", quote: "brings a dessert" }, "a margin note is a turn of its own, with its words");
+  assert.equal(Object.hasOwn(turns[2].note, "context"), false, "legacy target omits the absent optional field");
+  const source = t.find((part) => part.id === "b");
+  const quote = "brings a dessert", at = source.text.indexOf(quote);
+  const context = { source_text: source.text, source_speaker: source.speaker, start: at, end: at + quote.length };
+  const anchor = { thought_id: source.id, quote, context };
+  const withContext = T.turnsOf(t, [{ id: "N1", anchor }]).find((turn) => turn.key === "c").note;
+  assert.deepEqual(withContext, { threadId: "N1", thoughtId: "b", quote, context }, "defined immutable context is forwarded exactly");
+  assert.equal(withContext.context, context, "target preserves the actual source-context object");
+  assert.deepEqual(M.anchorOf({ anchor: { thought_id: "b", quote } }), { thoughtId: "b", quote }, "spine legacy target omits context too");
+  assert.equal(M.anchorOf({ anchor }).context, context, "spine target forwards defined context unchanged");
+  assert.equal(A.anchorRange(quote, undefined, source.text), null, "legacy targets do not guess a persisted occurrence");
+  assert.deepEqual(JSON.parse(A.annotateMessage("b", quote, "Reply", context).message).context, context, "wire preserves the exact defined source revision/range");
   assert.equal(T.turnIndex(turns, "b"), 1, "a turn's second part is in it");
   assert.equal(T.newerMark(turns, "a", "e"), "e");
   assert.equal(T.newerMark(turns, "gone", "c"), "c", "a mark that left the map counts for nothing");
@@ -104,7 +117,7 @@ let tell = () => {};
 // As the core's World::apply, for the changes this check makes: so a window that joins later gets the map as it is.
 const keep = (change) => {
   if (change.type === "thread_added") world.threads.push(change.thread);
-  if (change.type === "anchored") world.anchors[change.thread_id] = { thought_id: change.thought_id, quote: change.quote };
+  if (change.type === "anchored") world.anchors[change.thread_id] = { thought_id: change.thought_id, quote: change.quote, ...(change.context === undefined ? {} : { context: change.context }) };
   if (change.type === "thought_added") world.thoughts.push(change.thought);
   if (change.type === "thought_placed") world.thoughts = world.thoughts.map((t) => (t.id === change.thought_id ? { ...t, placed: true, point: change.point, thread_id: change.thread_id } : t));
 };
@@ -129,7 +142,7 @@ const core = await standInCore((query) => {
     if (message.type === "read") { marks[name] = message.thought_id; setPerson(name, { read: message.thought_id }); tell(); }
     if (message.type === "level") { level = { level: message.level, level_by: name }; tell(); }
     if (message.type === "annotate") {
-      const changes = A.noteChanges(world, name, message.thought_id, message.quote, message.text, Date.now(), { thread: () => `N${++n + 1}`, thought: () => `note-${n}-${Math.random().toString(36).slice(2, 7)}` });
+      const changes = A.noteChanges(world, name, message.thought_id, message.quote, message.text, Date.now(), { thread: () => `N${++n + 1}`, thought: () => `note-${n}-${Math.random().toString(36).slice(2, 7)}` }, message.context);
       if (changes) commit(changes);
     }
   },

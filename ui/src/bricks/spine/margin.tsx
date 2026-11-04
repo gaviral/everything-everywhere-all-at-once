@@ -9,7 +9,7 @@ import type { MarginInput } from "./layout";
 
 export function anchorOf(thread: Thread) {
   const anchor = thread.anchor;
-  return anchor?.thought_id && anchor.quote ? { thoughtId: anchor.thought_id, quote: anchor.quote, context: anchor.context } : null;
+  return anchor?.thought_id && anchor.quote ? { thoughtId: anchor.thought_id, quote: anchor.quote, ...(anchor.context === undefined ? {} : { context: anchor.context }) } : null;
 }
 
 const asks = (text: string) => /\?\s*$/.test(text);
@@ -29,7 +29,7 @@ export function useMargins(map: MapSnapshot, actions: BrickActions) {
       const entries = [...(said.get(thread.id) ?? [])].sort((a, b) => a.at_ms - b.at_ms).map((t) => ({ thoughtId: t.id, by: t.speaker || "you", text: (t.point || t.text).trim() }));
       // An unanswered question from someone else folds to "…?" until it's opened; yours never hides from you.
       const theirs = entries[0] && entries[0].by !== map.me && entries[0].by !== "you";
-      margins.push({ id: thread.id, thoughtId: anchor.thoughtId, quote: anchor.quote, context: anchor.context, entries, question: entries.length === 1 && !!theirs && asks(entries[0].text) });
+      margins.push({ id: thread.id, thoughtId: anchor.thoughtId, quote: anchor.quote, ...(anchor.context === undefined ? {} : { context: anchor.context }), entries, question: entries.length === 1 && !!theirs && asks(entries[0].text) });
     }
     return { margins, anchored };
   }, [map.threads, map.thoughts, map.me]);

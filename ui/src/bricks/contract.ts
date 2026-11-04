@@ -94,7 +94,7 @@ export function turnsOf(thoughts: readonly Thought[], threads: readonly { id: st
     }
     turns.push({
       key: thought.id, speaker: thought.speaker, at: thought.at_ms, parts: [part],
-      ...(anchor ? { note: { threadId: thought.thread_id!, thoughtId: anchor.thought_id, quote: anchor.quote, context: anchor.context } } : {}),
+      ...(anchor ? { note: { threadId: thought.thread_id!, thoughtId: anchor.thought_id, quote: anchor.quote, ...(anchor.context === undefined ? {} : { context: anchor.context }) } } : {}),
     });
   }
   return turns;
