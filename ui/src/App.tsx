@@ -1031,7 +1031,7 @@ export default function App() {
   });
   useEffect(() => () => cancelAnimationFrame(clearFrame.current), []);
   // A move changes where words belong, not when this thread was last spoken on. Future sample times count as earliest.
-  const lastWords = pullBack?.return_source ? lastWordsOn(world.thoughts, pullBack, me, now) : "";
+  const lastWords = pullBack ? lastWordsOn(world.thoughts, pullBack, me, now) : "";
   useEffect(() => {
     if (!pullBack || pullBackHovered || pullBackFocused) return;
     const timer = window.setTimeout(() => {
@@ -1127,9 +1127,17 @@ export default function App() {
   // (core annotate.rs), openCatalog is Apps' Catalog button, at a brick's row, and hint is the guide's arrow or corner
   // caption, here only (guide-core.ts `showHint`).
   const brickHost = useBrickHost(world, core.snapshotRevision, me, core.connected, rooms, core.partial, {
+    setActionEstimate: (request) => isOn("action-estimates") ? core.setActionEstimate(request) : Promise.resolve({ request_id: request.request_id, ok: false, message: "Action estimates is off.", estimate: null }),
     saveTextFile: (name, text, mime) => { saveFile(text, mime, name); return true; },
     addThought: core.sendText,
     resume: (id,keyboard) => finishPause(id,keyboard),
+    openPoint: (threadId, thoughtId) => {
+      if (!builtInOn("compare-phone-reading")) return;
+      if (!world.threads.some(t => t.id === threadId) || (thoughtId && !world.thoughts.some(t => t.id === thoughtId && t.thread_id === threadId))) {
+        core.showNotice("Source point unavailable. Its reference has been kept."); return;
+      }
+      setDestination(was => ({ threadId, thoughtId, revision: (was?.revision ?? 0) + 1 }));
+    },
     openThread: (id) => { const thread = threadById.get(resolveMerged(world, id)); if (thread) goBack(thread); },
     openThought: (id) => {
       const live = worldNow.current;
@@ -1158,6 +1166,8 @@ export default function App() {
     hint: showHint,
   }, destination, core.usage, core.noKey || core.keyRefused || core.resting);
   const bricksOn = useBricksOn();
+  const actionEstimatesOn = bricksOn.has("action-estimates");
+  useEffect(() => { core.setActionEstimatesOn(actionEstimatesOn); }, [actionEstimatesOn]);
   const shapes = useShapes(bricksOn.has("shapes"));
   const builtIns = useBuiltInsOn();
   // Only an ID and a focus return address live here; World remains the source of the panel's words.
@@ -1731,9 +1741,9 @@ export default function App() {
           {core.snapshotRevision > 0 && empty && <Welcome models={!core.noKey ? modelsLine(site.models) : ""} sample={site.sample && !core.listening
             ? <p className="shell-samples">
               <button type="button" className="shell-btn shell-sample" onClick={() => loadSample()} disabled={!core.connected || waitingCaptures.length > 0 || core.recovery.onlinePending} aria-keyshortcuts="E">See an example<Keycap>E</Keycap></button>
-              <button type="button" className="shell-btn" onClick={() => loadSample("debug-break")} disabled={!core.connected || waitingCaptures.length > 0 || core.recovery.onlinePending}>Try an unfinished thought</button>
+              <button type="button" className="shell-btn" onClick={() => loadSample("debug-break")} disabled={!core.connected || waitingCaptures.length > 0 || core.recovery.onlinePending} aria-keyshortcuts="Enter">Try an unfinished thought</button>
               <span>A student's week. Add your own thoughts.</span>
-              {moreSamples(site.samples).map(choice => <button key={choice.id} type="button" className="shell-btn" onClick={() => loadSample(choice.id)} disabled={!core.connected || waitingCaptures.length > 0 || core.recovery.onlinePending}>{choice.label}</button>)}
+              {moreSamples(site.samples).map(choice => <button key={choice.id} type="button" className="shell-btn" onClick={() => loadSample(choice.id)} disabled={!core.connected || waitingCaptures.length > 0 || core.recovery.onlinePending} aria-keyshortcuts="Enter">{choice.label}</button>)}
             </p> : null} />}
           {!empty && !spine && <p className="shell-empty-line">{NAMES.findNone}</p>}
         </main>}

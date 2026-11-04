@@ -139,7 +139,7 @@ html.shell2 .shell-composer {
 }
 html.shell2 .shell-composer:focus-within { border-color: color-mix(in srgb, var(--blue) 55%, var(--line-2)); }
 html.shell2 .shell-composer textarea {
-  flex: 1; min-width: 0; height: 22px; max-height: 22px; padding: 0; overflow: hidden; border: 0; outline: 0; resize: none; background: none;
+  flex: 1; min-width: 0; height: 22px; max-height: 22px; padding: 0; overflow-y: auto; border: 0; outline: 0; resize: none; background: none;
   color: var(--ink); font: inherit; font-size: 15px; line-height: 22px;
 }
 html.shell2 .shell-composer textarea::placeholder { color: var(--muted); }
@@ -381,6 +381,9 @@ html.shell2 .capture-placed p { white-space: pre-wrap; overflow-wrap: anywhere; 
 html.shell2 .sample-recovery-actions { position: fixed; top: 68px; left: 16px; z-index: 12; display: flex; gap: 8px; }
 html.shell2 .keyless-help { margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); font-size: 13px; }
 
+/* Phone reading comparison is contained above the measured stage; it never moves the composer. */
+html.shell2 .spine-phone-compare .phone-controls { top: 68px; }
+html.shell2 .spine-phone-compare .inline-phone { touch-action: pan-y; }
 /* Stable portal targets preserve the one mounted body when Canvas tools is switched. */
 .shell-tool-slot, .shell-tool-body { display: contents; }
 html.shell2 .canvas-tool .shell-composer { margin: 12px; width: auto; max-width: calc(100% - 24px); }

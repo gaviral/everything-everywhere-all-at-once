@@ -36,6 +36,7 @@ pub const POSITION_MAX: f64 = 1_000_000.0;
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMsg {
+    ActionEstimateResult { request_id: String, ok: bool, message: String, estimate: Option<crate::world::ActionEstimate>, #[serde(skip)] window: u64 },
     Returned { request_id: Option<String>, anchor: Option<crate::world::ReturnAnchor>, message: String },
     CaptureSaved { capture: crate::world::CaptureReceipt, replay: bool },
     MapIdentity { id: String },
@@ -161,8 +162,12 @@ pub enum ServerMsg {
         #[serde(skip)]
         from: u64,
     },
-    /// A live job update, retained in memory for replay and sent to every window except its origin (guide.rs).
+    /// A live job update, retained verbatim for replay (including execution times, helper kind,
+    /// requested children and outcome). IDs stay stable through preparing/queued/running/terminal states.
+    /// Provider, call IDs, PIDs and raw CLI events remain in the private trace, never this message.
     Job {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        result_id: Option<String>,
         #[serde(flatten)]
         job: crate::guide::Job,
         by: String,
@@ -224,6 +229,8 @@ pub struct Outgoing {
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMsg {
+    ActionEstimates { on: bool },
+    SetActionEstimate { #[serde(flatten)] request: crate::world::EstimateRequest },
     Resume { pause_id: String, request_id: String },
     PauseChoice { pause_id: String, later: bool },
     RetryPlacement { id: String },
@@ -359,7 +366,7 @@ pub enum ClientMsg {
     /// A margin note: `text` beside `quote`, words picked in thought `thought_id`'s point, for every window. The first
     /// on those words starts their tangent, a later one answers in it (annotate.rs); a person's window or an AI
     /// participant's alike, never a model call.
-    Annotate { thought_id: String, quote: String, text: String, #[serde(default)] speak: bool },
+    Annotate { thought_id: String, quote: String, text: String, #[serde(default)] speak: bool, #[serde(default)] context: Option<crate::annotate::AnchorContext> },
     /// A topic's new name, typed on its header (topics.rs `rename`): a name already there makes the two one.
     TopicRename { from: String, to: String },
     /// A thread moved under a topic, dragged there (topics.rs `set`): its top thread's, with its branches.
@@ -368,4 +375,17 @@ pub enum ClientMsg {
     Read { thought_id: String },
     /// How far the Friend may interrupt, as the meter at the foot of Talk sets it, for everyone in the call (call.rs).
     Level { level: crate::call::Level },
+}
+
+#[cfg(test)]
+mod c10_estimates_protocol_tests {
+    use super::*;
+    #[test]
+    fn c10_estimates_whole_minutes_and_no_owner_input() {
+        let text = r#"{"type":"set_action_estimate","request_id":"synthetic","action_id":"a","source_title":"Synthetic","source_thread_id":"T1","observed_revision":0,"minutes":15,"reason":"","owner":"someone else"}"#;
+        assert!(matches!(serde_json::from_str::<ClientMsg>(text).unwrap(), ClientMsg::SetActionEstimate { .. }));
+        for invalid in ["1.5", "-1", "1440.1"] {
+            assert!(serde_json::from_str::<ClientMsg>(&text.replace("\"minutes\":15", &format!("\"minutes\":{invalid}"))).is_err());
+        }
+    }
 }

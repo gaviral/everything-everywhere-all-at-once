@@ -2,8 +2,7 @@
 // never World positions; only the shell owns the bodies, draft, socket and mutation actions.
 import { useContext, useEffect, useRef, useState } from "react";
 import { Panel, useReactFlow, type Node, type NodeChange, type NodeProps, type Viewport } from "@xyflow/react";
-import { CanvasToolsContext, type CanvasToolId } from "../contract";
-import { ToolSlot } from "../../shell/Shell";
+import { CanvasToolsContext, ToolSlot, type CanvasToolId } from "../contract";
 import type { ItemNode } from "./nodes";
 import "./canvas-tools.css";
 
@@ -41,10 +40,10 @@ export function CanvasToolNode({ data }: NodeProps<ToolNode>) {
   const tools = useContext(CanvasToolsContext);
   if (!tools) return null;
   return <section className="canvas-tool" data-canvas-tool={data.tool} aria-label={LABELS[data.tool]} style={{ height: data.height }}>
-    <header>
+    <div className="spine-tool-head">
       <button type="button" className="canvas-tool-handle" aria-label={`Drag ${LABELS[data.tool]}`} title="Drag this handle to move the tool">⠿ {LABELS[data.tool]}</button>
       <button type="button" className="nodrag" onClick={() => tools.focus(data.tool)}>Focus tool</button>
-    </header>
+    </div>
     <div className={`canvas-tool-content nodrag nowheel nopan${data.tool === "composer" ? "" : " shell-tabpanel"}`}><ToolSlot host={tools.slots[data.tool]} /></div>
   </section>;
 }

@@ -19,6 +19,7 @@ mod find;
 mod github;
 mod guide;
 mod helpers;
+mod helper_result;
 mod import;
 mod messages;
 mod notes;
@@ -70,6 +71,8 @@ use tower_http::services::{ServeDir, ServeFile};
 use world::{Change, Journal, Thought, ThreadStatus, World};
 
 pub struct Core {
+    #[cfg(test)]
+    asr_test_url: Option<String>,
     typed_receipts: Mutex<()>,
     find: find::Runtime,
     /// Each speaker's last turn, what "this" means to them, and the Undo button (catalog.rs).
@@ -131,6 +134,45 @@ pub struct Core {
 }
 
 impl Core {
+    /// Connection opt-in and source/revision checks are repeated under the World commit lock.
+    fn set_action_estimate(&self, owner: &str, enabled: &std::sync::atomic::AtomicBool, request: world::EstimateRequest) -> Result<world::ActionEstimate, String> {
+        use std::sync::atomic::Ordering;
+        if !enabled.load(Ordering::SeqCst) { return Err("Action estimates is off. Enable it in Features.".into()); }
+        if request.request_id.is_empty() || request.request_id.len() > 128 { return Err("Invalid estimate request ID.".into()); }
+        if request.minutes.is_some_and(|m| !(1..=1440).contains(&m)) || request.reason.chars().count() > 160 || (request.minutes.is_none() && !request.reason.is_empty()) {
+            return Err("Use 1–1440 whole minutes and a reason of at most 160 characters.".into());
+        }
+        let snapshot = self.snapshot();
+        if let Some(saved) = snapshot.estimate_receipts.get(&(owner.into(), request.request_id.clone())) {
+            return if saved.request == request { Ok(saved.clone()) } else { Err("That request ID was already used. Start a new edit.".into()) };
+        }
+        let previous = snapshot.action_estimates.iter().find(|e| e.owner == owner && e.action_id == request.action_id);
+        let revision = previous.map_or(0, |e| e.revision);
+        let source_topic = snapshot.threads.iter().find(|t| t.id == request.source_thread_id).map(|t| t.title.clone()).unwrap_or_default();
+        let estimate = world::ActionEstimate {
+            action_id: request.action_id.clone(), owner: owner.into(), source_title: request.source_title.clone(), source_thread_id: request.source_thread_id.clone(), source_topic,
+            minutes: request.minutes, reason: request.reason.clone(), revision: revision + 1,
+            cleared: if request.minutes.is_none() { previous.and_then(|e| e.minutes.map(|minutes| world::EstimateValue { minutes, reason: e.reason.clone() })) } else { None },
+            request: request.clone(),
+        };
+        let valid = |w: &World| {
+            if !enabled.load(Ordering::SeqCst) { return false; }
+            let current = w.action_estimates.iter().find(|e| e.owner == owner && e.action_id == request.action_id);
+            if current.map_or(0, |e| e.revision) != request.observed_revision || revision != request.observed_revision { return false; }
+            if !w.actions.iter().any(|a| a.id == request.action_id && a.title == request.source_title && a.thread_id == request.source_thread_id) { return false; }
+            if current.is_none() && (request.minutes.is_none() || w.action_estimates.iter().filter(|e| e.owner == owner).count() >= 100) { return false; }
+            if let Some(undo) = &request.undo_of {
+                if !current.is_some_and(|e| e.request.request_id == *undo && e.minutes.is_none() && e.cleared.as_ref().is_some_and(|v| Some(v.minutes) == request.minutes && v.reason == request.reason)) { return false; }
+            }
+            true
+        };
+        match self.try_commit_if(valid, vec![Change::ActionEstimateSet { estimate: estimate.clone() }]) {
+            Ok(true) => Ok(estimate),
+            Ok(false) => Err("Estimate not saved: source or revision changed, or the 100-record limit was reached. Inspect the current action before retrying.".into()),
+            Err(_) => Err("Estimate not saved. Keep your draft and retry explicitly when connected.".into()),
+        }
+    }
+
     pub fn touch(&self) {
         self.last_activity.store(now_ms(), std::sync::atomic::Ordering::Relaxed);
     }
@@ -1237,6 +1279,8 @@ async fn main() -> anyhow::Result<()> {
     let (updates, _) = broadcast::channel(1024);
     let (placer_queue, queue) = mpsc::unbounded_channel();
     let core = Arc::new(Core {
+        #[cfg(test)]
+        asr_test_url: None,
         typed_receipts: Default::default(),
         find: find::Runtime::default(),
         catalog: catalog::Runtime::default(),
@@ -1309,6 +1353,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/ws", get(connect))
         .route("/room", get(room_info))
         .route("/terse", post(terse::read))
+        .route("/helper-result", post(helper_result::read))
         .route("/import", post(import::prepare).layer(DefaultBodyLimit::max(import::MAX_BYTES)))
         .nest_service("/images", ServeDir::new(images))
         .fallback_service(ServeDir::new(&ui).fallback(ServeFile::new(format!("{ui}/index.html"))))
@@ -1782,7 +1827,7 @@ fn catch_up_with_jobs(core: &Core, speaker: &str, jobs: Vec<ServerMsg>) -> Vec<S
     // The message card comes before the world: a window that was showing one counting reads the snapshot as the end of
     // what the core says about it, so a card the core no longer has (it restarted) goes. A reload mid-count gets the
     // card back with its Stop; one whose count ended while the window was away gets how it ended.
-    let mut messages: Vec<ServerMsg> = crate::helpers::card_for(core, speaker).or_else(|| crate::messages::card_for(core, speaker)).into_iter().collect();
+    let mut messages: Vec<ServerMsg> = crate::messages::card_for(core, speaker).or_else(|| crate::helpers::card_for(core, speaker)).into_iter().collect();
     // The call comes before the world too: a window that hears the world with no call before it knows the call it
     // showed is over (ui/src/talk/call-core.ts), say after a restart.
     messages.extend(call::message(core));
@@ -1846,7 +1891,8 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
     }
     // This window's number: guide messages, tours and jobs go to every window but this one (guide.rs).
     let window = guide::window();
-    let forwarding = tokio::spawn(forward(out, updates, core.clone(), speaker.clone(), window));
+    let estimates_on = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let forwarding = tokio::spawn(forward_with_estimates(out, updates, core.clone(), speaker.clone(), window, estimates_on.clone()));
     if here {
         core.hosts.lock().unwrap().insert(speaker.clone());
     }
@@ -1875,6 +1921,16 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
         };
         match message {
             Message::Text(text) => match serde_json::from_str::<ClientMsg>(text.as_str()) {
+                Ok(ClientMsg::ActionEstimates { on }) => { estimates_on.store(on, std::sync::atomic::Ordering::SeqCst); }
+                Ok(ClientMsg::SetActionEstimate { request }) => {
+                    let request_id = request.request_id.clone();
+                    let result = core.set_action_estimate(&speaker, &estimates_on, request);
+                    let (ok, message, estimate) = match result {
+                        Ok(estimate) => (true, "Estimate saved to this map.".into(), Some(estimate)),
+                        Err(message) => (false, message, None),
+                    };
+                    core.send_to(&speaker, ServerMsg::ActionEstimateResult { request_id, ok, message, estimate, window });
+                }
                 Ok(ClientMsg::Resume { pause_id, request_id }) => core.queue_command(&speaker, placer::Job::Resume { speaker: speaker.clone(), pause_id, request_id }),
                 Ok(ClientMsg::PauseChoice { pause_id, later }) => core.pause_choice(&speaker, &pause_id, later),
                 Ok(ClientMsg::RetryPlacement { id }) => {
@@ -2005,12 +2061,8 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::Job { job }) => guide::job(&core, &speaker, window, &mut pace, job),
                 Ok(ClientMsg::Answer { to, text }) => guide::answer(&core, &speaker, &mut pace, to, text),
                 // A margin note, from anyone in the room; refused, only the asker hears why (annotate.rs).
-                Ok(ClientMsg::Annotate { thought_id, quote, text, speak }) => {
-                    let result = if speak && ai {
-                        annotate::note_speaking(&core, &speaker, &thought_id, &quote, &text, true)
-                    } else {
-                        annotate::note(&core, &speaker, &thought_id, &quote, &text)
-                    };
+                Ok(ClientMsg::Annotate { thought_id, quote, text, speak, context }) => {
+                    let result = annotate::note_with_context(&core, &speaker, &thought_id, &quote, &text, speak && ai, context.as_ref());
                     if let Err(why) = result {
                         core.send_to(&speaker, ServerMsg::Notice { message: why.into() });
                     }
@@ -2050,6 +2102,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
             _ => {}
         }
     }
+    estimates_on.store(false, std::sync::atomic::Ordering::SeqCst);
     forwarding.abort();
     apps::disconnect(&core, &volume_source);
     if core.room.is_some() {
@@ -2060,7 +2113,12 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
 /// Sends a window every change and whatever is meant for its speaker, until the window is gone; never a guide or
 /// tour or job it sent itself (`window`, guide.rs). A window that hears nothing still gets a ping every `KEEP_ALIVE` (its browser answers on its own): a Cloudflare
 /// tunnel cut a silent WebSocket at 125 s, and held one with a 30 s ping (measured, cloudflared 2026.10.7).
-async fn forward(mut out: SplitSink<WebSocket, Message>, mut updates: broadcast::Receiver<Outgoing>, core: Arc<Core>, speaker: String, window: u64) {
+#[cfg(test)]
+async fn forward(out: SplitSink<WebSocket, Message>, updates: broadcast::Receiver<Outgoing>, core: Arc<Core>, speaker: String, window: u64) {
+    forward_with_estimates(out, updates, core, speaker, window, Arc::new(std::sync::atomic::AtomicBool::new(false))).await
+}
+
+async fn forward_with_estimates(mut out: SplitSink<WebSocket, Message>, mut updates: broadcast::Receiver<Outgoing>, core: Arc<Core>, speaker: String, window: u64, estimates_on: Arc<std::sync::atomic::AtomicBool>) {
     let mut keep_alive = tokio::time::interval_at(tokio::time::Instant::now() + KEEP_ALIVE, KEEP_ALIVE);
     let mut replayed = 0usize;
     loop {
@@ -2081,6 +2139,7 @@ async fn forward(mut out: SplitSink<WebSocket, Message>, mut updates: broadcast:
                 // Consume all pre-replay messages, forwarding non-jobs with the usual privacy rules.
                 if to.as_deref().is_some_and(|to| to != speaker) { continue; }
                 match message {
+                    ServerMsg::ActionEstimateResult { window: target, ok, .. } if *target != window || (*ok && !estimates_on.load(std::sync::atomic::Ordering::SeqCst)) => continue,
                     ServerMsg::Job { .. } if superseded => continue,
                     // Its own guide, tour or job: only the other windows receive it (guide.rs).
                     ServerMsg::Guide { from, .. } | ServerMsg::Tour { from, .. } | ServerMsg::Job { from, .. } if *from == window => continue,
@@ -2145,6 +2204,7 @@ fn start_listening(core: &Arc<Core>, speaker: &str, listens: &Arc<std::sync::ato
 impl Core {
     pub(crate) fn test(journal: Journal, world: World) -> Core {
         Core {
+            asr_test_url: None,
             typed_receipts: Default::default(),
             find: Default::default(),
             catalog: Default::default(),
@@ -4466,5 +4526,91 @@ mod notice_control_tests {
         for words in ["I said stop showing this yesterday", "Show those again to Dana"] {
             assert_eq!(notice_control(words), None);
         }
+    }
+}
+
+#[cfg(test)]
+mod c10_estimates_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    fn fixture() -> (Core, std::path::PathBuf) {
+        let dir = std::env::temp_dir().join(format!("c10-estimates-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("journal.jsonl");
+        let (journal, world) = Journal::open(&path).unwrap();
+        let core = Core::test(journal, world);
+        for (id, status, when) in [("a", world::ItemStatus::New, "2026-12-01"), ("b", world::ItemStatus::Done, "2026-12-09")] {
+            core.commit(vec![Change::ActionProposed { action: world::Action { id: id.into(), thread_id: "T1".into(), title: format!("Synthetic action {id}"), kind: "reminder".into(), when: when.into(), status, done_ms: None } }]);
+        }
+        (core, path)
+    }
+    fn request(id: &str, revision: u64, minutes: Option<u16>) -> world::EstimateRequest {
+        world::EstimateRequest { request_id: uuid::Uuid::new_v4().to_string(), action_id: id.into(), source_title: format!("Synthetic action {id}"), source_thread_id: "T1".into(), observed_revision: revision, minutes, reason: String::new(), undo_of: None }
+    }
+
+    #[test]
+    fn c10_estimates_save_edit_clear_undo_restart_and_attribution() {
+        let (core, path) = fixture();
+        let enabled = AtomicBool::new(false);
+        assert!(core.set_action_estimate("you", &enabled, request("a", 0, Some(15))).is_err());
+        enabled.store(true, Ordering::SeqCst);
+        let before = serde_json::to_value(&core.snapshot().actions).unwrap();
+        let req = request("a", 0, Some(15));
+        let a = core.set_action_estimate("you", &enabled, req.clone()).unwrap();
+        assert_eq!(core.set_action_estimate("you", &enabled, req.clone()).unwrap(), a);
+        let b = core.set_action_estimate("you", &enabled, request("b", 0, Some(40))).unwrap();
+        assert_eq!(a.minutes.unwrap() + b.minutes.unwrap(), 55);
+        let mut other = request("a", 0, Some(90));
+        other.reason = "Another speaker's estimate".into();
+        core.set_action_estimate("Sam", &enabled, other).unwrap();
+        assert_eq!(core.snapshot().action_estimates.iter().find(|e| e.owner == "you" && e.action_id == "a").unwrap().minutes, Some(15));
+        let edited = core.set_action_estimate("you", &enabled, request("a", 1, Some(20))).unwrap();
+        assert_eq!(edited.revision, 2);
+        assert!(core.set_action_estimate("you", &enabled, request("a", 1, Some(30))).is_err());
+        let clear = core.set_action_estimate("you", &enabled, request("a", 2, None)).unwrap();
+        let mut undo = request("a", 3, Some(20)); undo.undo_of = Some(clear.request.request_id);
+        let restored = core.set_action_estimate("you", &enabled, undo.clone()).unwrap();
+        assert_eq!(restored.revision, 4);
+        undo.request_id = uuid::Uuid::new_v4().to_string(); undo.observed_revision = 4;
+        assert!(core.set_action_estimate("you", &enabled, undo).is_err(), "only one compensating Undo");
+        enabled.store(false, Ordering::SeqCst);
+        assert!(core.set_action_estimate("you", &enabled, request("a", 4, Some(5))).is_err());
+        assert_eq!(before, serde_json::to_value(&core.snapshot().actions).unwrap());
+        let expected = core.snapshot().action_estimates.clone();
+        drop(core);
+        let (journal, world) = Journal::open(&path).unwrap();
+        assert_eq!(world.action_estimates, expected);
+        let restarted = Core::test(journal, world);
+        let enabled = AtomicBool::new(true);
+        assert_eq!(restarted.set_action_estimate("you", &enabled, req).unwrap(), a, "retry identity survives replay");
+    }
+
+    #[test]
+    fn c10_estimates_bounds_limit_source_and_write_failure() {
+        let (core, _) = fixture(); let enabled = AtomicBool::new(true);
+        for minutes in [0, 1441] { assert!(core.set_action_estimate("you", &enabled, request("a", 0, Some(minutes))).is_err()); }
+        let mut long = request("a", 0, Some(1)); long.reason = "x".repeat(161);
+        assert!(core.set_action_estimate("you", &enabled, long).is_err());
+        let mut stale = request("a", 0, Some(1)); stale.source_title = "Unrelated title".into();
+        assert!(core.set_action_estimate("you", &enabled, stale).is_err());
+        let saved = core.set_action_estimate("you", &enabled, request("a", 0, Some(1))).unwrap();
+        let mut reused = saved.request.clone(); reused.minutes = Some(2);
+        assert!(core.set_action_estimate("you", &enabled, reused).is_err());
+        for n in 1..100 {
+            let mut estimate = saved.clone(); estimate.action_id = format!("removed-{n}");
+            estimate.request.request_id = format!("limit-{n}");
+            core.commit(vec![Change::ActionEstimateSet { estimate }]);
+        }
+        assert!(core.set_action_estimate("you", &enabled, request("b", 0, Some(40))).unwrap_err().contains("100-record"));
+        assert!(core.set_action_estimate("Sam", &enabled, request("b", 0, Some(40))).is_ok());
+        // A removed action retains its captured source instead of binding to a matching title.
+        { let mut world = core.world.lock().unwrap(); Arc::make_mut(&mut world).actions.retain(|a| a.id != "a"); }
+        assert!(core.set_action_estimate("you", &enabled, request("a", 1, Some(10))).is_err());
+        assert_eq!(core.snapshot().action_estimates[0].source_title, "Synthetic action a");
+        let (mut broken, broken_path) = fixture();
+        broken.journal = Mutex::new(Journal::read_only(&broken_path).unwrap());
+        assert!(broken.set_action_estimate("you", &enabled, request("a", 0, Some(15))).is_err());
+        assert!(broken.snapshot().action_estimates.is_empty());
     }
 }

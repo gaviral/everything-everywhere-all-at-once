@@ -5,7 +5,7 @@
 // does and the call as the core tells it (call-core.ts). The rail's Talk tab once the shell has one; until then
 // TalkRail.tsx stands in under the shell.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
-import type { BrickActions, BrickInfo, MapSnapshot } from "../bricks/contract";
+import type { AnchorContext, BrickActions, BrickInfo, MapSnapshot } from "../bricks/contract";
 import { useGuide } from "../guide-core";
 import { sendToCore } from "../room";
 import { TIPS } from "../Tips";
@@ -80,7 +80,7 @@ function TalkBody({ map, actions, open, call }: { map: MapSnapshot; actions: Bri
     row?.focus({ preventScroll: true, focusVisible: false } as FocusOptions);
   };
 
-  const [replying, setReplying] = useState<{ key: string; thoughtId: string; quote: string } | null>(null);
+  const [replying, setReplying] = useState<{ key: string; thoughtId: string; quote: string; context?: AnchorContext | null } | null>(null);
   const [picked, setPicked] = useState<{ key: string; thoughtId: string; quote: string } | null>(null);
   // Words picked in one part of a turn (a point on the map) can be answered beside them.
   const pick = () => {
@@ -109,7 +109,7 @@ function TalkBody({ map, actions, open, call }: { map: MapSnapshot; actions: Bri
       continue;
     }
     const { turn, i } = row;
-    const noteOf = turn.note ? { key: turn.key, thoughtId: turn.note.thoughtId, quote: turn.note.quote } : null;
+    const noteOf = turn.note ? { key: turn.key, thoughtId: turn.note.thoughtId, quote: turn.note.quote, ...(turn.note.context === undefined ? {} : { context: turn.note.context }) } : null;
     const wholeOf = turn.parts[0].placed ? { key: turn.key, thoughtId: turn.parts[0].thoughtId, quote: turn.parts[0].text } : null;
     const seenHere = readers.get(i);
     items.push(<li key={turn.key} className={["talk-turn", turn.speaker === me && "talk-mine", seenHere && "talk-has-seen"].filter(Boolean).join(" ")} data-turn={i} data-read-ms={readFor(turn)} tabIndex={-1}
@@ -130,7 +130,7 @@ function TalkBody({ map, actions, open, call }: { map: MapSnapshot; actions: Bri
         <span className="sr-only">{seenHere.join(", ")} read up to here</span>
       </span>}
       {replying?.key === turn.key
-        ? <ReplyBox quote={replying.quote} send={(text) => actions.annotate(replying.thoughtId, replying.quote, text)} done={() => setReplying(null)} />
+        ? <ReplyBox quote={replying.quote} send={(text) => actions.annotate(replying.thoughtId, replying.quote, text, replying.context ?? undefined)} done={() => setReplying(null)} />
         : picked?.key === turn.key && <button type="button" className="talk-reply-start" onMouseDown={(event) => event.preventDefault()} onClick={() => { setReplying(picked); setPicked(null); }}>
             Reply to “{short(picked.quote)}” <kbd>↵</kbd></button>}
     </li>);

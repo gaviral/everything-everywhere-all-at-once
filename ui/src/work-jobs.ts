@@ -3,10 +3,11 @@
 // joins, right after its snapshot. Kept here, outside the map: jobs are never on it, and a brick switched on late (or
 // still loading) must find every job that came before it. BrickSlot.tsx hands them to bricks as `map.jobs`.
 import { useSyncExternalStore } from "react";
-import type { Job, JobStatus } from "./bricks/contract";
+import type { Job, JobStatus, HelperKind, JobOutcome } from "./bricks/contract";
 
 /** What the core sends (the guide's `Job`, plus who and when). */
 export type JobMsg = {
+  result_id?: string;
   type: "job";
   id: string;
   title: string;
@@ -17,13 +18,17 @@ export type JobMsg = {
   by: string;
   at_ms: number;
   started_ms?: number;
+  ended_ms?: number;
+  helper_kind?: HelperKind;
+  requested_count?: number;
+  outcome?: JobOutcome;
 };
 
-const STATUSES: readonly string[] = ["running", "done", "failed", "waiting"];
+const STATUSES: readonly string[] = ["preparing", "queued", "running", "done", "failed", "stopped", "waiting"];
 /** As many as the core keeps (guide.rs); bound this window's store too. */
 const KEPT = 60;
 
-const ended = (status: JobStatus) => status === "done" || status === "failed";
+const ended = (status: JobStatus) => status === "done" || status === "failed" || status === "stopped";
 const text = (value: unknown): value is string => typeof value === "string";
 
 let jobs: readonly Job[] = [];
@@ -36,8 +41,9 @@ export function merge(old: Job | undefined, job: JobMsg): Job {
   const again = !!old && old.ended_ms !== undefined && job.status === "running";
   return {
     id: job.id, title: job.title, status: job.status, result: job.result, parent: job.parent, demo: job.demo, by: job.by, at_ms: job.at_ms,
-    started_ms: job.started_ms ?? (again ? job.at_ms : old?.started_ms ?? (job.status === "running" ? job.at_ms : undefined)),
-    ended_ms: again ? undefined : old?.ended_ms ?? (ended(job.status) ? job.at_ms : undefined),
+    helper_kind: job.helper_kind, requested_count: job.requested_count, outcome: job.outcome, result_id: job.result_id,
+    started_ms: job.started_ms ?? (again ? job.at_ms : old?.started_ms ?? (job.status === "running" && !job.helper_kind ? job.at_ms : undefined)),
+    ended_ms: again ? undefined : job.ended_ms ?? old?.ended_ms ?? (ended(job.status) && !job.helper_kind ? job.at_ms : undefined),
   };
 }
 
@@ -54,6 +60,11 @@ export function receiveJob(message: { type: string }): boolean {
   if (message.type !== "job") return false;
   const job = message as JobMsg;
   if (!text(job.id) || !job.id || !text(job.title) || !STATUSES.includes(job.status) || !text(job.by) || typeof job.demo !== "boolean"
+    || (job.result_id != null && (!text(job.result_id) || !job.result_id || job.result_id.length > 100))
+    || (job.helper_kind != null && !["thinking", "coding"].includes(job.helper_kind))
+    || (job.requested_count != null && (!Number.isSafeInteger(job.requested_count) || job.requested_count < 1))
+    || (job.outcome != null && !["done", "failed", "stopped", "partial", "no_change", "dry_run"].includes(job.outcome))
+    || (job.ended_ms != null && (!Number.isFinite(job.ended_ms) || (job.started_ms != null && job.ended_ms < job.started_ms)))
     || !Number.isFinite(job.at_ms) || (job.started_ms != null && !Number.isFinite(job.started_ms)) || (job.result != null && !text(job.result)) || (job.parent != null && !text(job.parent))) return true;
   const at = jobs.findIndex((old) => old.by === job.by && old.id === job.id);
   const next = merge(jobs[at], job);

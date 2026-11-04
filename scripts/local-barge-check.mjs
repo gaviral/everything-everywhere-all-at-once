@@ -131,6 +131,7 @@ for (const rate of [24000, 44100, 48000]) {
     feed(0.04, 0.12, 800);
     const before = c.messages.length;
     c.state({ muted: false, generation: 8, resumeBarge: 7 });
+    assert.equal(c.messages.length, before, `${rate}: a control acknowledgement cannot emit audio before processing resumes`);
     feed(0.16, 0.12, 1000);
     const accepted = c.messages.slice(before).filter(m => m.frame);
     assert.ok(accepted.length >= 4, `${rate}: buffered onset plus continuing speech reaches ASR`);

@@ -268,7 +268,7 @@ try {
   // no test hook is added to them. Its WebSocket receives the same real guide protocol as the app above.
   // Serve this fixture through the shared UI module server, with the app's React transforms and dependencies.
   const entry = "/__guide_held_lifecycle__.js";
-  lifecycleServer = await uiServer({ plugins: [{ name: "guide-held-lifecycle",
+  lifecycleServer = await uiServer({ optimizeDeps: { noDiscovery: false, include: ["react", "react-dom/client", "motion/react"] }, plugins: [{ name: "guide-held-lifecycle",
     resolveId: id => id === entry ? entry : null,
     load: id => id !== entry ? null : `
       import React, { StrictMode, useState } from "react";

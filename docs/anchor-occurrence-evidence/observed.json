@@ -1,0 +1,78 @@
+{
+  "base": "39d3c4ac766d53864d6c3d1f6721b9747dbe5cc6",
+  "sent": {
+    "type": "annotate",
+    "thought_id": "source",
+    "quote": "turn left",
+    "text": "Use the wider path.",
+    "context": {
+      "source_text": "At the paper bridge, turn left; near the wooden gate, turn left.",
+      "source_speaker": "speaker-b",
+      "start": 54,
+      "end": 63
+    }
+  },
+  "anchor": {
+    "N1": {
+      "thought_id": "source",
+      "quote": "turn left",
+      "context": {
+        "source_text": "At the paper bridge, turn left; near the wooden gate, turn left.",
+        "source_speaker": "speaker-b",
+        "start": 54,
+        "end": 63
+      }
+    }
+  },
+  "checks": [
+    "built selection 54:63",
+    "outbound context",
+    "reconnect",
+    "reload",
+    "speaker identities",
+    "visible ambiguity refusal",
+    "stale no relocation"
+  ],
+  "loaded_assets": [
+    {
+      "path": "/assets/index-B6ZglgFt.js",
+      "sha256": "607a10d484597114c8bbf93cc79bbd53edab6f3a3d84c085b7cbf07b8f03880e"
+    },
+    {
+      "path": "/assets/react-DvXU6kJ2.js",
+      "sha256": "d2f40f3cf9c8f62f6abb6988cf470484b3bfd50d0cd8a33416dacc1d8c6f669d"
+    },
+    {
+      "path": "/assets/index-CRroIW5V.css",
+      "sha256": "73211107736a513b35e78256367a2ef619d4ec9935dcf1efcc5af50bcb8f40ac"
+    },
+    {
+      "path": "/assets/bubble-flight-CPfmg8PC.js",
+      "sha256": "20ced396c7a28c9c30707fa9f3ed0cfb4d5b0d9669ac83ee82f55cf674329b9e"
+    },
+    {
+      "path": "/assets/bubble-flight-DAk6AgeH.css",
+      "sha256": "9655a5c9966ca07eb855c3c529deaf81c3b37f95c8fae664a292f31376d5c32b"
+    },
+    {
+      "path": "/assets/tiny-transcript-Do6ijCgA.js",
+      "sha256": "06ea8b65fbf9be94a67fe28617f1d9544db7511cac390ebb1b521224bd4e3457"
+    },
+    {
+      "path": "/assets/tiny-transcript-DP6BLmc9.css",
+      "sha256": "bc3ca34a086667fb11ca543c16d1d4fed0c04a3519cc79126c37130723ffa6ab"
+    },
+    {
+      "path": "/assets/spine-DnyQaPtO.js",
+      "sha256": "59dd5c80748fc0a9e49f0f391f6b1667a721896fe736c61bec97fcd14dac9280"
+    },
+    {
+      "path": "/assets/outline-BWrgSYZk.js",
+      "sha256": "8136f11e7e3d84730de5dd04b25e85cc982b497f14b38706d06544e368594037"
+    },
+    {
+      "path": "/assets/spine-D68lqIOi.css",
+      "sha256": "cee126f4441cfb9d36540ebc3d3aaa95d89ef697c30939ba78a5f611613be197"
+    }
+  ]
+}

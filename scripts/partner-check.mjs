@@ -17,7 +17,7 @@ try {
     addEventListener('error',e=>{if(!e.message.startsWith('ResizeObserver')) errors.push(e.message)});
     Object.defineProperty(window,'speechSynthesis',{configurable:true,value:Object.assign(new EventTarget(),{
       getVoices:()=>[{name:'Test English',lang:'en-US',default:true}],
-      speak:u=>spoken.push(u),cancel:()=>cancelled++
+      speak:u=>{spoken.push(u);queueMicrotask(()=>u.onstart?.());},cancel:()=>cancelled++
     })});
     window.SpeechSynthesisUtterance=class {constructor(text){this.text=text}};
   ` });
@@ -43,18 +43,18 @@ try {
   };
   await shot("desktop");
   await evaluate(`document.querySelector('.partner-status button').focus()`);
-  assert.equal(await evaluate(`document.activeElement.textContent`), "Cancel reply");
+  assert.equal(await evaluate(`document.activeElement.textContent`), "Stop reply");
   await page("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, text: "\r" });
   await page("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
   await sleep(60);
   assert.ok(core.heard.some((m) => m.type === "partner_cancel"), `keyboard Cancel reaches core: ${JSON.stringify(core.heard)}`);
   core.send({ type: "partner_state", state: "cancelled", message: "Reply cancelled." });
-  assert.ok(await until(`!document.querySelector('.partner-status button')`));
+  assert.ok(await until(`![...document.querySelectorAll('.partner-status button')].some(b => b.textContent === 'Stop reply')`));
   core.send({ type: "guide", kind: "caption", target: null, text: "Try one small step.", by: "E2A2O", at_ms: Date.now(), speak: true });
   core.send({ type: "partner_state", state: "idle", message: "Ready for your next question." });
-  assert.ok(await until(`spoken.length===1 && document.querySelector('.partner-status').textContent.includes('Speaking')`));
+  assert.ok(await until(`spoken.length===1 && document.querySelector('.partner-status').textContent.includes('Reply playing')`));
   await evaluate(`document.querySelector('.partner-status button').click()`);
-  assert.ok(await until(`!document.querySelector('.partner-status').textContent.includes('Speaking')`), "Cancel stops browser speech immediately");
+  assert.ok(await until(`!document.querySelector('.partner-status').textContent.includes('Reply playing')`), "Cancel stops browser speech immediately");
   assert.ok(await evaluate(`cancelled>0`));
   core.send({ type: "partner_state", state: "error", message: "Couldn't answer just now. Try asking again." });
   assert.ok(await until(`document.querySelector('.partner-status').textContent.includes("Couldn't answer")`));

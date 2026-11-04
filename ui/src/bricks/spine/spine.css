@@ -40,7 +40,7 @@
 
 /* Projected node origins and link geometry share rotation.ts's coordinate system. Only the item's content turns:
    the shell, shelf, rotation controls and browser popovers remain in screen space. No invisible unrotated hit box. */
-.spine-rotating .react-flow__node { pointer-events: none; }
+.spine-rotating [class~="react-flow__node"] { pointer-events: none; }
 .spine-rotated-item { width: 100%; height: 100%; transform-origin: 0 0; pointer-events: auto; }
 .spine-rotation { position: absolute; z-index: 6; top: 60px; left: 50%; transform: translateX(-50%);
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; width: max-content; max-width: calc(100% - 32px);
@@ -406,3 +406,26 @@
 .spine-fixes > span { display: flex; flex-wrap: wrap; margin: 0; white-space: normal; }
 
 .spine-speaker { display: block; font-size: .8em; font-weight: 600; opacity: .8; }
+
+/* Optional phone comparison. The mounted spatial canvas keeps its camera while Inline is read. */
+ .spine-frame .spatial-reading-mode { position: absolute; inset: 0; }
+ .spine-frame .phone-controls { position: absolute; top: 68px; left: 16px; right: 16px; z-index: 10; max-height: 36%; overflow: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 4px; }
+ .spine-frame .phone-controls > div { display: flex; flex-wrap: wrap; align-items: start; gap: 4px; }
+.spine-frame .phone-controls button, .spine-frame .phone-controls summary { min-height: 40px; box-sizing: border-box; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; color: var(--ink); background: var(--surface); font: inherit; line-height: 1.5; cursor: pointer; white-space: normal; overflow-wrap: anywhere; }
+.spine-frame .phone-controls button[aria-pressed="true"] { background: var(--surface-3); border-color: var(--accent); }
+ .spine-frame .phone-controls details { flex: 1; min-width: 100px; }
+ .spine-frame .phone-topic-list { display: flex; flex-direction: column; gap: 4px; }
+.spine-frame .phone-back { display: block; width: 100%; text-align: left; }
+ .spine-frame .phone-safe { position: absolute; bottom: 0; height: env(safe-area-inset-bottom, 0px); width: 1px; pointer-events: none; }
+.spine-phone-compare .spine-speaker { font-size: inherit; line-height: inherit; }
+.spine-phone-compare .spine-flow, .spine-phone-compare [class~="react-flow__node"] { transition: none; }
+/* React Flow assigns visibility on individual nodes; opacity also hides those descendants while preserving geometry. */
+ .spine-frame .spatial-reading-mode[inert] { opacity: 0; pointer-events: none; }
+ .spine-frame .phone-controls summary { list-style: none; }
+ .spine-frame .phone-controls summary::-webkit-details-marker { display: none; }
+
+/* Rotation stays inside the measured phone controls band. */
+.spine-phone-compare .spine-rotation { position: static; transform: none; width: auto; max-width: none; margin-top: 4px; }
+
+.spine-anchor-status { display: block; font-size: 12px; line-height: 18px; margin-bottom: 8px; }
+.spine-anchor-status details { user-select: text; }

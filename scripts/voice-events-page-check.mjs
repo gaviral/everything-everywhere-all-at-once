@@ -37,7 +37,7 @@ try {
     }}});
   `});
   await page('Page.navigate',{url:`http://127.0.0.1:${core.port}/`});
-  assert.ok(await until(`!!document.querySelector('[data-guide="mic"]') && !!document.querySelector('.partner-status')`));
+  assert.ok(await until(`!!document.querySelector('[data-guide="mic"]') && !document.querySelector('[data-guide="mic"]').disabled && document.querySelector('[data-guide="mic"]').dataset.state==='off' && !!document.querySelector('.partner-status')`));
   const click = async selector => {
     const point=await evaluate(`(()=>{const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);
     for(const type of ['mousePressed','mouseReleased']) await page('Input.dispatchMouseEvent',{type,...point,button:'left',clickCount:1});

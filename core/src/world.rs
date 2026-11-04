@@ -133,6 +133,39 @@ pub struct Action {
     pub done_ms: Option<u64>,
 }
 
+/// Manual effort metadata. A clear keeps a tombstone so stale requests cannot recreate it.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct EstimateValue {
+    pub minutes: u16,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct EstimateRequest {
+    pub request_id: String,
+    pub action_id: String,
+    pub source_title: String,
+    pub source_thread_id: String,
+    pub observed_revision: u64,
+    pub minutes: Option<u16>,
+    #[serde(default)] pub reason: String,
+    #[serde(default)] pub undo_of: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct ActionEstimate {
+    pub action_id: String,
+    pub owner: String,
+    pub source_title: String,
+    pub source_thread_id: String,
+    pub source_topic: String,
+    pub minutes: Option<u16>,
+    pub reason: String,
+    pub revision: u64,
+    pub request: EstimateRequest,
+    #[serde(default)] pub cleared: Option<EstimateValue>,
+}
+
 /// A completed conversational caption. Playback flags belong only to its live relay.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Caption {
@@ -187,6 +220,8 @@ pub struct SpeechDraft {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct World {
+    #[serde(default)] pub action_estimates: Vec<ActionEstimate>,
+    #[serde(default, skip_serializing)] pub estimate_receipts: std::collections::HashMap<(String, String), ActionEstimate>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")] pub pauses: Vec<Pause>,
     #[serde(default, skip_serializing)] pub returning: std::collections::HashMap<String, (String, usize)>,
     #[serde(default, skip_serializing)]
@@ -292,6 +327,7 @@ pub struct World {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Change {
+    ActionEstimateSet { estimate: ActionEstimate },
     CaptionAdded { caption: Caption },
     Paused { pause: Pause },
     PauseResolved { id: String, by_thought: String },
@@ -420,7 +456,7 @@ pub enum Change {
     Positioned { id: String, x: Option<f64>, y: Option<f64>, by: String, at_ms: u64 },
     /// A margin note's thread tied to words: `quote`, as picked in thought `thought_id`'s point (annotate.rs). Only for
     /// a thread on the map; kept after it leaves, so an Undo brings the note back as a note.
-    Anchored { thread_id: String, thought_id: String, quote: String },
+    Anchored { thread_id: String, thought_id: String, quote: String, #[serde(default)] context: Option<crate::annotate::AnchorContext> },
     /// A window joined as an AI participant (`?ai`) under `speaker`: from now on its words are marked as an AI's.
     AiJoined { speaker: String },
     /// The AI's pass put these top threads under these topics (topics.rs): only threads on the map, a name each.
@@ -561,6 +597,12 @@ impl World {
         let change = self.resolved(change);
         crate::tidy::follow(self, &change);
         match change.as_ref() {
+            Change::ActionEstimateSet { estimate } => {
+                self.estimate_receipts.insert((estimate.owner.clone(), estimate.request.request_id.clone()), estimate.clone());
+                if let Some(existing) = self.action_estimates.iter_mut().find(|e| e.action_id == estimate.action_id && e.owner == estimate.owner) {
+                    if existing.revision <= estimate.revision { *existing = estimate.clone(); }
+                } else { self.action_estimates.push(estimate.clone()); }
+            }
             Change::CaptionAdded { caption } => {
                 if !self.captions.iter().any(|c| c.id == caption.id && c.by == caption.by) {
                     self.captions.push(caption.clone());
@@ -662,9 +704,14 @@ impl World {
                 // Off the map, or only one of the two: positions.rs refuses both, so only an edited journal holds one.
                 _ => {}
             },
-            Change::Anchored { thread_id, thought_id, quote } => {
+            Change::Anchored { thread_id, thought_id, quote, context } => {
                 if self.thread(thread_id).is_some() {
-                    self.anchors.insert(thread_id.clone(), crate::annotate::Anchor { thought_id: thought_id.clone(), quote: quote.clone() });
+                    // Replay old journals at their original source revision; ambiguous entries remain unresolved.
+                    let context = context.clone().or_else(|| match self.anchors.get(thread_id) {
+                        Some(existing) => existing.context.clone(),
+                        None => self.thoughts.iter().find(|t| t.id == *thought_id).and_then(|t| crate::annotate::resolve(t, quote, None).ok()),
+                    });
+                    self.anchors.insert(thread_id.clone(), crate::annotate::Anchor { thought_id: thought_id.clone(), quote: quote.clone(), context });
                 }
             }
             Change::AiJoined { speaker } => {
@@ -1867,6 +1914,11 @@ mod tests {
             Change::SuggestionAdded {
                 suggestion: super::Suggestion { id: "sg-1".into(), thread_id: "T2".into(), text: "Ask Sam".into(), status: super::ItemStatus::New },
             },
+            Change::ActionEstimateSet { estimate: super::ActionEstimate {
+                action_id: "ac-1".into(), owner: "you".into(), source_title: "Ask Sam".into(),
+                source_thread_id: "T2".into(), source_topic: "Workshop".into(), minutes: Some(15), reason: "First pass".into(), revision: 1,
+                request: super::EstimateRequest { request_id: "estimate-1".into(), action_id: "ac-1".into(), source_title: "Ask Sam".into(), source_thread_id: "T2".into(), observed_revision: 0, minutes: Some(15), reason: "First pass".into(), undo_of: None }, cleared: None,
+            } },
             Change::ActionProposed {
                 action: super::Action {
                     id: "ac-1".into(),
@@ -1905,8 +1957,8 @@ mod tests {
             Change::ThreadAdded { thread: test_thread("T4", None) },
             // A margin note's thread tied to words, its anchor kept through the merge and its Undo below; none for a
             // thread off the map. An AI participant joined, once however often it says so.
-            Change::Anchored { thread_id: "T4".into(), thought_id: "a".into(), quote: "Muse Spark".into() },
-            Change::Anchored { thread_id: "T99".into(), thought_id: "a".into(), quote: "nowhere".into() },
+            Change::Anchored { thread_id: "T4".into(), thought_id: "a".into(), quote: "Muse Spark".into(), context: None },
+            Change::Anchored { thread_id: "T99".into(), thought_id: "a".into(), quote: "nowhere".into(), context: None },
             Change::AiJoined { speaker: "Friend".into() },
             Change::AiJoined { speaker: "Claude".into() },
             Change::AiJoined { speaker: "Friend".into() },
@@ -2091,6 +2143,7 @@ mod tests {
                 | Change::ThreadUnmerged { .. }
                 | Change::TidyProposed { .. }
                 | Change::SuggestionAdded { .. }
+                | Change::ActionEstimateSet { .. }
                 | Change::ActionProposed { .. }
                 | Change::ItemStatus { .. }
                 | Change::ItemMoved { .. }
@@ -2128,7 +2181,7 @@ mod tests {
         let changes = every_change();
         let kinds: std::collections::HashSet<String> =
             changes.iter().map(|c| serde_json::to_value(c).unwrap()["type"].as_str().unwrap().to_string()).collect();
-        assert_eq!(kinds.len(), 57, "one of each kind of change");
+        assert_eq!(kinds.len(), 58, "one of each kind of change");
         for change in &changes {
             let json = serde_json::to_string(change).unwrap();
             let back: Change = serde_json::from_str(&json).unwrap_or_else(|e| panic!("{json} didn't read back: {e}"));
@@ -2210,7 +2263,7 @@ mod tests {
         // A note's anchor holds through its thread's merge and the merge's Undo; one for a thread never on the map isn't
         // kept. An AI participant is listed once, in the order it first came.
         assert_eq!(w.anchors.len(), 1);
-        assert_eq!(w.anchors["T4"], crate::annotate::Anchor { thought_id: "a".into(), quote: "Muse Spark".into() });
+        assert_eq!(w.anchors["T4"], crate::annotate::Anchor { thought_id: "a".into(), quote: "Muse Spark".into(), context: Some(crate::annotate::AnchorContext { source_text: "Ask Muse Spark about a".into(), source_speaker: "Ana".into(), start: 4, end: 14 }) });
         assert_eq!(w.ai, ["Friend", "Claude"]);
     }
 
@@ -2280,5 +2333,16 @@ pub(crate) mod fixtures {
             place_ms: Some(1_000),
             decided: false,
         }
+    }
+}
+
+#[cfg(test)]
+mod c10_estimates_world_tests {
+    #[test]
+    fn c10_estimates_old_world_defaults() {
+        let mut json = serde_json::to_value(super::World::default()).unwrap();
+        json.as_object_mut().unwrap().remove("action_estimates");
+        let world: super::World = serde_json::from_value(json).unwrap();
+        assert!(world.action_estimates.is_empty());
     }
 }

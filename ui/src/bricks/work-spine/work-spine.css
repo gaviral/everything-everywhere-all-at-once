@@ -127,7 +127,7 @@
    has, above the dock the page keeps in `--dock-height`). */
 .work-spine-sheet {
   position: fixed; right: 16px; bottom: calc(var(--dock-height, 120px) + 8px); left: 16px; z-index: 43; box-sizing: border-box; display: flex; flex-direction: column;
-  max-height: min(68dvh, 560px); padding: 0 12px; border: 1px solid var(--line); border-radius: 14px;
+  max-height: min(68dvh, 560px, calc(100dvh - var(--dock-height, 120px) - 144px)); padding: 0 12px; border: 1px solid var(--line); border-radius: 14px;
   background: var(--card); box-shadow: var(--shadow); color: var(--ink); font-size: 13px; line-height: 1.45;
 }
 
@@ -148,3 +148,18 @@
 /* Thinking helpers keep full answers folded; make their disclosure easy to tap. */
 details.work-spine-result > summary { min-height: 40px; padding: 9px 0; box-sizing: border-box; cursor: pointer; }
 details.work-spine-result > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+/* Preparation and queued work have no running pulse or execution clock. */
+.work-spine-preparing, .work-spine-queued, .work-spine-stopped,
+.work-spine-state-preparing, .work-spine-state-queued, .work-spine-state-stopped {
+  color: var(--muted);
+}
+.work-spine-requested { margin: 4px 0; color: var(--muted); font-size: 13px; }
+/* Proposal text stays in its own keyboard-scrollable box inside the Work lane. */
+.work-spine-proposal summary { box-sizing: border-box; cursor: pointer; min-height: 44px; padding-block: 10px; text-decoration: underline; }
+.work-spine-proposal-body { min-width: 0; overflow-wrap: anywhere; }
+.work-spine-proposal-body p { margin: 8px 0; }
+.work-spine-base code { font-size: .85em; overflow-wrap: anywhere; }
+.work-spine-file { min-width: 0; margin-block: 12px; }
+.work-spine-file pre { box-sizing: border-box; max-height: min(36vh, 320px); max-width: 100%; overflow: auto; white-space: pre; font: 12px/1.5 ui-monospace, monospace; padding: 10px; background: var(--surface-3, var(--bg)); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; }
+.work-spine-proposal :focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }

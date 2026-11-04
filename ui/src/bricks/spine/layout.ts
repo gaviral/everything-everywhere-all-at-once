@@ -1,3 +1,4 @@
+import { anchorRange, type AnchorContext } from "../contract";
 // Where everything goes on the Spine (index.tsx draws it), from the map alone. Pure: the same map, placements and
 // choices give the same places, and what a new thought adds goes below or beside what's there.
 //  - A topic (a thread with no parent) is a spine: its head (picture, title, a line of who and when), then its points
@@ -114,6 +115,8 @@ export interface Quote {
 /** What's tucked under a point's words on a narrow screen: a margin note's entries, or a short tangent (its title and
  *  latest point), so a phone needn't pan sideways for either. */
 export interface Tuck {
+  anchorWarning?: string;
+  sourceRevision?: string;
   margin: string;
   entries: Entry[];
   /** A tangent's: its thread and title. */
@@ -213,6 +216,8 @@ export interface Item {
   margin?: string;
   entries?: Entry[];
   more?: number;
+  anchorWarning?: string;
+  sourceRevision?: string;
   /** A named topic's header: the topic ("" for the ones not sorted yet), with `count` its spines and `title` its name. */
   group?: string;
 }
@@ -271,6 +276,8 @@ export interface Layout {
 
 /** A margin note as the layout takes it (index.tsx gathers them from the map). */
 export interface MarginInput {
+  context?: AnchorContext | null;
+  anchorWarning?: string;
   id: string;
   /** The point's thought its words are in. */
   thoughtId: string;
@@ -312,6 +319,8 @@ export interface LayoutInput {
   /** A phone's width: margin notes tuck under their words. */
   narrow?: boolean;
   staying?: string | null;
+  comparePhone?: boolean;
+  textScale?: number;
   originals?: ReadonlySet<string>;
 }
 
@@ -348,6 +357,21 @@ export function ideasOf(thoughts: Thought[], notes: Readonly<Record<string, Note
     ideas.push({ key: parts[0].id, parts, text: (t.point || t.text).trim(), at: t.at_ms, decided: parts.some((p) => !!p.decided) });
   }
   return ideas;
+}
+
+/** Only recorded anchors identify an exact source. A topic parent alone never supplies a point. */
+export function phoneParents(threads: readonly Thread[], thoughts: readonly Thought[]) {
+  const byId = new Map(threads.map(t => [t.id, t]));
+  const points = new Map(thoughts.map(t => [t.id, t]));
+  return new Map(threads.map(t => {
+    const source = t.anchor && points.get(t.anchor.thought_id);
+    const parentId = t.parent_id;
+    const parent = parentId ? byId.get(parentId) : undefined;
+    const exact = !!(source && parent && source.thread_id === parent.id);
+    return [t.id, { threadId: parent?.id ?? null, thoughtId: exact ? source!.id : null,
+      label: exact ? `${t.anchor!.quote} [${source!.id}]` : t.anchor ? `Source unavailable · ${t.anchor.quote} [${t.anchor.thought_id}]` : parent ? `Tangent · ${parent.title}` : "",
+      missing: !!t.anchor && !exact }];
+  }));
 }
 
 const overlaps = (a: Box, b: Box, margin: number) =>
@@ -395,17 +419,23 @@ interface Shape {
 
 /** What's under a point's words, in px: the marks row, the landing note, tucked notes. */
 const tuckHeight = (tucks: Tuck[]) =>
-  tucks.reduce((h, tuck) => h + G.tuckTop + (tuck.title ? G.recapLine : 0) + tuck.entries.reduce((sum, e) => sum + Math.max(1, e.lines.length) * G.marginLine, 0)
+  tucks.reduce((h, tuck) => h + G.tuckTop + (tuck.anchorWarning ? 72 : 0) + (tuck.title ? G.recapLine : 0) + tuck.entries.reduce((sum, e) => sum + Math.max(1, e.lines.length) * G.marginLine, 0)
     + 4 * Math.max(0, tuck.entries.length - 1), 0);
+
+const globalSpineLook = SPINE_LOOK, globalMiniLook = MINI_LOOK;
 
 export function layout(input: LayoutInput): Layout {
   const { threads, notes, rooms, positions, open } = input;
+  const scale = input.textScale ?? 1;
+  const SPINE_LOOK = input.comparePhone ? { ...globalSpineLook, font: "phone" as const, line: 24 * scale, max: Infinity } : globalSpineLook;
+  const MINI_LOOK = input.comparePhone ? { ...globalMiniLook, font: "phone" as const, line: 24 * scale, max: Infinity } : globalMiniLook;
+  const parents = input.comparePhone ? phoneParents(threads, input.thoughts) : null;
   const me = input.me ?? "you";
   const who = (name: string) => whoIs(name, me, input.speakers);
   const active = input.active ?? null;
   const pendingSlots = input.slots ?? [];
   const opened = input.opened ?? new Set<string>();
-  const narrow = !!input.narrow;
+  const narrow = !!input.narrow && !input.comparePhone;
   const byId = new Map(threads.map((t) => [t.id, t]));
   const order = new Map(threads.map((t, i) => [t.id, i]));
 
@@ -441,7 +471,8 @@ export function layout(input: LayoutInput): Layout {
       if (seen.has(p)) return null;
       seen.add(p);
     }
-    return t.parent_id && byId.has(t.parent_id) ? t.parent_id : null;
+    const parent = parents?.get(t.id)?.threadId ?? t.parent_id;
+    return parent && parent !== t.id && byId.has(parent) ? parent : null;
   };
   const kids = new Map<string, Thread[]>();
   const roots: Thread[] = [];
@@ -490,6 +521,7 @@ export function layout(input: LayoutInput): Layout {
 
   /** A lone aside: one point, nothing off it, not the thread you're on, not left off or decided. */
   const lone = (t: Thread) => {
+    if (input.comparePhone) return false;
     const list = ideasIn(t.id);
     const idea = list[0];
     return list.length === 1 && !(kids.get(t.id)?.length) && t.id !== active && t.id !== input.staying && t.status !== "dropped" && !idea.decided && !idea.parts.some((p) => p.unclear) &&
@@ -514,11 +546,10 @@ export function layout(input: LayoutInput): Layout {
     // Words with a margin note: found in the words as shown (its own case first), in order, never overlapping.
     const found: { m: MarginInput; start: number; end: number }[] = [];
     for (const m of marginsOn.get(idea.key) ?? []) {
-      const quote = m.quote.trim();
-      let start = quote ? shown.indexOf(quote) : -1;
-      if (start < 0 && quote) start = shown.toLocaleLowerCase().indexOf(quote.toLocaleLowerCase());
-      if (start >= 0 && !found.some((f) => start < f.end && f.start < start + quote.length)) found.push({ m, start, end: start + quote.length });
-      else if (start < 0) found.push({ m, start: -1, end: -1 });
+      const range = anchorRange(m.quote, m.context, shown);
+      const start = range?.start ?? -1, end = range?.end ?? -1;
+      const warning = range ? undefined : m.context ? "Anchor unresolved: source revision changed." : "Anchor unresolved: legacy occurrence is unknown or ambiguous.";
+      found.push({ m: { ...m, anchorWarning: warning }, start, end });
     }
     found.sort((a, b) => a.start - b.start);
     const quotes: Quote[] = [];
@@ -541,7 +572,7 @@ export function layout(input: LayoutInput): Layout {
       if (folded && start >= 0) continue;
       if (narrow || look.variant === "mini") {
         const w = look.textW - G.tuckIn - 26;
-        tucks.push({ margin: m.id, entries: shownEntries(m, staying).map((e) => ({ ...entryOf(e.by, e.text, w, staying), thoughtId: e.thoughtId })) });
+        tucks.push({ margin: m.id, anchorWarning: m.anchorWarning, sourceRevision: m.context?.source_text, entries: shownEntries(m, staying).map((e) => ({ ...entryOf(e.by, e.text, w, staying), thoughtId: e.thoughtId })) });
       } else {
         beside.push(m);
         ends.set(m.id, start >= 0 ? wrapEnd(measured, look.font, look.textW, look.max) : { line: 0, x: -1 });
@@ -572,7 +603,7 @@ export function layout(input: LayoutInput): Layout {
   // While sides are decided, every card counts as closed and nothing as placed or shelved: opening, moving or shelving one
   // never sends another to the other side.
   let deciding = false;
-  const isOpen = (t: Thread) => !deciding && open === t.id && !!parentOf(t);
+  const isOpen = (t: Thread) => !deciding && (input.comparePhone || open === t.id) && !!parentOf(t);
   const slotsFor = (t: Thread) => (!deciding && t.id === active ? pendingSlots : []);
   const card = (t: Thread) => {
     const titleLines = wrap(t.title, "cardTitle", G.cardW - 2 * G.pad, G.cardTitleMax);
@@ -689,7 +720,7 @@ export function layout(input: LayoutInput): Layout {
       keys.push(item.key);
       // A pinned conversation is rows: leave the full comment's height before the next thought.
       const besideHeight = t.id === input.staying ? shape.beside.reduce((height, m) => height + marginHeight(shownEntries(m, true)
-        .map((e) => entryOf(e.by, e.text, G.marginText, true))) + G.stack, 0) : 0;
+        .map((e) => entryOf(e.by, e.text, G.marginText, true))) + (m.anchorWarning ? 72 : 0) + G.stack, 0) : 0;
       y = box.y + Math.max(box.h, besideHeight) + gap;
     }
     const slots: string[] = [];
@@ -727,12 +758,12 @@ export function layout(input: LayoutInput): Layout {
         const staying = t.id === input.staying;
         const entries = shownEntries(m, staying).map((e) => ({ ...entryOf(e.by, e.text, G.marginText, staying), thoughtId: e.thoughtId }));
         const more = m.entries.length - entries.length;
-        const h = marginHeight(entries, more);
+        const h = marginHeight(entries, more) + (m.anchorWarning ? 72 : 0);
         const column = columnKey(owner, 1, 1);
         const want = Math.max(point.box.y + (staying ? 0 : from.dy - 10), (s.columns.get(column) ?? -Infinity) + G.stack);
         const box = clear(s, { x: owner.x1 + G.gutter, y: want, w: G.marginW, h });
         const item = add(s, { key: `m:${m.id}`, id: m.id, kind: "margin", thread: t.id, box, pinned: false, up: point.key, room: rooms.get(t.id), depth: point.depth,
-          topic: topicOf(t.id), margin: m.id, entries, more: more > 0 ? more : undefined });
+          topic: topicOf(t.id), margin: m.id, anchorWarning: m.anchorWarning, sourceRevision: m.context?.source_text, entries, more: more > 0 ? more : undefined });
         s.columns.set(column, box.y + box.h);
         s.links.push({ key: `q:${m.id}`, kind: "note", from, to: { key: item.key, dx: -4, dy: 10 }, room: rooms.get(t.id), topic: topicOf(t.id) });
       }
@@ -790,6 +821,11 @@ export function layout(input: LayoutInput): Layout {
 
   /** Where a tangent of `parent` starts: the parent's latest point said before the tangent's first. */
   const originOf = (parent: Parent, t: Thread): Anchor => {
+    if (parents) {
+      const source = parents.get(t.id)?.thoughtId;
+      const idea = source && ideasIn(parent.thread.id).find(i => i.parts.some(p => p.id === source));
+      return (idea && parent.anchors.get(idea.key)) || parent.edge;
+    }
     const start = started(t);
     let found: Anchor | undefined;
     for (const idea of ideasIn(parent.thread.id)) if (idea.at <= start && parent.anchors.has(idea.key)) found = parent.anchors.get(idea.key);

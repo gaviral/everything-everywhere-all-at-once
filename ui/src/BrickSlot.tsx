@@ -40,10 +40,13 @@ export function useBrickHost(world: World, revision: number, me: string, connect
   const jobs = useJobs();
   const builtIns = useBuiltInsOn();
   const conversationSpine = builtIns.has("conversation-spine");
+  const comparePhoneReading = builtIns.has("compare-phone-reading");
   const terse = builtIns.has("terse");
+  const partnerOn = builtIns.has("partner");
+  const rotateCanvas = builtIns.has("rotate-canvas");
   const snapshot = useMemo(() => snapshotOf(world, me, connected, rooms, partial, jobs, usage), [world, me, connected, rooms, partial, jobs, usage]);
   const reading = useReadPosition(snapshot);
-  const map = useMemo(() => ({ ...snapshot, readThrough: reading.mark, conversationSpine, terse, placingUnavailable, pauses: world.pauses ?? [] }), [snapshot, reading.mark, conversationSpine, terse, placingUnavailable, world.pauses]);
+  const map = useMemo(() => ({ ...snapshot, readThrough: reading.mark, conversationSpine, comparePhoneReading, terse, partnerOn, rotateCanvas, placingUnavailable, pauses: world.pauses ?? [] }), [snapshot, reading.mark, conversationSpine, comparePhoneReading, terse, partnerOn, rotateCanvas, placingUnavailable, world.pauses]);
   const read = useRef(reading.read);
   read.current = reading.read;
   const latest = useRef(act);
@@ -54,6 +57,7 @@ export function useBrickHost(world: World, revision: number, me: string, connect
   const actionsFor = useMemo(() => (info: BrickInfo): BrickActions => {
     let actions = made.current.get(info.id);
     if (!actions) made.current.set(info.id, actions = {
+      setActionEstimate: (request) => latest.current.setActionEstimate?.(request) ?? Promise.resolve({ request_id: request.request_id, ok: false, message: "Action estimates is unavailable.", estimate: null }),
       saveTextFile: (name, text, mime) => {
         if (typeof name !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._ -]{0,79}$/.test(name) || name.includes("..")
           || typeof text !== "string" || new TextEncoder().encode(text).length > 64 * 1024
@@ -67,13 +71,14 @@ export function useBrickHost(world: World, revision: number, me: string, connect
         if (sent) sends.sent(text, info);
         return sent;
       },
+      openPoint: (thread, thought) => latest.current.openPoint(thread, thought),
       openThread: (id) => latest.current.openThread(id),
       openThought: (id) => latest.current.openThought(id),
       select: (id) => latest.current.select(id),
       notify: (text) => latest.current.notify(text),
       position: (id, x, y) => latest.current.position(id, x, y),
       listen: (on) => latest.current.listen(on),
-      annotate: (thoughtId, quote, text) => latest.current.annotate(thoughtId, quote, text),
+      annotate: (thoughtId, quote, text, context) => latest.current.annotate(thoughtId, quote, text, context),
       openCatalog: (id) => latest.current.openCatalog(id),
       hint: (text, target) => latest.current.hint(text, target ?? null, info.name),
       renameTopic: (from, to) => (latest.current.renameTopic ?? renameTopic)(from, to),
@@ -153,14 +158,21 @@ function componentOf(brick: Brick) {
 /** One brick in its kind's place: a view in the map's (padded clear of the dock, as the Palace is), a card in the
  *  dock (its height counted with the dock's cards, so a thought just shown moves clear of it), a panel or an input
  *  wherever it places itself. Only a new map, a switch or a new action re-renders it, not the page's clock. */
-export const BrickMount = memo(function BrickMount({ brick, host }: { brick: Brick; host: BrickHost }) {
+export const BrickMount = memo(function BrickMount({ brick, host, onReady }: { brick: Brick; host: BrickHost; onReady?(id: string): void }) {
   const Shown = componentOf(brick);
   const { info } = brick;
-  const inner = <BrickBoundary info={info}><Suspense fallback={null}><Shown map={host.map} actions={host.actionsFor(info)} on={host.on} brick={info} destination={host.destination} /></Suspense></BrickBoundary>;
+  const inner = <BrickBoundary info={info}><Suspense fallback={null}><Shown map={host.map} actions={host.actionsFor(info)} on={host.on} brick={info} destination={host.destination} />{onReady && <BrickCommitted id={info.id} onReady={onReady} />}</Suspense></BrickBoundary>;
   if (info.kind === "view") return <main className="brick-view" aria-label={info.name} data-brick={info.id}>{inner}</main>;
   if (info.kind === "card") return <div className="brick-card" data-brick={info.id} data-dock-card>{inner}</div>;
   return <div className="brick-float" data-brick={info.id}>{inner}</div>;
 });
+
+/** Commit notification lives inside Suspense; a loading fallback cannot emit it.
+ *  It renders no DOM, so an empty component cannot satisfy a content assertion. */
+function BrickCommitted({ id, onReady }: { id: string; onReady(id: string): void }) {
+  useLayoutEffect(() => { onReady(id); }, [id, onReady]);
+  return null;
+}
 
 /** Every brick of `kind` that's on, in the Catalog's order. With none on, nothing at all. */
 export const BrickSlot = memo(function BrickSlot({ kind, host }: { kind: BrickKind; host: BrickHost }) {

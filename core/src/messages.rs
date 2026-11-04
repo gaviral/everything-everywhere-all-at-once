@@ -229,6 +229,9 @@ pub struct Runtime {
 #[derive(Default)]
 struct State {
     next: u64,
+    /// Shared card ownership across connectors and helper parents. IDs are
+    /// opaque: helper IDs and connector IDs occupy different number ranges.
+    current: HashMap<String, u64>,
     email_off: HashSet<String>,
     speech_ends: HashMap<String, (u64, tokio::time::Instant)>,
     counting: Option<Counting>,
@@ -236,7 +239,7 @@ struct State {
     /// of theirs that reconnects meanwhile gets its card, "Sending…", so the answer that follows has a card to end.
     sending: Option<(String, ServerMsg)>,
     /// A speaker whose "stop" was heard while they were still saying it: the turn it ends is that same stop.
-    stopped_by_voice: Option<String>,
+    stopped_by_voice: Option<(String, u64)>,
     /// How many windows each speaker has open (`window`): a count that ends with none of theirs open, so no Stop of
     /// theirs could reach the core, ends unsent.
     windows: HashMap<String, usize>,
@@ -432,6 +435,7 @@ pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> Option<Done> {
         }
         state.next += 1;
         let id = state.next;
+        state.current.insert(speaker.into(), id);
         let shown_end = tokio::time::Instant::now() + Duration::from_millis(in_ms);
         state.counting = Some(Counting { channel: ask.channel, subject: ask.subject.clone(), speech_end: state.speech_ends.remove(speaker), id, speaker: speaker.into(), to: ask.to.clone(), handle: ask.handle, text: ask.text.clone(), live, shown_end });
         let c = state.counting.as_ref().unwrap();
@@ -456,7 +460,9 @@ pub fn card_for(core: &Core, speaker: &str) -> Option<ServerMsg> {
     let state = core.messages.state.lock().unwrap();
     let Some(c) = state.counting.as_ref().filter(|c| c.speaker == speaker) else {
         let sending = state.sending.as_ref().filter(|(s, _)| s == speaker).map(|(_, card)| card);
-        return sending.or_else(|| state.ended.get(speaker)).cloned();
+        return sending.or_else(|| state.ended.get(speaker)).filter(|card| {
+            matches!(card, ServerMsg::SendCard { id, .. } if state.current.get(speaker) == Some(id))
+        }).cloned();
     };
     let left = c.shown_end.saturating_duration_since(tokio::time::Instant::now()).as_millis() as u64;
     Some(card(c, SendState::Counting, left, c.live, ""))
@@ -488,8 +494,28 @@ impl Drop for Window {
 
 /// A card's end: to the speaker's windows, and kept for one that reconnects (`card_for`).
 pub(crate) fn end(core: &Core, speaker: &str, message: ServerMsg) {
-    core.messages.state.lock().unwrap().ended.insert(speaker.to_string(), message.clone());
+    let mut state = core.messages.state.lock().unwrap();
+    if !matches!(&message, ServerMsg::SendCard { id, .. } if state.current.get(speaker) == Some(id)) { return; }
+    state.ended.insert(speaker.to_string(), message.clone());
+    drop(state);
     core.send_to(speaker, message);
+}
+
+pub(crate) fn claim(core: &Core, speaker: &str, id: u64) {
+    core.messages.state.lock().unwrap().current.insert(speaker.into(), id);
+}
+pub(crate) fn current_id(core: &Core, speaker: &str) -> Option<u64> {
+    core.messages.state.lock().unwrap().current.get(speaker).copied()
+}
+pub(crate) fn pending(core: &Core) -> bool {
+    let state = core.messages.state.lock().unwrap();
+    state.counting.is_some() || state.sending.is_some()
+}
+pub(crate) fn owns_stop(core: &Core, speaker: &str) -> bool {
+    let state = core.messages.state.lock().unwrap();
+    state.counting.as_ref().is_some_and(|c| c.speaker == speaker)
+        || state.sending.as_ref().is_some_and(|(s, _)| s == speaker)
+        || state.stopped_by_voice.as_ref().is_some_and(|(s, id)| s == speaker && state.current.get(speaker) == Some(id))
 }
 
 /// Whether message `id` is still counting down (an Undo of it can still take it back).
@@ -635,7 +661,7 @@ pub fn heard(core: &Core, speaker: &str, draft: &str) {
         let theirs = state.counting.as_ref().is_some_and(|c| c.speaker == speaker);
         let taken = if theirs { state.counting.take() } else { None };
         if taken.is_some() {
-            state.stopped_by_voice = Some(speaker.into());
+            state.stopped_by_voice = taken.as_ref().map(|c| (speaker.into(), c.id));
         }
         taken
     };
@@ -650,7 +676,7 @@ pub fn said(core: &Core, speaker: &str, text: &str) -> bool {
     let taken = {
         let mut state = core.messages.state.lock().unwrap();
         let voiced = match state.stopped_by_voice.take() {
-            Some(s) if s == speaker => true,
+            Some((s, _)) if s == speaker => true,
             other => {
                 state.stopped_by_voice = other;
                 false

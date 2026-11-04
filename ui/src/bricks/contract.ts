@@ -3,10 +3,11 @@
 // the map as it is now (read-only), the few actions it may take, and `on`, for what passes (a thought landing, your
 // words as they come, the mic's loudness, a notice). Nothing here runs the app's code, so a brick works the same in the
 // app and in the playground (bricks.html), which hands it a sample map instead.
-import { createContext, useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
+import { createElement, createContext, useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import type { MiniApp } from "../apps-core";
-import type { Anchor } from "../annotate-core";
-import type { Action, Note, Pause, Suggestion, Thought, Thread as MapThread, UsageRow, UsageSnapshot } from "../core";
+import type { Anchor, AnchorContext } from "../annotate-core";
+export { anchorRange, codePointOffset } from "../annotate-core";
+import type { ActionEstimate, EstimateRequest, EstimateResult, Action, Note, Pause, Suggestion, Thought, Thread as MapThread, UsageRow, UsageSnapshot } from "../core";
 import type { Position } from "../positions-core";
 
 export type CanvasToolId = "composer" | "features" | "history";
@@ -49,7 +50,7 @@ export const ShapesContext = createContext<Shapes | null>(null);
 /** The app's existing speech-correction controls, attached to a thought by a view. */
 export const SpeechFixesContext = createContext<((thought: Thought) => ReactNode) | null>(null);
 
-export type { Action, Anchor, MiniApp, Note, Pause, Position, Suggestion, Thought, UsageRow, UsageSnapshot };
+export type { ActionEstimate, EstimateRequest, EstimateResult, Action, Anchor, AnchorContext, MiniApp, Note, Pause, Position, Suggestion, Thought, UsageRow, UsageSnapshot };
 
 /** One thought of a turn: a turn the placer cut in two is one turn of two parts, each its own point on the map. */
 export interface Part {
@@ -69,7 +70,7 @@ export interface Turn {
   at: number;
   parts: Part[];
   /** A margin note: the point's thought and the words it's tied to (a later note on the same words answers it). */
-  note?: { threadId: string; thoughtId: string; quote: string };
+  note?: { threadId: string; thoughtId: string; quote: string; context?: AnchorContext | null };
 }
 
 /** The turns, in the order they were said: each thought with words, a split turn's parts together, a margin note as a
@@ -93,7 +94,7 @@ export function turnsOf(thoughts: readonly Thought[], threads: readonly { id: st
     }
     turns.push({
       key: thought.id, speaker: thought.speaker, at: thought.at_ms, parts: [part],
-      ...(anchor ? { note: { threadId: thought.thread_id!, thoughtId: anchor.thought_id, quote: anchor.quote } } : {}),
+      ...(anchor ? { note: { threadId: thought.thread_id!, thoughtId: anchor.thought_id, quote: anchor.quote, ...(anchor.context === undefined ? {} : { context: anchor.context }) } } : {}),
     });
   }
   return turns;
@@ -147,15 +148,22 @@ export interface Speaker {
 }
 
 /** Where a helper's job stands: at work, finished, stopped short, or held up on a question for you. */
-export type JobStatus = "running" | "done" | "failed" | "waiting";
+export type JobStatus = "preparing" | "queued" | "running" | "done" | "failed" | "stopped" | "waiting";
+export type HelperKind = "thinking" | "coding";
+export type JobOutcome = "done" | "failed" | "stopped" | "partial" | "no_change" | "dry_run";
 
 /** One piece of work an AI helper reports (the core relays it as it comes: core/src/guide.rs `Job`). The same `id` again
  *  is the same job in a new state, and the last state wins. It lives only as long as the core runs, never on the map. */
 export interface Job {
+  /** Opaque, server-owned proposal identity. Only host reads may resolve it. */
+  readonly result_id?: string;
   readonly id: string;
   /** What it is, one line (80 characters at most). */
   readonly title: string;
   readonly status: JobStatus;
+  readonly helper_kind?: HelperKind;
+  readonly requested_count?: number;
+  readonly outcome?: JobOutcome;
   /** A relayed job has one line (160 characters at most); in-core thinking helpers can carry up to 120 words.
    *  What a done job found, why a failed one stopped, the question a waiting one asks (a
    *  waiting job whose side job is the one waiting has a summary here instead: the side job asks). */
@@ -168,8 +176,7 @@ export interface Job {
   readonly by: string;
   /** When its state last changed, as the core stamped it (ms since 1970). */
   readonly at_ms: number;
-  /** Execution start from the core for thinking helpers; otherwise when this window first saw it running.
-   *  The end is the core's state-change time. Replayed helpers retain their execution duration. */
+  /** Actual invocation/spawn and completion/reap times; replay preserves both. */
   readonly started_ms?: number;
   readonly ended_ms?: number;
 }
@@ -178,7 +185,12 @@ export interface Job {
 export interface MapSnapshot {
   /** Optional browser presentation: chronological turns with linked topics. Missing/off keeps the current Canvas. */
   readonly conversationSpine?: boolean;
+  /** Optional presentation only; never enabled by a sample or recording preset. */
+  readonly comparePhoneReading?: boolean;
   readonly terse?: boolean;
+  /** Whether the host conversation controls are enabled. */
+  readonly partnerOn?: boolean;
+  readonly rotateCanvas?: boolean;
   /** Allowances from USAGE_FILE and the core's rolling-hour model budget; null with no readable file or connection. */
   readonly usage: UsageSnapshot | null;
   /** The helpers' jobs, in the order each first came (the oldest first, the newest last), each in its latest state; the
@@ -195,6 +207,8 @@ export interface MapSnapshot {
   readonly suggestions: readonly Suggestion[];
   /** Reminders and calendar events the AI proposed from what was said (the map's `actions`). */
   readonly reminders: readonly Action[];
+  /** Manual effort metadata; other owners are display-only. */
+  readonly actionEstimates?: readonly Readonly<ActionEstimate>[];
   /** The apps people made (a watcher, a prompt, publishers), and whether each is on. */
   readonly apps: readonly MiniApp[];
   /** Why a thought went where it went, by thought id, where the placer said. */
@@ -232,6 +246,8 @@ export interface MapSnapshot {
 
 /** What a brick may do. Each does what its button in the app does, with the same answer on screen. */
 export interface BrickActions {
+  /** Resolves only with the matching write acknowledgement, or an explicit failure. */
+  setActionEstimate?(request: EstimateRequest): Promise<EstimateResult>;
   /** Explicitly hands a plain text file to the browser, not proof it reached disk. Host bounds: plain filename
    *  up to 80 characters, text/plain or text/markdown, and at most 64 KiB UTF-8. False on refusal or failure. */
   saveTextFile(name: string, text: string, mime: string): boolean;
@@ -241,6 +257,8 @@ export interface BrickActions {
    *  brick added it (`by`). False when it couldn't go (too long, or too many waiting for the core); the window says why. */
   addThought(text: string): boolean;
   resume?(pauseId: string, keyboard?: boolean): boolean;
+  /** Inspect an exact live destination without changing the routing or the draft. */
+  openPoint(threadId: string, thoughtId: string | null): void;
   /** Shows a thread as a Palace picture does: back to the Map with the thread open, in view and highlighted. Your
    *  place moves there too. */
   openThread(threadId: string): void;
@@ -264,7 +282,7 @@ export interface BrickActions {
    *  words), a later one answers in it; each comes back in `map.threads` and `map.thoughts`, as any thought does,
    *  placed as written (no model reads it). False when it couldn't go (no words, more than 6,000 characters, or the
    *  core away); the window says why, and so does the core if the point has left the map. */
-  annotate(thoughtId: string, quote: string, text: string): boolean;
+  annotate(thoughtId: string, quote: string, text: string, context?: AnchorContext): boolean;
   /** Opens the Catalog (the app's list of features, each with its switch), at brick `id`'s row when given: shown and
    *  marked, its switch focused. As its button in Apps does. */
   openCatalog(id?: string): void;
@@ -352,4 +370,15 @@ export function useBrickEvent<K extends keyof BrickEvents>(on: BrickOn, name: K,
   const latest = useRef(listener);
   useLayoutEffect(() => { latest.current = listener; });
   useEffect(() => on(name, (value) => latest.current(value), consumer), [on, name, consumer]);
+}
+
+/** Move the same portal target between shell and canvas; its React tree and draft stay mounted. */
+export function ToolSlot({ host }: { host: HTMLElement }) {
+  const place = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const target = place.current!;
+    target.append(host);
+    return () => { if (host.parentNode === target) host.remove(); };
+  }, [host]);
+  return createElement("div", { ref: place, className: "shell-tool-slot spine-tool-slot" });
 }

@@ -1,0 +1,17 @@
+.draft-pocket { min-width: 0; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 12px; font-size: 1rem; overflow-wrap: anywhere; }
+.draft-pocket button { min-height: 44px; max-width: 100%; padding: .4em .7em; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit; white-space: normal; cursor: pointer; }
+.draft-pocket button:disabled { opacity: .6; cursor: default; }
+.draft-pocket :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.draft-pocket .draft-pocket-trigger { width: 100%; border: 0; text-align: left; background: transparent; }
+.draft-pocket-body { max-height: min(48dvh, 28rem); overflow: auto; overscroll-behavior: contain; padding: .6em; border-top: 1px solid var(--line); }
+.draft-pocket-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5em; }
+.draft-pocket-help, .draft-pocket-time { color: var(--muted); font-size: .875em; }
+.draft-pocket-help { margin-block: .4em; }
+.draft-pocket-label { display: block; margin-block: .5em; }
+.draft-pocket-input { display: block; box-sizing: border-box; width: 100%; min-height: 5em; padding: .5em; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit; resize: vertical; }
+.draft-pocket-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .4em; margin-block: .5em; }
+.draft-pocket-status { margin-block: .5em; }
+.draft-pocket-warning { color: var(--amber); }
+.draft-pocket-list { list-style: none; padding: 0; margin: 0; }
+.draft-pocket-entry { padding-block: .6em; border-top: 1px solid var(--line); }
+.draft-pocket-title { margin: 0 0 .3em; white-space: pre-wrap; }

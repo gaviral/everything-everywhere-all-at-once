@@ -49,6 +49,7 @@
 //    clock clear of Tiny transcript's line on a phone.
 // Exit 3 (precheck's WARN) when 5 and 6 can't run here (no Chrome or no ui/dist); 1 to 4 must pass first either way.
 import assert from "node:assert/strict";
+import { playgroundReady, playgroundState } from "./playground-probe.mjs";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { uiServer } from "./ui-server.mjs";
@@ -421,14 +422,9 @@ try {
       const where = `${folder} in the playground (${sample}, ${w} px)`;
       await width(w, w < 600 ? 844 : 860);
       await go(`${base}/bricks.html?brick=${folder}&sample=${sample}`);
-      if (!await until(`document.querySelector(".playground")?.dataset.brickShown === ${JSON.stringify(folder)}`, 8000)) { fail(where, "the playground never showed it"); continue; }
+      if (!await until(playgroundReady(folder), 8000)) { fail(where, "the playground never showed it"); continue; }
       await settle();
-      const state = await evaluate(`(() => {
-        const mount = document.querySelector('[data-brick="${folder}"]');
-        return { broke: document.querySelector(".brick-broke")?.textContent ?? "", errors: document.querySelector(".playground").dataset.errors,
-          mounted: !!mount, shows: !!mount && (mount.textContent.trim().length > 0 || mount.querySelector("svg, canvas, img, video") !== null),
-          sideways: document.documentElement.scrollWidth - innerWidth };
-      })()`);
+      const state = await evaluate(playgroundState(folder));
       if (state.broke) fail(where, `it broke: "${state.broke}"`);
       if (state.errors !== "0") fail(where, `${state.errors} errors (the playground's log says which)`);
       if (!state.mounted) fail(where, "not mounted");
@@ -1058,7 +1054,21 @@ try {
     await sleep(500);
     const after = await evaluate(nodesAt);
     const moved = Object.keys(before).filter((key) => after[key] !== before[key]);
-    if (moved.length) fail("spine", `a landing moved ${moved.join(", ")} (each keeps its place)`);
+    if (moved.length) {
+      // Named groups stack whole topics in columns. Growth may push a later topic down,
+      // but must preserve its internal geometry, column and order, and leave other topics still.
+      const owners = await evaluate(`Object.fromEntries([...document.querySelectorAll(".react-flow__node")].map(n => [n.dataset.id, n.querySelector("[data-thread]")?.dataset.thread]))`);
+      const grouped = await evaluate('document.querySelectorAll(".spine-group").length >= 2');
+      const xy = transform => [...transform.matchAll(/[-\d.]+/g)].map(m => Number(m[0]));
+      const growing = xy(before["t:T1"]);
+      const bad = moved.filter(key => {
+        const head = `t:${owners[key]}`;
+        if (!grouped || !before[head] || !after[head] || head === "t:T1") return true;
+        const a = xy(before[key]), b = xy(after[key]), h = xy(before[head]), k = xy(after[head]);
+        return h[1] <= growing[1] || a[0] !== b[0] || h[0] !== k[0] || k[1] <= h[1] || Math.abs((b[1] - a[1]) - (k[1] - h[1])) > 0.5;
+      });
+      if (bad.length) fail("spine", `a landing moved ${bad.join(", ")} outside the grouped column's downstream reflow`);
+    }
     const point = await middle(`.react-flow__node[data-id="p:th-2"] .spine-text`);
     if (!point) fail("spine", "no point th-2 on the canvas");
     else {
@@ -1472,10 +1482,20 @@ try {
         // T1's one point is "Rent due Friday, point 1": Sam asks about "Friday" (unanswered), you asked about "Rent due", and Sam's
         // question on "point 1" is answered.
         const quoted = { N1: "Friday", N2: "Rent due", N3: "point 1" };
+        // Persisted valid notes carry the actual immutable source revision/range.
+        const anchorSource = full.thoughts.find((point) => point.id === "T1-0");
+        const sourceText = anchorSource.point || anchorSource.text;
+        const anchored = (quote) => {
+          const at = sourceText.indexOf(quote);
+          assert.ok(at >= 0 && sourceText.lastIndexOf(quote) === at, "valid-note fixture uses one known occurrence");
+          const start = [...sourceText.slice(0, at)].length;
+          return { thought_id: anchorSource.id, quote, context: { source_text: sourceText,
+            source_speaker: anchorSource.speaker, start, end: start + [...quote].length } };
+        };
         const said = (id, by, text, after) => ({ ...thought(id, text, id.split("-")[0]), speaker: by, at_ms: now + after });
         shown = { ...full, threads: [...full.threads, ...Object.entries(quoted).map(([id, quote]) => thread(id, quote, { parent_id: "T1" }))],
           thoughts: [...full.thoughts, said("N1-0", "Sam", "Which Friday?", 10), said("N2-0", "you", "Is it paid?", 11), said("N3-0", "Sam", "Which one?", 12), said("N3-1", "you", "The first", 13)],
-          anchors: Object.fromEntries(Object.entries(quoted).map(([id, quote]) => [id, { thought_id: "T1-0", quote }])) };
+          anchors: Object.fromEntries(Object.entries(quoted).map(([id, quote]) => [id, anchored(quote)])) };
         const openSpine = async () => {
           await go(`${base}/?cards`);
           if (!await until(`document.querySelectorAll(".thread").length > 0`, 8000)) return false;
@@ -1538,6 +1558,17 @@ try {
             await digit("2");
             if (!await until(`[...document.querySelectorAll(".spine-stop")].filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.firstChild.textContent).join() === "Titles"`, 2500)) fail("spine (zoom stops)", "in the app, 2 doesn't show Titles once the composer lets go of the keyboard");
           }
+        }
+        // Legacy repeated words remain unresolved: never guess the first occurrence.
+        shown = { ...shown, threads: [...shown.threads, thread("L1", "Legacy question", { parent_id: "T1" })],
+          thoughts: [...shown.thoughts, thought("legacy-source", "Friday then Friday", "T1"), said("L1-0", "Sam", "Which occurrence?", 20)],
+          anchors: { ...shown.anchors, L1: { thought_id: "legacy-source", quote: "Friday" } } };
+        if (!await openSpine()) fail("spine (notes)", "legacy fixture never opened");
+        else {
+          if (!await until(`document.querySelector('.spine-margin[data-margin="L1"]')?.textContent.includes("Anchor unresolved")`, 2000))
+            fail("spine (notes)", "ambiguous legacy anchor must visibly remain unresolved");
+          if (await evaluate(`!!document.querySelector('.spine-quote[data-margin="L1"]')`))
+            fail("spine (notes)", "legacy repeated words must not underline a guessed occurrence");
         }
         await evaluate(previousSwitches === null ? `localStorage.removeItem("e2a2o.bricks")` : `localStorage.setItem("e2a2o.bricks", ${JSON.stringify(previousSwitches)})`);
         shown = full;
@@ -1735,7 +1766,7 @@ try {
   await until(`!!document.querySelector(".apps-catalog button")`, 3000);
   await evaluate(`document.querySelector(".apps-catalog button").click()`);
   if (!await until(`!!document.querySelector("dialog.catalog[open]")`, 3000)) fail("Catalog", "doesn't open from the Apps panel");
-  const listed = await evaluate(`[...document.querySelectorAll(".catalog-row strong")].map((s) => s.textContent)`);
+  const listed = await evaluate(`[...document.querySelectorAll(".catalog-group:not([aria-label^=Built]) .catalog-row strong")].map((s) => s.textContent)`);
   for (const name of brickNames) if (!listed.includes(name)) fail("Catalog", `doesn't list ${name}`);
   if (listed.length !== brickNames.length) fail("Catalog", `lists ${listed.length} bricks, the folders hold ${brickNames.length}`);
   const switchFor = (name) => `[...document.querySelectorAll(".catalog-row")].find((r) => r.querySelector("strong").textContent === ${JSON.stringify(name)}).querySelector("[role=switch]")`;
@@ -1820,7 +1851,7 @@ try {
     await tapMic();
     if (!await until(`!document.querySelector(".status.capturing")`, 3000)) fail("the dock", "a second tap on the mic didn't stop it");
   }
-  const switched = ["Cards", "Pictures", ...viewBricks.map((info) => info.name)].join();
+  const switched = ["Cards", "Pictures", "Canvas", ...viewBricks.filter((info) => info.id !== "spine").map((info) => info.name)].join();
   if ((await views()).join() !== switched) fail("Catalog", `switched on, the view switch says ${await views()}, not ${switched}`);
   // Each view shows in the map's place, with something in it, and Map brings the map back.
   for (const { id, name } of viewBricks) {

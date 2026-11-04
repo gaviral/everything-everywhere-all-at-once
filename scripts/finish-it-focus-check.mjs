@@ -1,4 +1,4 @@
-// Real browser input against the built UI and a synthetic, already-dropped sample map. Product pause timing stays
+// Real browser input against the built UI and a synthetic recorded pause. Product pause timing stays
 // intact. SHOTS=dir saves the visible unfinished card and the focused composer, at both sizes in both themes.
 import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -24,6 +24,8 @@ const world = {
   // Finish it must actually move the Canvas camera to reach the unfinished words.
   positions: { p2: { x: 2200, y: 1800, by: "you", at_ms: now } },
 };
+const pause = { id: "pause-picnic", thought_id: "p2", speaker: "you", thread_id: "T2", revision: 1, excerpt: quote, at_ms: now, resolved: false, later_count: 0, offer_after_ms: 0, hidden: false };
+world.pauses = [pause];
 let shown = world;
 const receipts = new Set();
 const core = await standInCore(() => [{ type: "snapshot", world: shown }], {
@@ -34,6 +36,18 @@ const core = await standInCore(() => [{ type: "snapshot", world: shown }], {
       receipts.add(message.id);
       core.send({ type: "text_received", id: message.id });
       core.send({ type: "capture_saved", capture: { id: message.id, text: message.text, thought_ids: [] }, replay: false });
+      return;
+    }
+    if (message.type === "pause_choice") {
+      assert.equal(message.pause_id, pause.id);
+      shown = { ...shown, pauses: shown.pauses.map(p => ({ ...p, hidden: true })) };
+      core.send({ type: "snapshot", world: shown });
+      return;
+    }
+    if (message.type === "resume") {
+      assert.equal(message.pause_id, pause.id);
+      shown = { ...shown, active: "T2", active_by: { you: "T2" } };
+      core.send({ type: "returned", request_id: message.request_id, anchor: { pause, thought_id: "p2", thread_id: "T2", excerpt: quote, current_text: quote }, message: "Back to your interrupted words." });
       return;
     }
     if (message.type !== "focus") return;
@@ -134,12 +148,14 @@ try {
     const draft = async (text) => { await click(composer); await page("Input.insertText", { text }); };
     const returned = async (before, existing = "", scene = "canvas") => {
       await check('!document.querySelector(".pullback")', "offered card dismissed");
-      await focus();
+      // Pointer return preserves the current focus; keyboard return focuses only an empty composer.
+      if (scene === "keyboard" && !existing) await focus();
       await check(`(${visiblePoint.toString()})("p2")`, "unfinished words visibly reached and clear of controls");
-      assert.equal(await evaluate(`document.activeElement === document.querySelector('${composer}')`), true, `${label}: focus survives navigation`);
+      if (scene === "keyboard" && !existing) assert.equal(await evaluate(`document.activeElement === document.querySelector('${composer}')`), true, `${label}: focus survives navigation`);
       assert.equal(await evaluate(`document.querySelector('${composer}').value`), existing, `${label}: draft preserved without quoted words`);
       assert.equal(texts().length, before, `${label}: Finish it sends nothing`);
       assert.equal(shown.active_by.you, "T2", `${label}: correct thread focused in core`);
+      await click(composer);
       const addition = "Continue with a shady spot.";
       await page("Input.insertText", { text: addition });
       const expected = existing + addition;
@@ -160,6 +176,13 @@ try {
     let before = texts().length;
     await click(finish);
     await returned(before);
+
+    // Bare Enter on an empty composer return focuses it after navigation settles.
+    await load();
+    before = texts().length;
+    await evaluate('document.activeElement?.blur()');
+    await key("Enter");
+    await returned(before, "", "keyboard");
 
     // Cards retains its view, reveals the dropped thread, and preserves an existing draft.
     await load();

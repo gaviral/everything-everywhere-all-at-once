@@ -34,7 +34,10 @@ const AIM = 0.55;
 const COMFORT = { left: 0.08, right: 0.92, top: 0.1, bottom: 0.8 };
 export const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
 
-export function useCamera(flow: Flow, area: () => Area, reduced: boolean, pane: () => HTMLElement | null, node?: (key: string) => Box | undefined, angle = 0) {
+export function useCamera(flow: Flow, area: () => Area, reduced: boolean, pane: () => HTMLElement | null, node?: (key: string) => Box | undefined, angle = 0, active = true, contain = false) {
+  const enabled = useRef(active);
+  enabled.current = active;
+  useEffect(() => { if (!active) { window.clearTimeout(waiting.current); fade.current?.cancel(); } }, [active]);
   /** When the camera last moved, and the follow's move waiting out its spacing. */
   const last = useRef(0);
   const waiting = useRef(0);
@@ -57,7 +60,7 @@ export function useCamera(flow: Flow, area: () => Area, reduced: boolean, pane: 
     const cutHere = () => {
       if (done) return;
       done = true;
-      if (filmHeld()) { out.cancel(); return; }
+      if (!enabled.current || filmHeld()) { out.cancel(); return; }
       void flow.setViewport(next, { duration: 0 });
       out.cancel();
       fade.current = element.animate([{ opacity: 0 }, { opacity: 1 }], { duration: FADE_MS / 2, easing: "ease-out" });
@@ -76,7 +79,7 @@ export function useCamera(flow: Flow, area: () => Area, reduced: boolean, pane: 
 
   /** Goes to `next`: a glide within a screen, a cross-fade past it, a cut (and a ring on `ring`) under Reduce Motion. */
   const move = useCallback((next: Viewport, ring?: string) => {
-    if (filmHeld()) return;
+    if (!enabled.current || filmHeld()) return;
     last.current = Date.now();
     const was = flow.getViewport();
     if (reduced) {
@@ -104,12 +107,17 @@ export function useCamera(flow: Flow, area: () => Area, reduced: boolean, pane: 
     const z = zoom ?? (was.zoom < READ ? 1 : was.zoom);
     // A box taller than the free part shows its top: the tip, with its slot under it.
     const h = Math.min(box.h, (a.y1 - a.y0) * 0.6 / z);
-    return anchorAt({ x: box.x + box.w / 2, y: box.y + h / 2 }, { x: (a.x0 + a.x1) / 2, y: a.y0 + (a.y1 - a.y0) * AIM }, z, angle);
-  }, [flow, area, angle]);
+    const next = anchorAt({ x: box.x + box.w / 2, y: box.y + h / 2 }, { x: (a.x0 + a.x1) / 2, y: a.y0 + (a.y1 - a.y0) * AIM }, z, angle);
+    if (contain) {
+      const projected = screenBounds(box, next);
+      next.y += Math.max(a.y0 + 12 - projected.y, Math.min(0, a.y1 - 12 - (projected.y + projected.h)));
+    }
+    return next;
+  }, [flow, area, angle, contain]);
 
   /** Puts `box` where you'd look for it, at once (the opening frame) or as a move. */
   const aim = useCallback((box: Box, options: { zoom?: number; ring?: string; instant?: boolean } = {}) => {
-    if (filmHeld()) return;
+    if (!enabled.current || filmHeld()) return;
     window.clearTimeout(waiting.current);
     const next = viewFor(box, options.zoom);
     if (options.instant) { last.current = Date.now(); void flow.setViewport(next, { duration: 0 }); return; }
@@ -118,7 +126,7 @@ export function useCamera(flow: Flow, area: () => Area, reduced: boolean, pane: 
 
   /** Fits `box` with 32 px around it in the free part, between `least` and `most` zoom. */
   const fit = useCallback((box: Box, most = 1, least = 0.04, options: { instant?: boolean } = {}) => {
-    if (filmHeld()) return;
+    if (!enabled.current || filmHeld()) return;
     window.clearTimeout(waiting.current);
     const a = area();
     const w = a.x1 - a.x0, h = a.y1 - a.y0;
@@ -145,7 +153,7 @@ export function useCamera(flow: Flow, area: () => Area, reduced: boolean, pane: 
     followTarget.current = target;
     window.clearTimeout(waiting.current);
     const run = () => {
-      if (filmHeld()) return;
+      if (!enabled.current || filmHeld()) return;
       const goal = target();
       if (!goal || comfortable(goal.box)) return;
       const wait = last.current + SPACING_MS - Date.now();

@@ -12,6 +12,8 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
+mod sources;
+
 const URL: &str = "wss://api.meta.ai/v1/asr/realtime";
 
 /// The longest the service may say nothing before the stream counts as gone (connect, handshake, and every event
@@ -32,6 +34,10 @@ fn refused(answer: &Value) -> String {
 }
 
 pub async fn run(core: Arc<Core>, speaker: String, audio: mpsc::Receiver<Vec<u8>>, window: u64) -> anyhow::Result<()> {
+    #[cfg(test)]
+    if let Some(url) = core.asr_test_url.clone() {
+        return run_at(&url, core, speaker, audio, Some(window)).await;
+    }
     run_at(URL, core, speaker, audio, Some(window)).await
 }
 
@@ -204,7 +210,7 @@ fn handshake(key: &str) -> Value {
 /// What the service made of the primer, so none of it is ever shown or kept.
 #[derive(Default)]
 struct Primer {
-    drafts: std::collections::HashMap<u64, crate::world::SpeechDraft>,
+    sources: sources::Sources,
     /// The primer's turn, from its speechStart (in the primer's stretch of the stream).
     turn: Option<u64>,
     /// Its turn has not ended yet: the service may run the primer and the first line together into one turn.
@@ -214,22 +220,8 @@ struct Primer {
 }
 
 impl Primer {
-    fn draft(&mut self, speaker: &str, turn: Option<u64>, text: &str, fresh: bool, core: &Core) -> String {
-        let key = turn.unwrap_or(u64::MAX);
-        if turn.is_none() && self.drafts.get(&key).is_some_and(|d| core.snapshot().speech_resolved.contains(&d.id) && (fresh || d.text != text)) {
-            self.drafts.remove(&key);
-        }
-        let draft = self.drafts.entry(key).or_insert_with(|| crate::world::SpeechDraft {
-            id: uuid::Uuid::new_v4().to_string(), speaker: speaker.into(), text: String::new(),
-        });
-        if !text.trim().is_empty() { draft.text = text.into(); }
-        draft.id.clone()
-    }
-
     fn recover(&self, core: &Core) {
-        for draft in self.drafts.values().filter(|draft| !draft.text.trim().is_empty()) {
-            core.remember_speech(draft.clone());
-        }
+        self.sources.recover(core);
     }
 
     /// `text` without the primer's words at its front, compared without case or punctuation.
@@ -301,15 +293,21 @@ fn handle(core: &Arc<Core>, speaker: &str, primer: &mut Primer, text: &str, wind
         tracing::debug!("voice event: {text}");
     }
     match event["type"].as_str() {
-        Some("speechStart") => crate::messages::speech_end(core, speaker, false),
+        Some("speechStart") => {
+            primer.sources.boundary(speaker, &event);
+            crate::messages::speech_end(core, speaker, false);
+        },
         Some("speechEnd") => {
+            primer.sources.boundary(speaker, &event);
             crate::messages::speech_end(core, speaker, true);
             crate::helpers::speech_end(core, speaker);
         }
         Some("transcript") => {
             core.touch();
             let words = event["transcript"].as_str().unwrap_or_default().to_string();
-            if !words.trim().is_empty() { primer.draft(speaker, turn, &words, true, core); }
+            if !words.trim().is_empty() && primer.sources.words(speaker, &event, &words, false).is_none() {
+                return false;
+            }
             // "Stop" stops a message counting down as it's said, not a turn's end later (messages.rs).
             crate::messages::heard(core, speaker, &words);
             crate::helpers::heard(core, speaker, &words);
@@ -324,13 +322,15 @@ fn handle(core: &Arc<Core>, speaker: &str, primer: &mut Primer, text: &str, wind
             let words = sentence_case(raw.trim());
             // As heard and as kept, to tell the transcriber's punctuation from ours.
             core.trace.write(|| json!({"kind": "heard", "speaker": speaker, "raw": raw, "kept": words}));
-            core.send_to(speaker, ServerMsg::Partial { text: String::new() });
-            if !words.is_empty() {
-                let id = primer.draft(speaker, turn, &words, false, core);
+            let id = if words.is_empty() { None } else { primer.sources.words(speaker, &event, &words, true) };
+            // A late final for an older source must not erase the next source's live words.
+            let pending = primer.sources.partial().to_string();
+            core.send_to(speaker, ServerMsg::Partial { text: pending.clone() });
+            if let Some(id) = id {
                 core.finish_speech(speaker, &id, &words, window);
             }
             // After the turn's thought, so the other windows see its words come as "Speaking now…" goes (call.rs).
-            crate::call::speaking(core, speaker, false);
+            if pending.is_empty() { crate::call::speaking(core, speaker, false); }
             if !words.is_empty() {
                 return crate::spoken::stops_listening(&words);
             }
@@ -369,6 +369,7 @@ mod tests {
 
     mod session;
     mod speech;
+    mod identity;
 
     #[tokio::test(start_paused = true)]
     async fn email_and_helpers_share_speech_end_timing_and_draft_stop() {

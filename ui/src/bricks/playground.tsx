@@ -1,5 +1,5 @@
 import { FullContentProvider } from "../FullContent";
-import { useBuiltInsOn } from "../shell/features";
+import { switchBuiltIn, useBuiltInsOn } from "../shell/features";
 // The playground (bricks.html, docs/bricks.md): one brick on its own against a sample map from samples/, so a builder
 // needs neither the core, a key nor the whole app. `?brick=<id>` picks the brick (the template too) and `&sample=`
 // the map ("empty" for none). It's mounted as the app mounts it (BrickSlot.tsx), and what it asks for is answered
@@ -9,7 +9,7 @@ import { useBuiltInsOn } from "../shell/features";
 import { createPortal } from "react-dom";
 import { StrictMode, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { noteChanges } from "../annotate-core";
+import { noteChanges, type AnchorContext } from "../annotate-core";
 import { received } from "../apps-audio";
 import { saveFile } from "../save-file";
 import { BrickMount, useBrickHost } from "../BrickSlot";
@@ -78,9 +78,13 @@ function Playground() {
   const builtIns = useBuiltInsOn();
   const params = new URLSearchParams(location.search);
   const [id, setId] = useState(params.get("brick") ?? found.bricks[0]?.info.id ?? "");
+  const [brickReady, setBrickReady] = useState("");
   const [sample, setSample] = useState(params.get("sample") ?? (SAMPLES["student-week"] ? "student-week" : "empty"));
   const [world, setWorld] = useState(() => sampleWorld(sample));
+  const estimateWorld = useRef(world);
+  estimateWorld.current = world;
   // Bumped with each map picked, as the core's snapshot count is: a new map's thoughts aren't landings.
+  const compareOn = builtIns.has("compare-phone-reading");
   const [revision, setRevision] = useState(1);
   const [connected, setConnected] = useState(true);
   const [destination, setDestination] = useState<ViewDestination | null>(null);
@@ -163,8 +167,8 @@ function Playground() {
   };
 
   // A comment, answered with the changes the core would send (annotate.rs), by you.
-  const annotate = (thoughtId: string, quote: string, text: string) => {
-    const changes = noteChanges(world, "you", thoughtId, quote, text, Date.now(), { thread: () => `PGN${++count.current}`, thought: () => `pg-${++count.current}` });
+  const annotate = (thoughtId: string, quote: string, text: string, context?: AnchorContext) => {
+    const changes = noteChanges(world, "you", thoughtId, quote, text, Date.now(), { thread: () => `PGN${++count.current}`, thought: () => `pg-${++count.current}` }, context);
     if (!changes) { said(`annotate ${thoughtId} “${quote}” → refused: no words, or that point isn't on a topic`); return false; }
     setWorld((w) => changes.reduce<World>((at, change) => apply(at, change as Parameters<typeof apply>[1]), w));
     said(`annotate ${thoughtId} “${quote}”: “${text}” → ${changes.length > 3 ? "a new note on those words" : "a reply in their note"}`);
@@ -180,8 +184,27 @@ function Playground() {
 
   const rooms = useMemo(() => roomColors(world.threads), [world.threads]);
   const host = useBrickHost(world, revision, "you", connected, rooms, partial, {
+    setActionEstimate: async request => {
+      const w = estimateWorld.current;
+      const current = w.action_estimates?.find(e => e.owner === "you" && e.action_id === request.action_id);
+      const failed = (message: string) => ({ request_id: request.request_id, ok: false, message, estimate: null });
+      if (!connected || id !== "action-estimates") return failed("Playground connection is off; draft kept.");
+      if (!w.actions.some(a => a.id === request.action_id && a.title === request.source_title && a.thread_id === request.source_thread_id) || (current?.revision ?? 0) !== request.observed_revision) return failed("Source or revision changed. Inspect the action before retrying.");
+      if ((request.minutes !== null && (!Number.isInteger(request.minutes) || request.minutes < 1 || request.minutes > 1440)) || [...request.reason].length > 160) return failed("Use 1–1440 whole minutes and a reason of at most 160 characters.");
+      if (!current && (w.action_estimates ?? []).filter(e => e.owner === "you").length >= 100) return failed("The 100-record limit was reached.");
+      if (request.undo_of && (!current?.cleared || current.request.request_id !== request.undo_of || current.minutes !== null || current.cleared.minutes !== request.minutes || current.cleared.reason !== request.reason)) return failed("Clear changed; Undo is unavailable.");
+      const estimate = { action_id: request.action_id, owner: "you", source_title: request.source_title, source_thread_id: request.source_thread_id,
+        source_topic: w.threads.find(t => t.id === request.source_thread_id)?.title ?? request.source_thread_id,
+        minutes: request.minutes, reason: request.reason, revision: (current?.revision ?? 0) + 1, request,
+        cleared: request.minutes === null && current?.minutes != null ? { minutes: current.minutes, reason: current.reason } : null };
+      const next = apply(w, { type: "action_estimate_set", estimate });
+      estimateWorld.current = next; setWorld(next);
+      said(`estimate ${request.action_id}: simulated playground acknowledgement`);
+      return { request_id: request.request_id, ok: true, message: "Playground estimate updated; no server save.", estimate };
+    },
     saveTextFile: (name, text, mime) => { saveFile(text, mime, name); said(`File handed to browser: ${name}`); return true; },
     addThought: (text) => { const ok = add(text); said(`addThought “${text}”${ok ? " → lands on the topic you're on in 1.2 s" : " → refused"}`); return ok; },
+    openPoint: (threadId, thoughtId) => { if (compareOn) setDestination(was => ({ threadId, thoughtId, revision: (was?.revision ?? 0) + 1 })); },
     openThread: (thread) => {
       said(`openThread ${title(thread)} → in the app: back to the map, that topic open and highlighted`);
       setWorld((w) => apply(w, { type: "active_changed", thread_id: thread, speaker: "you" }));
@@ -259,10 +282,11 @@ function Playground() {
     }
   };
 
-  return <div className="playground" data-errors={errors} data-brick-shown={brick ? id : ""}>
+  return <div className="playground" data-errors={errors} data-brick-shown={brick ? id : ""} data-brick-ready={brickReady === id ? id : ""}>
     <div className="playground-bar" role="toolbar" aria-label="Playground">
       <strong>Features playground</strong>
-      <label>Feature <select value={id} onChange={(event) => setId(event.target.value)}>
+      <button type="button" role="switch" aria-checked={compareOn} onClick={() => switchBuiltIn("compare-phone-reading", !compareOn)}>Compare phone reading</button>
+      <label>Feature <select value={id} onChange={(event) => { setBrickReady(""); setId(event.target.value); }}>
         {!brick && <option value={id}>{id || "none"}</option>}
         {found.bricks.map(({ info }) => <option key={info.id} value={info.id}>{info.name} ({info.id})</option>)}
       </select></label>
@@ -295,8 +319,8 @@ function Playground() {
     <SyntheticTools enabled={params.has("canvas-tools") && id === "spine"} add={add}>
     <div className={`playground-stage playground-${brick?.info.kind ?? "none"}`}>
       {id === "shapes" && shapeCanvas && <BrickMount brick={shapeCanvas} host={host} />}
-      {brick?.info.kind === "card" ? <div className="playground-dock"><BrickMount key={id} brick={brick} host={host} /></div>
-        : brick && <BrickMount key={id} brick={brick} host={host} />}
+      {brick?.info.kind === "card" ? <div className="playground-dock"><BrickMount key={id} brick={brick} host={host} onReady={setBrickReady} /></div>
+        : brick && <BrickMount key={id} brick={brick} host={host} onReady={setBrickReady} />}
       {(brick?.info.kind === "panel" || brick?.info.kind === "input") && <p className="playground-hint">A {brick.info.kind} places itself on the page: look at its edges.</p>}
     </div>
     </SyntheticTools>

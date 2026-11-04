@@ -147,7 +147,8 @@ try {
     assert.deepEqual(world.thoughts, initial.thoughts, 'source thought records unchanged');
     assert.deepEqual(world.threads, initial.threads, 'topic records unchanged');
     assert.deepEqual(Object.keys(world.positions), ['p2'], 'no incidental positions');
-    assert.deepEqual(core.heard.filter(m => !['position', 'heartbeat', 'attention'].includes(m.type) && !(m.type === 'partner' && m.on === false)), [],
+    assert.deepEqual(core.heard.filter(m => m.type === 'email'), [{ type: 'email', on: true }], 'one default email handshake');
+    assert.deepEqual(core.heard.filter(m => !(m.type === 'email' && m.on === true) && !['position', 'heartbeat', 'attention'].includes(m.type) && !(m.type === 'partner' && m.on === false)), [],
       'no record writes beyond the explicit position (ordinary hover and partner-off handshake allowed)');
 
     if (process.env.SHOTS) {

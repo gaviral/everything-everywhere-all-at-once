@@ -14,8 +14,8 @@ const SETTLE_MS = 600;
 /** How long after a wheel, a finger, a key or a press the list's place is its reader's. */
 const HAND_MS = 400;
 
-const COUNT_CLASS = { running: "work-spine-running", waiting: "work-spine-waiting", failed: "work-spine-failed" } as const;
-const STATE_CLASS = { running: "work-spine-state-running", waiting: "work-spine-state-waiting", failed: "work-spine-state-failed", done: "work-spine-state-done" } as const;
+const COUNT_CLASS = { preparing: "work-spine-preparing", queued: "work-spine-queued", stopped: "work-spine-stopped", running: "work-spine-running", waiting: "work-spine-waiting", failed: "work-spine-failed" } as const;
+const STATE_CLASS = { preparing: "work-spine-state-preparing", queued: "work-spine-state-queued", stopped: "work-spine-state-stopped", running: "work-spine-state-running", waiting: "work-spine-state-waiting", failed: "work-spine-state-failed", done: "work-spine-state-done" } as const;
 
 /** "2 running · 1 waiting": what isn't over, or went wrong (waiting counts the questions that need you); the quiet words
  *  when nothing is. */
@@ -94,6 +94,50 @@ interface Shared {
   release: () => void;
 }
 
+type Proposal = {
+  base: string; status: "created" | "running" | "completed" | "failed" | "stopped";
+  exit_code: number | null; validation: string; no_change: boolean; truncated: boolean;
+  files: { path: string; additions: number; deletions: number; binary: boolean; truncated: boolean; withheld: boolean; diff: string }[];
+};
+const executionWords = { created: "Not started", running: "Running", completed: "Execution completed", failed: "Failed", stopped: "Stopped" };
+
+function CodingResult({ job, release }: { job: Job; release: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [result, setResult] = useState<Proposal | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    if (!open || !job.result_id) return;
+    const controller = new AbortController();
+    setResult(null); setError("");
+    fetch("/helper-result", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ result_id: job.result_id }), signal: controller.signal,
+    }).then(async (response) => {
+      if (!response.ok) throw new Error(response.status === 403 ? "Only the host can inspect this proposal." : "Proposal unavailable. Close and reopen to retry.");
+      const proposal: Proposal = await response.json();
+      if (!controller.signal.aborted) setResult(proposal);
+    }).catch((reason: unknown) => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Proposal unavailable."); });
+    return () => controller.abort();
+  }, [open, job.result_id, job.status]);
+  return <details className="work-spine-result work-spine-proposal" onToggle={(event) => {
+    setOpen(event.currentTarget.open); if (event.currentTarget.open) release();
+  }}>
+    <summary>Inspect changes</summary>
+    {open && <div className="work-spine-proposal-body" aria-live="polite">
+      {error ? <p role="alert">{error}</p> : !result ? <p>Reading proposal…</p> : <>
+        <p>{executionWords[result.status]}{result.exit_code !== null && ` · Exit ${result.exit_code}`} · {result.validation === "not_run" ? "Validation not run" : "Validation status unavailable"}</p>
+        <p className="work-spine-base">Base <code>{result.base}</code></p>
+        <p>{result.no_change ? "No changes." : `${result.files.length} files shown · proposed changes need review.`}</p>
+        {result.truncated && <p>Result truncated · file counts or text may be incomplete.</p>}
+        {result.files.map((file, i) => <section key={i} className="work-spine-file">
+          <p>{file.path} {file.withheld ? "· Private or unsupported file withheld" : file.binary ? "· Binary change · text unavailable" : `· +${file.additions} −${file.deletions}`}</p>
+          {file.diff && <pre tabIndex={0} aria-label={`Changes in ${file.path}`}>{file.diff}</pre>}
+          {file.truncated && <p>File text truncated.</p>}
+        </section>)}
+      </>}
+    </div>}
+  </details>;
+}
+
 function Bubble({ node, shared }: { node: Node; shared: Shared }) {
   const { job, kids } = node;
   const state = stateOf(job, shared.now);
@@ -115,19 +159,21 @@ function Bubble({ node, shared }: { node: Node; shared: Shared }) {
   const more = parts(tally(folded, shared.asks));
   const inside = !open && shared.latest !== null && folded.some((hidden) => hidden.id === shared.latest);
   const side = folded.length === 1 ? "job" : "jobs";
-  return <li ref={item} className="work-spine-job" data-job-id={job.id} data-status={job.status} data-fresh={shared.fresh.get(job.id)}>
+  return <li ref={item} className="work-spine-job" data-job-id={job.id} data-status={job.status} data-helper-kind={job.helper_kind} data-parent={job.parent} data-fresh={shared.fresh.get(job.id)}>
     <article className="work-spine-bubble">
       {shared.many && <p className="work-spine-by">{shared.ai(job.by) && <span className="ai-mark" aria-hidden="true">✦ </span>}{job.by}</p>}
       <p className="work-spine-job-title">{job.title}</p>
+      {job.helper_kind && !job.parent && <p className="work-spine-requested">{job.requested_count} {job.helper_kind} helpers requested</p>}
       <p className={`work-spine-state ${STATE_CLASS[job.status]}`}>
         <span className="work-spine-mark" aria-hidden="true">{state.mark || <i className="work-spine-pulse" />}</span>
         <span className="work-spine-word">{state.word}</span>
         {state.clock && <>{" "}<span className="work-spine-clock">{state.clock}</span></>}
         {shared.latest === job.id && <>{" "}<span className="work-spine-now">Just now</span></>}
       </p>
-      {job.result && (job.id.startsWith("helpers:") && job.parent && !job.title.startsWith("Coding helper") && job.status === "done"
-        ? <details className="work-spine-result"><summary>Read answer</summary><p>{job.result}</p></details>
+      {job.result && (job.id.startsWith("helpers:") && job.parent && job.helper_kind === "thinking" && job.status === "done"
+        ? <details className="work-spine-result" onToggle={(event) => { if (event.currentTarget.open) shared.release(); }}><summary>Read answer</summary><p>{job.result}</p></details>
         : <p className={shared.asks.has(job.id) ? "work-spine-question" : "work-spine-result"}>{job.result}</p>)}
+      {job.result_id && job.helper_kind === "coding" && job.parent && <CodingResult job={job} release={shared.release} />}
     </article>
     {kids.length > 0 && <>
       <button type="button" className="work-spine-fold" aria-expanded={open} aria-controls={open ? listId : undefined} onClick={() => { shared.release(); shared.toggle(job.id); }}>

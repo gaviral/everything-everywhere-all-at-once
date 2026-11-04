@@ -53,6 +53,7 @@ class PcmWriter extends AudioWorkletProcessor {
     this.muted = false;
     this.bargeIn = false;
     this.generation = 0;
+    this.resumeBuffer = [];
     this.resetProbe();
     this.port.onmessage = ({ data }) => {
       const resume = !data.muted && this.pending && data.resumeBarge === this.generation;
@@ -63,9 +64,11 @@ class PcmWriter extends AudioWorkletProcessor {
       this.resetProbe();
       // Normal end/cancel/replacement discards everything. Only an acknowledged interruption keeps its onset.
       this.frame.fill(0);
+      this.resumeBuffer = buffered;
       if (resume) {
         this.filled = 0;
-        for (const chunk of buffered) for (const sample of chunk) this.emit(sample);
+        // Release the acknowledged onset with the next audio-processing quantum.
+        // Control messages may arrive while an audio context is suspended.
       } else {
         // Clear the resampling tail at both edges of playback, keeping the frame cadence.
         this.history?.fill(0);
@@ -188,6 +191,9 @@ class PcmWriter extends AudioWorkletProcessor {
   process(inputs) {
     const samples = inputs[0] && inputs[0][0];
     if (!samples) return true;
+    const resumed = this.resumeBuffer;
+    this.resumeBuffer = [];
+    for (const chunk of resumed) for (const sample of chunk) this.emit(sample);
     if (this.step === 1) {
       for (let i = 0; i < samples.length; i++) this.write(samples[i]);
       return true;

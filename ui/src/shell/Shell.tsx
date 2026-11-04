@@ -15,16 +15,7 @@ import { KIND_NAMES, NAMES } from "./names";
 import { shown } from "../talk/call-core";
 import { Icon, Keycap, mod, modAria, Stamp, type Mode } from "./parts";
 
-/** Move the same portal target between shell and canvas; its React tree and draft stay mounted. */
-export function ToolSlot({ host }: { host: HTMLElement }) {
-  const place = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const target = place.current!;
-    target.append(host);
-    return () => { if (host.parentNode === target) host.remove(); };
-  }, [host]);
-  return <div ref={place} className="shell-tool-slot" />;
-}
+export { ToolSlot } from "../bricks/contract";
 
 const cls = (...names: (string | false | null | undefined)[]) => names.filter(Boolean).join(" ");
 
@@ -182,6 +173,7 @@ export const StatusLine = memo(function StatusLine({ state, openHistory, childre
       {hint && <><span className="shell-status-sep" aria-hidden="true" /><span className="shell-status-hint">{hint}</span></>}
     </span>
     <button type="button" className="shell-status-right" onClick={openHistory} aria-keyshortcuts="Y" title="What happened: History (Y)">
+      {!waiting && !state.queued && !state.saved && "History"}
       {[
         waiting && <span key="wait" className={cls("shell-status-wait", !!state.stalled && "shell-amber")}><i aria-hidden="true" />{waiting}</span>,
         state.queued > 0 && <span key="queued" className="shell-status-wait shell-amber"><i aria-hidden="true" />{state.queued} to send when connected</span>,
