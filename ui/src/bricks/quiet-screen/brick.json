@@ -1,0 +1,8 @@
+{
+  "id": "quiet-screen",
+  "name": "Quiet screen",
+  "does": "Lets controls fade after a quiet moment; any movement brings them back.",
+  "kind": "input",
+  "defaultOn": false,
+  "demoSafe": true
+}
