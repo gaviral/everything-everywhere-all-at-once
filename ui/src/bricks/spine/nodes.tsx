@@ -301,6 +301,14 @@ function Chips({ item, offset = 0 }: { item: Item; offset?: number }) {
   </span>;
 }
 
+function AnchorStatus({ warning, source }: { warning?: string; source?: string }) {
+  if (!warning) return null;
+  return <span className="spine-anchor-status">
+    <span role="status">{warning}</span>
+    {source && <details><summary>Original source revision</summary><span>{source}</span></details>}
+  </span>;
+}
+
 /** A margin note's entries, as a note beside the words or tucked under them. */
 function Entries({ entries, thread }: { entries: Entry[]; thread?: string }) {
   return <>{entries.map((entry, i) => <span key={i} className="spine-entry" data-thought={entry.thoughtId} data-thread={thread}>
@@ -351,7 +359,7 @@ function Point({ data }: { data: ItemData }) {
           <span className="spine-tuck-title">{`${tuck.title} · tangent`}</span>
           {tuck.entries.map((entry, i) => <span key={i} className="spine-entry-text" style={{ WebkitLineClamp: G.marginMax }}><span className="spine-speaker">{entry.who.name}: </span>{entry.text}</span>)}
         </button>
-        : <span key={tuck.margin} className="spine-tuck" data-margin={tuck.margin}><Entries entries={tuck.entries} thread={tuck.margin} /></span>)}
+        : <span key={tuck.margin} className="spine-tuck" data-margin={tuck.margin}><AnchorStatus warning={tuck.anchorWarning} source={tuck.sourceRevision} /><Entries entries={tuck.entries} thread={tuck.margin} /></span>)}
     </span>}
     <PausedSources data={data} />
     <Tools item={item} />
@@ -529,6 +537,7 @@ function Margin({ data }: { data: ItemData }) {
   if (zoomedOut) return <div className={cls("spine-margin", data.dim && "spine-dim")} aria-hidden="true"><Bars lines={(item.entries ?? []).flatMap((e) => e.lines)} line={G.marginLine} x={26} /></div>;
   return <div className={cls("spine-margin", data.dim && "spine-dim", data.fresh && "spine-fresh")} style={roomStyle(item.room)} data-margin={item.margin} role="note"
     aria-label={`A note on these words: ${(item.entries ?? []).map((e) => `${e.who.ai ? "the AI helper" : e.who.name}: ${e.text}`).join("; ")}`}>
+    <AnchorStatus warning={item.anchorWarning} source={item.sourceRevision} />
     <Entries entries={item.entries ?? []} thread={item.margin} />
     {item.more && <span className="spine-margin-more">{`${item.more} more`}</span>}
     <button type="button" className="spine-margin-reply nodrag" onClick={() => acts.reply(item)}>Reply</button>

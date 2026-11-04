@@ -6,7 +6,7 @@
 // too. `window.brickActions` is the shown brick's own actions, to try one from the console (scripts/bricks-check.mjs does).
 import { StrictMode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { noteChanges } from "../annotate-core";
+import { noteChanges, type AnchorContext } from "../annotate-core";
 import { received } from "../apps-audio";
 import { BrickMount, useBrickHost } from "../BrickSlot";
 import { discover, type BrickModule } from "../bricks-core";
@@ -153,8 +153,8 @@ function Playground() {
   };
 
   // A comment, answered with the changes the core would send (annotate.rs), by you.
-  const annotate = (thoughtId: string, quote: string, text: string) => {
-    const changes = noteChanges(world, "you", thoughtId, quote, text, Date.now(), { thread: () => `PGN${++count.current}`, thought: () => `pg-${++count.current}` });
+  const annotate = (thoughtId: string, quote: string, text: string, context?: AnchorContext) => {
+    const changes = noteChanges(world, "you", thoughtId, quote, text, Date.now(), { thread: () => `PGN${++count.current}`, thought: () => `pg-${++count.current}` }, context);
     if (!changes) { said(`annotate ${thoughtId} “${quote}” → refused: no words, or that point isn't on a topic`); return false; }
     setWorld((w) => changes.reduce<World>((at, change) => apply(at, change as Parameters<typeof apply>[1]), w));
     said(`annotate ${thoughtId} “${quote}”: “${text}” → ${changes.length > 3 ? "a new note on those words" : "a reply in their note"}`);

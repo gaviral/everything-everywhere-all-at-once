@@ -391,3 +391,6 @@
 .spine-fixes > span { display: flex; flex-wrap: wrap; margin: 0; white-space: normal; }
 
 .spine-speaker { display: block; font-size: .8em; font-weight: 600; opacity: .8; }
+
+.spine-anchor-status { display: block; font-size: 12px; line-height: 18px; margin-bottom: 8px; }
+.spine-anchor-status details { user-select: text; }

@@ -64,7 +64,7 @@ export function useBrickHost(world: World, revision: number, me: string, connect
       notify: (text) => latest.current.notify(text),
       position: (id, x, y) => latest.current.position(id, x, y),
       listen: (on) => latest.current.listen(on),
-      annotate: (thoughtId, quote, text) => latest.current.annotate(thoughtId, quote, text),
+      annotate: (thoughtId, quote, text, context) => latest.current.annotate(thoughtId, quote, text, context),
       openCatalog: (id) => latest.current.openCatalog(id),
       hint: (text, target) => latest.current.hint(text, target ?? null, info.name),
       renameTopic: (from, to) => (latest.current.renameTopic ?? renameTopic)(from, to),

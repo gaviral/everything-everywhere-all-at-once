@@ -1993,12 +1993,8 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::Job { job }) => guide::job(&core, &speaker, window, &mut pace, job),
                 Ok(ClientMsg::Answer { to, text }) => guide::answer(&core, &speaker, &mut pace, to, text),
                 // A margin note, from anyone in the room; refused, only the asker hears why (annotate.rs).
-                Ok(ClientMsg::Annotate { thought_id, quote, text, speak }) => {
-                    let result = if speak && ai {
-                        annotate::note_speaking(&core, &speaker, &thought_id, &quote, &text, true)
-                    } else {
-                        annotate::note(&core, &speaker, &thought_id, &quote, &text)
-                    };
+                Ok(ClientMsg::Annotate { thought_id, quote, text, speak, context }) => {
+                    let result = annotate::note_with_context(&core, &speaker, &thought_id, &quote, &text, speak && ai, context.as_ref());
                     if let Err(why) = result {
                         core.send_to(&speaker, ServerMsg::Notice { message: why.into() });
                     }
