@@ -1,3 +1,4 @@
+import { bindCorrectionSocket } from "./bricks/phone-correction/protocol";
 import { connectReplyFormat, receiveReplyFormat, resetReplyFormat, stopReplyFormat } from "./ReplyFormat";
 import { builtInOn, watchBuiltIns, setHelpersAvailable, featureAvailable } from "./shell/features";
 import { switchBrick, useBricksOn, isOn } from "./bricks-core";
@@ -1114,6 +1115,7 @@ export function useCore(speaker?: string) {
       const ws = openSocket(`${scheme}://${location.host}/ws`, waiting === null ? { identity: "1" } : { identity: "1", stop: String(waiting) });
       ws.binaryType = "arraybuffer";
       socket.current = ws;
+      bindCorrectionSocket(ws);
       let ended = false;
       const heartbeatId = thoughtId();
       let lastReply = Date.now();
