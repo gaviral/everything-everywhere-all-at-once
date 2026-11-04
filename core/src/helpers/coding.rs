@@ -65,6 +65,11 @@ async fn git(repo: &Path, args: &[&str]) -> anyhow::Result<String> {
     let output = Command::new("git")
         .args(args)
         .current_dir(repo)
+        // The helper's own identity, passed with -c, must beat whatever the host exports.
+        .env_remove("GIT_AUTHOR_NAME")
+        .env_remove("GIT_AUTHOR_EMAIL")
+        .env_remove("GIT_COMMITTER_NAME")
+        .env_remove("GIT_COMMITTER_EMAIL")
         .kill_on_drop(true)
         .output()
         .await

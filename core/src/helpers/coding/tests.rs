@@ -161,12 +161,16 @@ async fn acceptance(command: Option<String>) {
             .unwrap(),
             "1"
         );
-        assert_eq!(
-            git(&repo, &["log", "-1", "--format=%an <%ae>", branch])
-                .await
-                .unwrap(),
-            "E2A2O Helper <helper@example.invalid>"
-        );
+        // Both identities must stay local to the helper, even under a host's
+        // exported GIT_AUTHOR_* and GIT_COMMITTER_* environment variables.
+        for format in ["--format=%an <%ae>", "--format=%cn <%ce>"] {
+            assert_eq!(
+                git(&repo, &["log", "-1", format, branch])
+                    .await
+                    .unwrap(),
+                "E2A2O Helper <helper@example.invalid>"
+            );
+        }
     }
     assert_eq!(git(&repo, &["rev-parse", "HEAD"]).await.unwrap(), base);
     assert!(git(&repo, &["status", "--porcelain"])
