@@ -290,6 +290,8 @@ export interface MarginInput {
 }
 
 export interface LayoutInput {
+  /** New spines fill each row left to right, then start the next row. */
+  readingOrder?: boolean;
   threads: readonly Thread[];
   thoughts: readonly Thought[];
   notes: Readonly<Record<string, Note>>;
@@ -523,7 +525,7 @@ export function layout(input: LayoutInput): Layout {
 
   /** A lone aside: one point, nothing off it, not the thread you're on, not left off or decided. */
   const lone = (t: Thread) => {
-    if (input.comparePhone) return false;
+    if (input.comparePhone || input.readingOrder) return false;
     const list = ideasIn(t.id);
     const idea = list[0];
     return list.length === 1 && !(kids.get(t.id)?.length) && t.id !== active && t.id !== input.staying && t.status !== "dropped" && !idea.decided && !idea.parts.some((p) => p.unclear) &&
@@ -953,6 +955,7 @@ export function layout(input: LayoutInput): Layout {
   const masonry = (ts: Thread[], n: number) => {
     const columns: string[][] = Array.from({ length: n }, () => []);
     for (const t of ts) {
+      if (input.readingOrder) { columns[ts.indexOf(t) % n].push(t.id); continue; }
       const moment = started(t);
       let best = 0;
       let lowest = Infinity;
@@ -968,7 +971,7 @@ export function layout(input: LayoutInput): Layout {
   // laid out here; else one group of every topic, in six columns, as before.
   const named = [...new Set([...(input.topics ?? []), ...roots.map((t) => t.topic).filter((name): name is string => !!name)])]
     .filter((name) => order2.some((t) => t.topic === name));
-  const grouped = named.length >= 2;
+  const grouped = !input.readingOrder && named.length >= 2;
   const groupsIn: { name: string; ts: Thread[] }[] = grouped
     ? [...named.map((name) => ({ name, ts: order2.filter((t) => t.topic === name) })), { name: "", ts: order2.filter((t) => !t.topic || !named.includes(t.topic)) }].filter((g) => g.ts.length)
     : [{ name: "", ts: order2 }];
@@ -978,6 +981,10 @@ export function layout(input: LayoutInput): Layout {
     const groupX = x0;
     let bottomMost = 0;
     const columns = masonry(group.ts, grouped ? Math.ceil(group.ts.length / G.perColumn) : G.columns);
+    const rowTops = [0];
+    if (input.readingOrder) for (let r = 0; r < Math.max(...columns.map(list => list.length)); r++) {
+      rowTops.push(rowTops[r] + Math.max(...columns.map(list => list[r] ? rows.get(list[r])!.shape.h : 0)) + G.rowGap);
+    }
     for (const list of columns) {
       if (!list.length) continue;
       const left = Math.max(...list.map((id) => -rows.get(id)!.shape.x));
@@ -987,7 +994,7 @@ export function layout(input: LayoutInput): Layout {
       for (const id of list) {
         const { shape } = rows.get(id)!;
         // Past anything placed by hand that's in the way: down, keeping the column.
-        let top = y;
+        let top = Math.max(y, input.readingOrder ? rowTops[list.indexOf(id)] : 0);
         for (let moved = true, guard = 0; moved && guard < 100; guard++) {
           moved = false;
           for (const { box: k, topic } of keepOut) {

@@ -101,7 +101,7 @@ try {
     await focus("features");
     await shot("canvas-tools-features");
     await evaluate('document.querySelector(".canvas-tools-controls > div:nth-child(2) button:last-child").click()');
-    assert.ok(await until('!document.querySelector(".canvas-tool") && !!document.querySelector(".shell-status textarea")'), "ordinary shell restored");
+    assert.ok(await until('!document.querySelector(".canvas-tool") && !!document.querySelector("[data-map-capture=active] textarea")'), "ordinary shell restored");
     assert.ok(await until('document.activeElement === originalComposer && originalComposer.value === "Synthetic draft survives exit"'), "draft and focus survive exit");
     assert.equal(await evaluate('micStarts'), 0, "no microphone starts from treatment");
     // Enable again, reload the same profile: setting persists; no second composer or auto-mic.
@@ -113,7 +113,7 @@ try {
     assert.equal(await evaluate('document.querySelectorAll("[data-guide=composer]").length'), 1);
     await focus("features");
     await click('[data-canvas-tool=features] [data-row=canvas-tools] [role=switch]');
-    assert.ok(await until('!document.querySelector(".canvas-tool") && !!document.querySelector(".shell-status textarea")'), "Features switch restores shell");
+    assert.ok(await until('!document.querySelector(".canvas-tool") && !!document.querySelector("[data-map-capture=active] textarea")'), "Features switch restores shell");
     // Existing optional views remain usable: Show exits the Canvas-only treatment.
     if (width === 1440) {
       await evaluate('document.activeElement?.blur()'); await key("c", "KeyC", 67);
@@ -125,7 +125,7 @@ try {
       assert.ok(await until('!!document.querySelector("main[aria-label=Cards]") && !document.querySelector(".canvas-tool") && !!document.querySelector(".shell-status textarea")'), "existing Cards Show remains usable");
     }
     await page("Page.reload");
-    assert.ok(await until('!!document.querySelector(".shell-status textarea") && !!document.querySelector(".spine-ready")'));
+    assert.ok(await until('!!document.querySelector("[data-map-capture=active] textarea") && !!document.querySelector(".spine-ready")'));
     assert.equal(await evaluate('!!document.querySelector(".canvas-tool")'), false, "off survives reload");
     assert.equal(await evaluate('micStarts'), 0);
     await browser.close(); browser = null;
@@ -134,13 +134,13 @@ try {
   core.state.accepted.clear(); core.state.commits.clear(); core.state.world.active_by = {};
   core.state.world.threads = []; core.state.world.thoughts = []; core.state.world.active = null;
   browser = await openPage(`http://127.0.0.1:${core.port}/`, { width: 390, height: 844 });
-  assert.ok(await browser.until('!!document.querySelector(".shell-welcome")'));
+  assert.ok(await browser.until('!!document.querySelector("[data-map-capture=active]")'));
   await browser.evaluate('document.querySelector("[data-guide=catalog]").click()');
   assert.ok(await browser.until('!!document.querySelector("[data-row=canvas-tools] [role=switch]")'));
   await browser.evaluate('document.querySelector("[data-row=canvas-tools] [role=switch]").click()');
   assert.ok(await browser.until('!!document.querySelector(".spine-ready [data-canvas-tool=composer] textarea")'), "tools on empty map");
   await browser.evaluate('document.querySelector(".canvas-tools-controls > div:nth-child(2) button:last-child").click()');
-  assert.ok(await browser.until('!!document.querySelector(".shell-welcome") && !!document.querySelector(".shell-status textarea")'), "empty shell restored");
+  assert.ok(await browser.until('!!document.querySelector("[data-map-capture=active]") && !!document.querySelector("[data-map-capture=active] textarea")'), "empty shell restored");
   await browser.close(); browser = null;
   assert.deepEqual(errors, [], "no uncaught UI errors");
   assert.equal(core.heard.filter(m => m.type === "listen" && m.on).length, 0, "no mic starts sent");

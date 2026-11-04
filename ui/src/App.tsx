@@ -1,3 +1,5 @@
+import { CaptureContext } from "./bricks/spine/capture";
+import { micWords } from "./shell/Shell";
 import { ReplyFormat, FormattedReply } from "./ReplyFormat";
 import { createPortal } from "react-dom";
 import { FullContentProvider } from "./FullContent";
@@ -1826,6 +1828,15 @@ export default function App() {
   ];
   const tabs: RailTab[] = callOn(call) ? ["history", "catalog", "settings"] : ["talk", "history", "catalog", "settings"];
   const canvasVisible = canvasTools || talk || !(view === "palace" || view === "cards" || (viewBrick && viewBrick.info.id !== "spine"));
+  const captureInPlace = canvasVisible && !canvasTools && !talk && !brickHost.map.terse && !brickHost.map.conversationSpine && !brickHost.map.comparePhoneReading;
+  const captureState = { mic, comparison: policy.enabled, typingOnly: !listeningOn, hosted: site.hosted, since: micSince, now, call: inCall,
+    first: !world.thoughts.length, waiting: pending.length, stalled: "", queued: core.queuedCount, connected: core.connected };
+  const captureMic = micWords(captureState);
+  const shellMic = listeningOn && <MicButton state={mic} capturing={!!stopMic} disabled={!core.connected && !stopMic && !startingMic} onClick={toggleMic} shortcut={modAria("D")} />;
+  const captureSurface = captureInPlace ? { host: toolSlots.composer, micText: captureMic.text, words: core.partial || core.handoff || "", draft: !!draft,
+    rows: captures.map(capture => ({ id: capture.id, text: capture.text, thoughtIds: capture.thought_ids,
+      waiting: waitingCaptures.some(row => row.id === capture.id), status: captureLabel(capture), saved: capture.saved,
+      retry: !capture.receivedOnly && (!capture.saved || captureLabel(capture).includes("placement failed")) ? () => core.retryCapture(capture.id) : undefined })) } : null;
   return (
     <MotionConfig reducedMotion="user">
     <TextEditReviewContext.Provider value={review.context}>
@@ -1837,21 +1848,34 @@ export default function App() {
     <ShapesContext.Provider value={shapes}>
     <FullContentProvider enabled={builtIns.has("full-content")} threads={world.threads} thoughts={world.thoughts}>
     <CanvasToolsContext.Provider value={canvasTools ? { slots: toolSlots, request: toolRequest, focus: focusTool, exit: () => switchBuiltIn("canvas-tools", false) } : null}>
+    <CaptureContext.Provider value={captureSurface}>
     <StayProvider thread={world.stay_here ?? null} connected={core.connected} stay={core.stay}>
-    <div className={`app shell${canvasTools ? " canvas-tools-on" : ""}`} onClickCapture={(event) => {
+    <div className={`app shell${captureInPlace ? " capture-in-place" : ""}${canvasTools ? " canvas-tools-on" : ""}`} onClickCapture={(event) => {
       const target = event.target as HTMLElement;
       if (hasAway && !target.closest(".away") && target.closest("button, a, summary")) away.dismiss();
     }} onChangeCapture={() => { if (hasAway) away.dismiss(); }}>
       <a className="skip-link" href={`#${COMPOSER_ID}`} onClick={(event) => { event.preventDefault(); if (canvasTools) focusTool("composer"); else composerRef.current?.focus(); }}>Skip to Type a thought</a>
-      {createPortal(<form className={big ? "shell-composer shell-composer-big" : "shell-composer"} onSubmit={submit} data-guide="composer">
-          {listeningOn && <MicButton state={mic} capturing={!!stopMic} disabled={!core.connected && !stopMic && !startingMic} onClick={toggleMic} shortcut={modAria("D")} />}
+      {createPortal(<><form className={big ? "shell-composer shell-composer-big" : "shell-composer"} onSubmit={submit} data-guide="composer">
+          {captureInPlace && shellMic ? <span className="map-capture-mic">{shellMic}<span>{captureMic.text}</span></span> : shellMic}
+          {captureInPlace && !listeningOn && <span className="map-capture-mic">{captureMic.text}</span>}
           {big && <span className="shell-composer-label">{NAMES.composer.firstTap}</span>}
           <textarea rows={1} id={COMPOSER_ID} ref={composerRef} value={draft} onKeyDown={submitOnEnter} enterKeyHint="send"
             style={{ height: "1.466667em", maxHeight: "1.466667em", lineHeight: "1.466667em" }}
             onChange={(e) => { typedSinceSend.current = true; setDraft(e.target.value); }}
-            placeholder={big ? NAMES.composer.firstType : inCall ? NAMES.composer.call : NAMES.composer.idle} aria-label="Type a thought" aria-keyshortcuts="Enter" />
-          {listeningOn && <Keycap>{mod("D")}</Keycap>}
-        </form>, toolSlots.composer)}
+            placeholder={captureInPlace ? "Type a thought, or tap the mic" : big ? NAMES.composer.firstType : inCall ? NAMES.composer.call : NAMES.composer.idle} aria-label="Type a thought" aria-keyshortcuts="Enter" />
+          {captureInPlace ? <span className="map-capture-hint">Enter adds</span> : listeningOn && <Keycap>{mod("D")}</Keycap>}
+          {captureInPlace && core.noKey && <button type="button" className="shell-link map-capture-setup" aria-keyshortcuts="Enter" onClick={() => setKeyHelp(true)}>Typed thoughts save · Set up AI</button>}
+          {captureInPlace && empty && site.sample && !draft && !stopMic && !startingMic && <button type="button" className="shell-link map-capture-example" aria-keyshortcuts="E" onClick={() => loadSample()} disabled={!core.connected || waitingCaptures.length > 0}>See an example</button>}
+          {captureInPlace && captures.at(-1)?.saved && !draft && <span className="map-capture-saved" data-saved-id={captures.at(-1)?.id}>Saved</span>}
+        </form>
+          {captureInPlace && (comparison || <PartnerStatus onStopConversation={stopConversation} />)}
+          {captureInPlace && !stopMic && !core.partial && !core.handoff && !captures.some(row => row.text === core.voiceDraft) && recognizedDraft}
+          {captureInPlace && placedCapture && <div className="capture-placed map-capture-receipt" data-capture-placed={placedCapture.id}>
+            <button type="button" onClick={() => { const thought = world.thoughts.find(row => row.id === placedCapture.thought_ids[0]); if (thought?.thread_id) { core.focus(thought.thread_id); reveal(thought.thread_id, thought.id); } }}>
+              Placed in {world.threads.find(thread => thread.id === world.thoughts.find(row => row.id === placedCapture.thought_ids[0])?.thread_id)?.title ?? "your map"} · Show
+            </button>
+          </div>}
+        </>, toolSlots.composer)}
       {createPortal(<HistoryTab setupText={keyWords(site.hosted, core.keyRefused, "notice")} onSetup={core.noKey && !core.resting ? () => setKeyHelp(true) : undefined} entries={history.entries} undoId={core.latestUndoId} now={now} onUndo={undoEntry} onShow={show}
           inspectAction={bringHereOn ? (id) => world.threads.some((thread) => thread.id === id) && <button type="button" className="shell-link"
             onPointerDown={(event) => event.preventDefault()} onClick={(event) => inspectHere(id, event.currentTarget)}>{NAMES.inspectHere}</button> : undefined}
@@ -1881,7 +1905,7 @@ export default function App() {
 
       {/* Keep the ordinary Canvas mounted and dimensioned across Show; hiding cannot reset its camera effects. */}
       {ORGANIZABLE && <div className="persistent-canvas" style={{ display: "contents", visibility: canvasVisible ? "visible" : "hidden" }} inert={!canvasVisible} aria-hidden={!canvasVisible}>
-        {spine && (!empty || shapes.enabled || canvasTools) && <BrickMount brick={spine} host={brickHost} />}
+        {spine && (!empty || shapes.enabled || canvasTools || captureInPlace) && <BrickMount brick={spine} host={brickHost} />}
       </div>}
       {canvasTools && spine ? ORGANIZABLE ? null : <BrickMount brick={spine} host={brickHost} /> : !talk && view === "palace" && !empty ? <Palace threads={world.threads} active={world.active} onOpen={goBack} />
         : !talk && view === "cards" && !empty ? <main ref={mapRef} className="map" aria-label="Cards" data-guide="map">
@@ -1890,10 +1914,10 @@ export default function App() {
           </MovesProvider></TidyProvider></NotesContext.Provider>
         </main>
         : !talk && viewBrick && viewBrick.info.id !== "spine" && (!empty || view === "decisions" || viewBrick.info.id === "focused-find") ? <BrickMount brick={viewBrick} host={brickHost} />
-        : (!empty || shapes.enabled) && spine ? ORGANIZABLE ? null : <BrickMount brick={spine} host={brickHost} />
+        : (!empty || shapes.enabled || captureInPlace) && spine ? ORGANIZABLE ? null : <BrickMount brick={spine} host={brickHost} />
         : <main ref={mapRef} className="shell-main" aria-label="Your map" data-guide="map">
           {/* Before the first snapshot the world is the empty one: nothing, not a welcome to a map that isn't empty. */}
-          {core.snapshotRevision > 0 && empty && <Welcome onSetup={core.noKey && !core.resting ? () => setKeyHelp(true) : undefined} models={!core.noKey ? modelsLine(site.models) : ""} sample={site.sample && !core.listening
+          {!captureInPlace && core.snapshotRevision > 0 && empty && <Welcome onSetup={core.noKey && !core.resting ? () => setKeyHelp(true) : undefined} models={!core.noKey ? modelsLine(site.models) : ""} sample={site.sample && !core.listening
             ? <p className="shell-samples">
               <button type="button" className="shell-btn shell-sample" onClick={() => loadSample()} disabled={!core.connected || waitingCaptures.length > 0 || core.recovery.onlinePending} aria-keyshortcuts="E">See an example<Keycap>E</Keycap></button>
               <button type="button" className="shell-btn" onClick={() => loadSample("debug-break")} disabled={!core.connected || waitingCaptures.length > 0 || core.recovery.onlinePending} aria-keyshortcuts="Enter">Try an unfinished thought</button>
@@ -1924,13 +1948,13 @@ export default function App() {
         {returnPanel}
         <RecoveryPanel recovery={core.recovery} recover={core.recover} discardRecovery={core.discardRecovery} sendOnline={core.sendOnline}
           draft={draft} clearDraft={exact => setDraft(current => current === exact ? "" : current)} />
-        {waitingCaptures.length > 0 && <section className="capture-pending" aria-label="Thoughts waiting for placement">
+        {!captureInPlace && waitingCaptures.length > 0 && <section className="capture-pending" aria-label="Thoughts waiting for placement">
           {waitingCaptures.map(capture => <article className="capture-item" key={capture.id} data-capture={capture.id} data-saved={capture.saved} aria-label={`${captureLabel(capture)}: ${capture.text}`}>
             <p>{capture.text}</p><span className="capture-state">{captureLabel(capture)}</span>
             {(!capture.receivedOnly && (!capture.saved || captureLabel(capture).includes("placement failed"))) && <button className="shell-btn" type="button" onClick={() => core.retryCapture(capture.id)}>Retry</button>}
           </article>)}
         </section>}
-        {placedCapture && <div className="capture-placed" data-capture-placed={placedCapture.id}>
+        {!captureInPlace && placedCapture && <div className="capture-placed" data-capture-placed={placedCapture.id}>
           <button type="button" onClick={() => { const thought = world.thoughts.find(thought => thought.id === placedCapture.thought_ids[0]); if (thought?.thread_id) { core.focus(thought.thread_id); reveal(thought.thread_id, thought.id); } }}>
             Placed in {world.threads.find(thread => thread.id === world.thoughts.find(thought => thought.id === placedCapture.thought_ids[0])?.thread_id)?.title ?? "your map"} · Show
           </button><details><summary>Original words</summary><p>{placedCapture.text}</p></details>
@@ -1989,9 +2013,9 @@ export default function App() {
             onClick={() => { core.untidy(core.mapChange!.undo ?? []); core.restore(core.mapChange!.restore ?? []); core.hideMapChange(); }}>Undo</button>}
           <button className="shell-rail-close" onClick={core.hideMapChange} aria-label="Dismiss map update" aria-keyshortcuts="Escape"><Icon name="close" /></button>
         </div>}
-        {recognizedDraft}
+        {!captureInPlace && recognizedDraft}
           <FormattedReply />
-          {comparison || <PartnerStatus onStopConversation={stopConversation} captureActive={!!stopMic || startingMic} />}
+          {!captureInPlace && (comparison || <PartnerStatus onStopConversation={stopConversation} captureActive={!!stopMic || startingMic} />)}
         <div className="shell-captions" id="shell-caption" />
       </section>
 
@@ -1999,9 +2023,9 @@ export default function App() {
         mic, comparison: policy.enabled, typingOnly: !listeningOn, hosted: site.hosted, since: micSince, now, call: inCall,
         first: !world.thoughts.length, waiting: pending.length,
         stalled: stalled ? pendingLabel(stalled, core.placing, now, core.noKey, core.keyRefused, core.resting) : "",
-        queued: core.queuedCount, connected: core.connected, saved: !draft && !!captures.at(-1)?.saved, savedId: captures.at(-1)?.id,
+        queued: core.queuedCount, connected: core.connected, saved: !captureInPlace && !draft && !!captures.at(-1)?.saved, savedId: captures.at(-1)?.id,
       }}>
-        {!canvasTools && <ToolSlot host={toolSlots.composer} />}
+        {!canvasTools && !captureInPlace && <ToolSlot host={toolSlots.composer} />}
       </StatusLine>
       </footer>
 
@@ -2019,7 +2043,7 @@ export default function App() {
 
       {!talk && <TalkRail host={brickHost} />}
       {/* Floating features; the Notice timeline's list is History's here. */}
-      {BRICKS.filter((brick) => (brick.info.kind === "panel" || brick.info.kind === "input") && bricksOn.has(brick.info.id) && brick.info.id !== "notice-timeline")
+      {BRICKS.filter((brick) => (brick.info.kind === "panel" || brick.info.kind === "input") && bricksOn.has(brick.info.id) && brick.info.id !== "notice-timeline" && !(captureInPlace && ["tiny-transcript", "bubble-flight"].includes(brick.info.id)))
         .map((brick) => <BrickMount key={brick.info.id} brick={brick} host={brickHost} />)}
       {!talk && <Tips />}
       <Guide world={world} view={view} query={query} focus={focusMode} />
@@ -2030,6 +2054,7 @@ export default function App() {
       }} />
     </div>
     </StayProvider>
+    </CaptureContext.Provider>
     </CanvasToolsContext.Provider>
     </FullContentProvider>
     </ShapesContext.Provider>

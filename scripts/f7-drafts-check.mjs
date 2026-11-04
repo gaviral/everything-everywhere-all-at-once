@@ -75,12 +75,12 @@ async function layout(width, height, scheme = "light", enlarged = false) {
   const result = await browser.evaluate(`(() => {
     const p = document.querySelector('.draft-pocket'), r = p.getBoundingClientRect();
     const composer = document.querySelector(${JSON.stringify(input)}).getBoundingClientRect();
-    return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, composerTop: composer.top, composerBottom: composer.bottom,
+    return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, composerTop: composer.top, composerBottom: composer.bottom, composerClear: r.right<=composer.left||r.left>=composer.right||r.bottom<=composer.top||r.top>=composer.bottom,
       overflow: p.scrollWidth > p.clientWidth + 1, documentOverflow: document.documentElement.scrollWidth > innerWidth + 1,
       controls: [...p.querySelectorAll('button, textarea')].every(e => e.getBoundingClientRect().width > 0 && e.scrollWidth <= e.clientWidth + 2) };
   })()`);
   assert.ok(result.left >= 0 && result.right <= width && result.top >= 0 && result.bottom <= height, `${width}: pocket on screen: ${JSON.stringify(result)}`);
-  assert.ok(result.composerTop >= result.bottom - 1 && result.composerBottom <= height, `${width}: independent main input clear of pocket`);
+  assert.ok(result.composerClear && result.composerBottom <= height, `${width}: independent main input clear of pocket`);
   assert.equal(result.overflow || result.documentOverflow, false, `${width}: no horizontal overflow`);
   assert.equal(result.controls, true, `${width}: controls wrap without cropping`);
 }
@@ -95,7 +95,7 @@ try {
     addEventListener('unhandledrejection', e => __errors.push(String(e.reason)));
   ` });
   await browser.page("Page.navigate", { url: `http://127.0.0.1:${fixture.port}/` });
-  assert.ok(await browser.until(`!!document.querySelector(${JSON.stringify(input)}) && !!document.querySelector('.shell-welcome')`));
+  assert.ok(await browser.until(`!!document.querySelector(${JSON.stringify(input)}) && !!document.querySelector('[data-map-capture=active]')`));
   await sleep(150);
   assert.equal(await browser.evaluate(`!!document.querySelector('[data-brick="draft-pocket"]') || sessionStorage.getItem('${STORE}') !== null`), false, "fresh storage means no pocket UI or store");
   assert.equal(await browser.evaluate("performance.getEntriesByType('resource').some(r => /draft-pocket/.test(r.name))"), false, "off does not warm feature code");

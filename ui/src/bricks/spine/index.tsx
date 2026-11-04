@@ -1,3 +1,4 @@
+import { CaptureAccess, CaptureContext, CaptureView, useCaptureNodes } from "./capture";
 import { codePointOffset } from "../contract";
 // The Spine: the map as one canvas you can pan and zoom without end. Each topic is a spine of its points, oldest at
 // the top; each tangent hangs beside the point it came from (layout.ts). The camera follows what you're talking about
@@ -53,12 +54,13 @@ const cls = (...names: (string | false | undefined | null)[]) => names.filter(Bo
 const LINK_CLASS: Record<Link["kind"], string> = { spine: "spine-link-spine", branch: "spine-link-branch", pulled: "spine-link-pulled", slot: "spine-link-slot", note: "spine-link-note" };
 
 export default function Spine(props: BrickProps) {
+  const capture = useContext(CaptureContext);
   const shapes = useContext(ShapesContext);
   const tools = useContext(CanvasToolsContext);
   // Canvas tools need the flow surface; the selected Terse view returns when tools exit.
   if (props.map.terse && !FILM && !tools) return <Terse {...props} />;
   const conversation = !!props.map.conversationSpine;
-  if (!tools && !props.map.threads.length && !(conversation && props.map.thoughts.length) && !shapes?.enabled) return <p className="spine-empty">Nothing on the map yet. Say or type a thought, and its topic starts here.</p>;
+  if (!capture && !tools && !props.map.threads.length && !(conversation && props.map.thoughts.length) && !shapes?.enabled) return <p className="spine-empty">Nothing on the map yet. Say or type a thought, and its topic starts here.</p>;
   return <ReactFlowProvider key={String(conversation)}><Canvas {...props} conversation={conversation} /></ReactFlowProvider>;
 }
 
@@ -79,9 +81,10 @@ const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 
 /** Things move to their new places together, over GLIDE_MS, instead of jumping; `held` are where a hand holds them now
  *  (a drag), and the next glide starts from there. Under Reduce Motion they're at their new places at once and fade in
  *  there (`fadeIn`), so nothing slides. */
-function useGlide(layout: Layout, reduced: boolean, held: Map<string, { x: number; y: number }> | null, fadeIn: (keys: string[]) => void) {
+function useGlide(layout: Layout, reduced: boolean, seeds: Map<string, Box>, held: Map<string, { x: number; y: number }> | null, fadeIn: (keys: string[]) => void) {
   const shown = useRef(new Map<string, { x: number; y: number }>());
   const [, tick] = useState(0);
+  for (const [key, box] of seeds) if (!shown.current.has(key)) shown.current.set(key, { x: box.x, y: box.y });
   if (held) for (const [key, at] of held) shown.current.set(key, at);
   useLayoutEffect(() => {
     const from = new Map(shown.current);
@@ -190,6 +193,11 @@ function chromeOf(frameBox: DOMRect | undefined) {
 }
 
 function Canvas({ map, actions, on, destination, conversation: conversationEnabled }: BrickProps & { conversation: boolean }) {
+  const capture = useContext(CaptureContext);
+  // A hidden, retained Canvas keeps its ordering while its input temporarily belongs to another view.
+  const captureLayout = useRef(!!capture);
+  if (capture) captureLayout.current = true;
+  const readingOrder = captureLayout.current;
   const flow = useReactFlow<ItemNode>();
   const tools = useContext(CanvasToolsContext);
   const [lens, setLens] = useState<{ view: Lens; x: number; y: number }>(() => {
@@ -398,7 +406,7 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
   }), [map.positions]);
 
   // Your thoughts on their way: a slot each, under the tip of the thread you're on.
-  const slots = useMemo(() => map.thoughts.filter((t) => !t.placed && !t.thread_id && t.speaker === map.me).slice(-SLOTS_MAX).map((t) => t.id), [map.thoughts, map.me]);
+  const slots = useMemo(() => capture ? [] : map.thoughts.filter((t) => !t.placed && !t.thread_id && t.speaker === map.me).slice(-SLOTS_MAX).map((t) => t.id), [map.thoughts, map.me, !!capture]);
   const slotKey = slots.join("|");
   const threads = useMemo(() => {
     const shown = !compare && notes.anchored.size ? map.threads.filter((t) => !notes.anchored.has(t.id)) : map.threads;
@@ -408,9 +416,10 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
   const pauses = useMemo(() => (map.pauses??[]).filter(p=>p.speaker===map.me&&!p.resolved),[map.pauses,map.me]);
   const pauseCounts = useMemo(()=>{const counts=new Map<string,number>();for(const pause of pauses)counts.set(pause.thought_id,(counts.get(pause.thought_id)??0)+1);return counts;},[pauses]);
   const layoutInput = useMemo(() => ({ threads: conversation ? map.threads : threads, thoughts: map.thoughts, notes: map.notes, rooms: map.rooms, positions, shelf: shelf.items, open: open?.id ?? null,
-    me: map.me, speakers: map.speakers, active: staying ?? map.active, slots, paused: pauseCounts, landing, margins: compare ? [] : notes.margins, opened, narrow, topics: topicNames, staying, originals, comparePhone: compare, textScale }),
-  [compare, textScale, pauseCounts, conversation, map.threads, threads, map.thoughts, map.notes, map.rooms, positions, shelf.items, open?.id, map.me, map.speakers, map.active, slotKey, landing, notes.margins, opened, narrow, topicNames, staying, originals]);
+    readingOrder, me: map.me, speakers: map.speakers, active: staying ?? map.active, slots, paused: pauseCounts, landing, margins: compare ? [] : notes.margins, opened, narrow, topics: topicNames, staying, originals, comparePhone: compare, textScale }),
+  [readingOrder, compare, textScale, pauseCounts, conversation, map.threads, threads, map.thoughts, map.notes, map.rooms, positions, shelf.items, open?.id, map.me, map.speakers, map.active, slotKey, landing, notes.margins, opened, narrow, topicNames, staying, originals]);
   const layout = useMemo(() => conversation && !compare ? shiftLayout(lensLayout(layoutInput, lens.view), lens) : place(layoutInput), [conversation, layoutInput, lens]);
+  const captureNodes = useCaptureNodes(layout, map);
   // A move the map now shows, or one that never came (refused, or the core away), stops being held.
   useEffect(() => {
     const ids = Object.keys(moving);
@@ -470,7 +479,7 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
   const fadeIn = useCallback((keys: string[]) => requestAnimationFrame(() => {
     for (const key of keys) frame.current?.querySelector<HTMLElement>(`.react-flow__node[data-id="${CSS.escape(key)}"]`)?.animate?.([{ opacity: 0 }, { opacity: 1 }], { duration: FADE_MS, easing: "ease-out" });
   }), []);
-  const shown = useGlide(layout, reduced || compare, held, keys => { if (!compare) fadeIn(keys); });
+  const shown = useGlide(layout, reduced || compare, captureNodes.seeds, held, keys => { if (!compare) fadeIn(keys); });
   const at = (item: Item) => held?.get(item.key) ?? shown.get(item.key) ?? item.box;
 
   // The camera.
@@ -486,7 +495,7 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
     }
     wasInline.current = inline;
   }, [inline]);
-  const all = () => bounds(layout.items.map((item) => item.box));
+  const all = () => bounds([...layout.items.map((item) => item.box), ...(captureNodes.box ? [captureNodes.box] : [])]);
   const minZoom = useMemo(() => {
     const everything = all();
     const a = area();
@@ -494,6 +503,10 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
   }, [layout, dock, top, area, width, box?.tall]);
   /** What the follow keeps in view: your latest point, with the slots under it. */
   const goal = () => {
+    if (captureNodes.box) {
+      const free = area();
+      return { box: captureNodes.box.h <= free.y1 - free.y0 - 32 ? captureNodes.box : captureNodes.activeBox!, ring: "capture:active" };
+    }
     if (!here) return null;
     const boxes = [here.box, ...slotsHere.map((key) => layout.byKey.get(key)?.box).filter((b): b is Box => !!b)];
     // Keep the theme heading above this landing visible when the available height permits it.
@@ -519,9 +532,12 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
   useEffect(() => {
     if (ready || top === null) return;
     const g = goal();
-    const opening = narrow && !conversation && document.documentElement.classList.contains("shell2")
+    const opening = !capture && narrow && !conversation && document.documentElement.classList.contains("shell2")
       ? layout.items.find(item => item.kind === "head" && item.thread === here?.thread) : undefined;
-    if (opening) camera.aim(opening.box, { zoom: 1, instant: true, alignTop: true });
+    if (capture && !map.threads.length && captureNodes.box) {
+      const free = area();
+      void flow.setViewport({ x: (narrow ? Math.min(28, Math.max(10, (width - 300) / 2)) : 96) - captureNodes.box.x, y: free.y0 + (narrow ? 32 : 64) - captureNodes.box.y, zoom: 1 }, { duration: 0 });
+    } else if (opening) camera.aim(opening.box, { zoom: 1, instant: true, alignTop: true });
     else if (g) camera.aim(g.box, { zoom: 1, instant: true }); else camera.fit(all(), 1, minZoom, { instant: true });
     const timer = window.setTimeout(() => setReady(true), 0);
     return () => window.clearTimeout(timer);
@@ -548,7 +564,7 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
   // The canvas itself getting wider or narrower (a lane taking the page's right side, or giving it back) is a reason to
   // look again: what you're on may no longer be in the comfortable middle.
   useEffect(() => {
-    if (!inline && ready && following && here && !drag) camera.follow(() => goalNow.current());
+    if (!inline && ready && following && (here || (capture && map.thoughts.length)) && !drag) camera.follow(() => goalNow.current());
   }, [ready, following, here?.key, followBox?.x, followBox?.y, followBox?.w, followBox?.h, slotsHere.join("|"), box?.left, box?.right]);
 
   // A tangent you opened comes into view if it's out of it (on a phone, a tucked one opens beside its topic).
@@ -1044,7 +1060,7 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
       <div className="spatial-reading-mode" inert={inline} aria-hidden={inline || undefined} style={{ visibility: inline ? "hidden" : undefined }}>
       <RotationAngle.Provider value={angle}>
       <ReactFlow<CanvasNode>
-        className={cls("spine-flow", semantic && "spine-semantic")} nodes={[...nodes, ...toolNodes.nodes]} edges={[]} nodeTypes={rotationOn ? ROTATED_NODE_TYPES : NODE_TYPES} onNodesChange={(changes) => { toolNodes.change(changes); onNodesChange(changes); }}
+        className={cls("spine-flow", semantic && "spine-semantic")} nodes={[...nodes, ...toolNodes.nodes, ...captureNodes.nodes]} edges={[]} nodeTypes={rotationOn ? ROTATED_NODE_TYPES : NODE_TYPES} onNodesChange={(changes) => { toolNodes.change(changes); onNodesChange(changes); }}
         onNodeDragStart={() => { stopFollowing(); unpick(); }}
         onNodeDrag={(event, node) => {
           const shelfHot = overShelfAt(event);
@@ -1085,6 +1101,10 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
         <ZoomVar semantic={semantic} />
         <CanvasShapes />
         <CanvasToolControls hold={stopFollowing} />
+        <CaptureAccess box={captureNodes.activeBox} free={area()} reveal={() => {
+          if (captureNodes.activeBox) camera.aim(captureNodes.activeBox, { zoom: 1 });
+          capture?.host.querySelector<HTMLTextAreaElement>("textarea")?.focus({ preventScroll: true });
+        }} />
         <PhoneNavigation map={map} layout={layout} hold={stopFollowing} overview={() => { setOriginals(new Set()); setOpen(null); camera.fit(all(), 1, minZoom); }} reveal={(thread, thought, opened) => {
           stopFollowing();
           const topic = map.threads.find((t) => t.id === thread);
@@ -1142,7 +1162,7 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
   </div>;
 }
 
-const NODE_TYPES = { item: ItemView, canvasTool: CanvasToolNode };
+const NODE_TYPES = { item: ItemView, canvasTool: CanvasToolNode, capture: CaptureView };
 // React Flow pans/zooms the projected plane. Each item's contents turn around its projected origin; its native
 // drag deltas are inverse-mapped above before any action is sent to World.
 function RotatedItem(props: NodeProps<ItemNode>) {

@@ -175,7 +175,7 @@ try {
   // Honest empty state, fresh phone storage: enabling has nothing to explain and no warm request.
   emptyCore = await standInCore(() => [{ type: 'snapshot', world: empty() }]);
   browser = await openPage(`http://127.0.0.1:${emptyCore.port}/`, { width: 390, height: 844 });
-  assert.ok(await browser.until(`!!document.querySelector('.shell-welcome')`, 10000), 'empty map welcome');
+  assert.ok(await browser.until(`!!document.querySelector('[data-map-capture=active]')`, 10000), 'empty map welcome');
   await browser.evaluate(`document.querySelector('[data-guide="catalog"]').click()`);
   assert.ok(await browser.until(`!!document.querySelector(${JSON.stringify(feature)})`));
   await browser.evaluate(`document.querySelector(${JSON.stringify(feature)}).click()`);
