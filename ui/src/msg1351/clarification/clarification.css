@@ -1,0 +1,20 @@
+.clarification { color: #202c3b; background: #fffef9; border: 1px solid #c8cdd1; border-radius: 14px; padding: 20px; font: 1rem/1.6 system-ui, sans-serif; overflow-wrap: anywhere; }
+.clarification * { box-sizing: border-box; }
+.clarification header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.clarification h2, .clarification h3 { margin: 0; font-size: 1.15em; }
+.clarification button, .clarification input { font: inherit; }
+.clarification button { min-height: 44px; padding: 8px 14px; border: 1px solid #7a8993; border-radius: 8px; background: #fff; color: #202c3b; cursor: pointer; }
+.clarification button[aria-checked="true"], .clarification-actions button:first-child { background: #233e4a; color: #fff; }
+.clarification button:disabled { opacity: .6; cursor: default; }
+.clarification :focus-visible { outline: 3px solid #215ac4; outline-offset: 3px; }
+.clarification-source { white-space: pre-wrap; line-height: 1.9; }
+.clarification mark { background: #fff0ae; color: #252d31; text-decoration: underline dotted #735100 2px; text-underline-offset: 5px; padding: 2px 0; }
+.clarification-cue { font-size: .9em; color: #5c4400; margin-top: -8px; }
+.clarification-question { margin-top: 20px; padding-top: 18px; border-top: 1px solid #c8cdd1; }
+.clarification-spine { display: grid; gap: 8px; }
+.clarification input { width: 100%; min-width: 0; min-height: 44px; padding: 10px; border: 1px solid #7a8993; border-radius: 6px; color: #202c3b; background: #fff; }
+.clarification small { color: #475463; }
+.clarification-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.clarification-notice { margin-bottom: 0; }
+.clarification-caution { padding: 10px; border-left: 3px solid #886000; background: #fff0cc; }
+@media (max-width: 400px) { .clarification { padding: 14px; } .clarification-actions button { width: 100%; } }
