@@ -1,0 +1,8 @@
+{
+  "id": "care-prompts",
+  "name": "Care prompts",
+  "does": "Gentle break and water prompts, only when you want them. Kept in this tab.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": true
+}
