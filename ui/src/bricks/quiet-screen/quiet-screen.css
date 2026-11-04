@@ -1,0 +1,48 @@
+/* Presentation only: preserve geometry, tab order, accessible names and focused controls.
+   The shell's default mount scopes every rule; nothing changes when the last mount leaves. */
+html.quiet-screen-idle {
+  --quiet-chrome-opacity: 0;
+  --quiet-chrome-pointer: none;
+  --quiet-chrome-duration: 180ms;
+}
+
+html.quiet-screen {
+  :is(
+    [data-slot="top-right"],
+    [data-slot="bottom-left"],
+    [data-slot="bottom-right"],
+    .spine-corner,
+    .spine-rotation,
+    .stay-here,
+    .canvas-tools-controls,
+    .capture-return,
+    .cc-map-entry,
+    .flow-canvas-launch,
+    .flow-canvas-tools,
+    .flow-canvas-source > div,
+    .shell-status-right:not(:has(.shell-status-wait, [data-saved-id])),
+    /* No map content: keep the one entry point. A focused or live input also stays. */
+    .app.shell:has(.spine-frame [data-thread], .map [data-thread], [aria-label="Thought list"] > li)
+      .map-capture[data-map-capture="active"]:not(.map-capture-speaking):not(:has(.mic.on)),
+    .app.shell:has(.spine-frame [data-thread], .map [data-thread], [aria-label="Thought list"] > li)
+      .shell-composer:not(.map-capture .shell-composer):not(:has(.mic.on)),
+    .flow-canvas:has(.flow-canvas-grid) .flow-canvas-command:not(:has(.flow-canvas-listening))
+  ) {
+    opacity: var(--quiet-chrome-opacity, 1);
+    pointer-events: var(--quiet-chrome-pointer, auto) !important;
+    transition: opacity var(--quiet-chrome-duration, 0s) ease-out;
+
+    /* Some host controls explicitly opt children back into pointer events. */
+    & * { pointer-events: var(--quiet-chrome-pointer, auto) !important; }
+
+    &:focus-within {
+      --quiet-chrome-opacity: 1;
+      --quiet-chrome-pointer: auto;
+      transition: none;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.quiet-screen-idle { --quiet-chrome-duration: 0s; }
+}

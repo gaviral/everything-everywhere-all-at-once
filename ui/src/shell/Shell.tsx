@@ -18,6 +18,7 @@ import { SampleTools, type SampleToolsProps } from "./SampleTools";
 import { LearnedAction } from "./LearnedAction";
 import { useBuiltInsOn } from "./features";
 import { FullScreen } from "./FullScreen";
+import QuietScreen from "../bricks/quiet-screen";
 
 export { ToolSlot } from "../bricks/contract";
 
@@ -84,7 +85,7 @@ export function Find({ inputRef, query, setQuery, results, go, inspect, inspecti
 }
 
 export function TopRight({ children }: { children: ReactNode }) {
-  return <div className="shell-corner shell-tr" data-slot="top-right">{children}<FullScreen /></div>;
+  return <><QuietScreen /><div className="shell-corner shell-tr" data-slot="top-right">{children}<FullScreen /></div></>;
 }
 
 /** A corner's button keeps its name and shortcut; Features can earn a compact presentation. */
