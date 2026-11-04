@@ -15,7 +15,10 @@ export function useShellCountdownPlacement(enabled: boolean) {
     };
     // The map and gallery end above the lowest controls, so words never peek between them.
     const clearance = () => {
-      const covers = Array.from(document.querySelectorAll<HTMLElement>(".shell-stage, .shell-bl, .spine-corner, .spine-corner-row, .countdown-card"))
+      // A card positioned around canvas capture cannot also clip that capture's canvas.
+      const canvasCapture = document.querySelector('[data-map-capture="active"] .shell-composer');
+      const selectors = ".shell-stage, .shell-bl, .spine-corner, .spine-corner-row" + (canvasCapture ? "" : ", .countdown-card");
+      const covers = Array.from(document.querySelectorAll<HTMLElement>(selectors))
         .map(el => el.getBoundingClientRect()).filter(r => r.width && r.height);
       const bottom = Math.max(0, innerHeight - Math.min(innerHeight, ...covers.map(r => r.top)) + 12);
       publish("--shell-content-bottom", bottom);
