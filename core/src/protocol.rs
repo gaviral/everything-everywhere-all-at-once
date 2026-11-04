@@ -61,7 +61,8 @@ pub enum ServerMsg {
     /// The ready-to-send message card (messages.rs), to the asker's windows: `counting` with `in_ms` left (it sends
     /// when the count ends unless stopped), then `stopped`, `sent`, `dry_run` or `failed`, with `message` saying so.
     /// `live`: the end of the count really sends (else a dry run).
-    SendCard { id: u64, to: String, text: String,
+    HelpersAvailable,
+    SendCard { #[serde(default, skip_serializing_if = "Option::is_none")] purpose: Option<String>, id: u64, to: String, text: String,
         #[serde(skip_serializing_if = "crate::messages::Channel::is_messages")]
         channel: crate::messages::Channel,
         #[serde(skip_serializing_if = "String::is_empty")]
@@ -266,6 +267,7 @@ pub enum ClientMsg {
     Approve { id: String },
     /// The message card's Stop, or Esc while it counts down: it goes down unsent (messages.rs).
     StopSend { id: u64 },
+    HelpersSwitch { on: bool },
     /// The note card's Open in Notes: Notes shows the note that card saved (notes.rs). It never changes the note.
     OpenNote { id: u64 },
     /// "Try a sample map" on an empty map: fill it with the sample (sample.rs); `name` picks one of the offered
