@@ -124,8 +124,10 @@ function ExampleReadings({ reading }: { reading: boolean }) {
         phrases={reading ? ["repeat borrowing"] : []} /></p>
       <p>It tells us whether the library becomes useful after the first visit.</p>
     </ReadingCard>
+    {/* names-ok: physical community venue, not the Shared map feature */}
     <ReadingCard kind="result" title="The room is available. The permit is not." meta="Synthetic example · simulated helper · waiting"
       warnings={<p>Do not send invitations until the permit is confirmed.</p>}>
+      {/* names-ok: physical community venue, not the Shared map feature */}
       <p className="reading-format-original">The community room has space for 20 households. Permit approval is still unconfirmed.</p>
     </ReadingCard>
   </>;
