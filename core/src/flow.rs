@@ -14,7 +14,7 @@ pub struct Step { pub id: String, pub name: String, pub prompt: String }
 pub struct Pipeline { pub id: String, pub name: String, pub steps: Vec<Step> }
 impl Pipeline {
     fn validate(&self) -> anyhow::Result<()> {
-        anyhow::ensure!(!self.id.is_empty() && self.id.len() <= 80, "Invalid pipeline id");
+        anyhow::ensure!(!self.id.is_empty() && self.id.len() <= 80, "Invalid Flow id");
         anyhow::ensure!(!self.name.trim().is_empty() && self.name.chars().count() <= 80, "Use a name under 80 characters");
         anyhow::ensure!(!self.steps.is_empty() && self.steps.len() <= 6, "Use one to six boxes");
         let mut ids = std::collections::HashSet::new();
@@ -31,7 +31,7 @@ pub struct PlanRequest { command: String, current: Option<Pipeline>, selected: O
 pub async fn plan(State(core): State<Arc<Core>>, Json(request): Json<PlanRequest>) -> Json<Value> {
     let started = Instant::now();
     let result = async {
-        anyhow::ensure!(!request.command.trim().is_empty() && request.command.chars().count() <= 6000, "Describe a pipeline in under 6000 characters");
+        anyhow::ensure!(!request.command.trim().is_empty() && request.command.chars().count() <= 6000, "Describe the boxes in under 6000 characters");
         if let Some(p) = &request.current { p.validate()?; }
         let body = json!({
             "model":"muse-spark-1.3", "reasoning_effort":"minimal", "max_tokens":2400,
@@ -40,7 +40,7 @@ pub async fn plan(State(core): State<Arc<Core>>, Json(request): Json<PlanRequest
             {"role":"user","content":serde_json::to_string(&json!({"instruction":request.command,"current":request.current,"selected":request.selected}))?}]
         });
         let response = core.call_model_noting(URL, &body, Duration::from_secs(45), json!({"feature":"flow-plan"})).await?;
-        let text = response["choices"][0]["message"]["content"].as_str().ok_or_else(|| anyhow::anyhow!("No pipeline returned"))?;
+        let text = response["choices"][0]["message"]["content"].as_str().ok_or_else(|| anyhow::anyhow!("No boxes returned"))?;
         let mut pipeline: Pipeline = serde_json::from_str(text)?;
         if let Some(old) = request.current { pipeline.id = old.id; } else { pipeline.id = uuid::Uuid::new_v4().to_string(); }
         pipeline.validate()?;
@@ -48,7 +48,7 @@ pub async fn plan(State(core): State<Arc<Core>>, Json(request): Json<PlanRequest
     }.await;
     match result {
         Ok(pipeline) => Json(json!({"pipeline":pipeline,"ms":started.elapsed().as_millis()})),
-        Err(error) => Json(json!({"error":format!("Couldn't build the pipeline: {error}"),"ms":started.elapsed().as_millis()})),
+        Err(error) => Json(json!({"error":format!("Couldn't prepare the boxes: {error}"),"ms":started.elapsed().as_millis()})),
     }
 }
 #[derive(Deserialize)]
