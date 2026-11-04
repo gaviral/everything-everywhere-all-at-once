@@ -38,6 +38,21 @@
 .spine-flow { position: absolute; inset: 0; --xy-background-color: transparent; mask-image: linear-gradient(to bottom, transparent, #000 18px); }
 .spine-grid { --xy-background-pattern-color: color-mix(in srgb, var(--ink) 10%, transparent); }
 
+/* Projected node origins and link geometry share rotation.ts's coordinate system. Only the item's content turns:
+   the shell, shelf, rotation controls and browser popovers remain in screen space. No invisible unrotated hit box. */
+.spine-rotating .react-flow__node { pointer-events: none; }
+.spine-rotated-item { width: 100%; height: 100%; transform-origin: 0 0; pointer-events: auto; }
+.spine-rotation { position: absolute; z-index: 6; top: 60px; left: 50%; transform: translateX(-50%);
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; width: max-content; max-width: calc(100% - 32px);
+  box-sizing: border-box; padding: 8px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); color: var(--ink); font-size: 13px; }
+.spine-rotation label { display: flex; align-items: center; gap: 6px; }
+.spine-frame .spine-rotation input { box-sizing: border-box; width: 76px; min-height: 40px; padding: 4px 6px;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); font: inherit; }
+.spine-frame .spine-rotation button { min-height: 40px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--bg); color: var(--ink); font: inherit; cursor: pointer; }
+.spine-rotation span { flex-basis: 100%; color: var(--muted); font-size: 11px; line-height: 16px; }
+.spine-rotation :is(input, button):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 /* Semantic zoom: the layout stays put. One zoom subscription sets the blend and inverse scale;
    panning only moves React Flow's viewport, without rerendering the thoughts. */
 .spine-semantic-item, .spine-semantic-detail { position: relative; width: 100%; height: 100%; }

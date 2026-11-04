@@ -1,0 +1,20 @@
+[
+  {
+    "source_file": "src/core_lazy.rs",
+    "source_sha256": "dfb195f44a62b19a32542297edfd281bc40837e48905603dfec20d62b12711d0",
+    "line": 1,
+    "text": "// Copyright 2016 lazy-static.rs Developers\n//\n// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or\n// https://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or\n// https://opensource.org/licenses/MIT>, at your option. This file may not be\n// copied, modified, or distributed except according to those terms.\n"
+  },
+  {
+    "source_file": "src/inline_lazy.rs",
+    "source_sha256": "cd8a9babcc3af7d0d39f9874dc575a1da000f0d6048a66296f3ca197c2c00b46",
+    "line": 1,
+    "text": "// Copyright 2016 lazy-static.rs Developers\n//\n// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or\n// https://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or\n// https://opensource.org/licenses/MIT>, at your option. This file may not be\n// copied, modified, or distributed except according to those terms.\n"
+  },
+  {
+    "source_file": "src/lib.rs",
+    "source_sha256": "9478f4130a4dca55df412267b892717047555e3da4d23ea4eae24c5e40b5e027",
+    "line": 1,
+    "text": "// Copyright 2016 lazy-static.rs Developers\n//\n// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or\n// https://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or\n// https://opensource.org/licenses/MIT>, at your option. This file may not be\n// copied, modified, or distributed except according to those terms.\n"
+  }
+]

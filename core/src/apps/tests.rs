@@ -105,7 +105,7 @@ async fn nothing_runs_unasked_until_the_person_switches_an_app_on() {
 fn an_earlier_builds_volume_watcher_moves_to_this_scale_and_keeps_its_choices() {
     let fixture = Fixture::new();
     seed(&fixture.core, true);
-    // As a build before the measured scale left it, switched off and set to the card alone.
+    // As a build before the provisional scale left it, switched off and set to the card alone.
     let mut old = seeds(true).remove(1);
     old.watcher = Watcher::Volume { level: 0.15, seconds: 3 };
     fixture.core.commit(vec![Change::AppRemoved { id: old.id.clone() }, Change::AppRegistered { app: old },
@@ -125,7 +125,7 @@ fn an_earlier_builds_volume_watcher_moves_to_this_scale_and_keeps_its_choices() 
 }
 
 #[test]
-fn loud_voices_are_held_long_enough_that_normal_speech_cant_set_them_off() {
+fn volume_drafts_enforce_the_provisional_sustained_duration() {
     let held = |level: f64, seconds: u64| {
         let answer = json!({"match_id":"", "cannot":"", "instead":"", "app": {"name":"Loud tune", "purpose":"Play a silly tune when voices get loud.",
             "watcher":{"kind":"volume","level":level,"seconds":seconds}, "prompt":null, "publishers":[{"kind":"sound"}], "cooldown_secs":60}});
@@ -774,4 +774,63 @@ fn in_a_room_an_app_hears_who_said_what() {
 #[test]
 fn running_or_finding_an_app_is_never_told_as_building_one() {
     assert_eq!([feature("AppSpec"), feature("AppSearch"), feature("AppOutput")], ["app", "app search", "app run"]);
+}
+
+
+#[test]
+fn calibration_replay_contract_covers_shared_cooldown() {
+    // Synthetic readings: the matching offline fixture proves semantics, not acoustic thresholds.
+    for separate_sources in [false, true] {
+        let mut states = HashMap::new();
+        let mut last_run = 0;
+        let mut triggers = Vec::new();
+        for i in 1..=51_u64 {
+            let now = 100_000 + i * 320;
+            let source = if separate_sources { i % 2 } else { 0 };
+            let state = states.entry(source).or_insert((0, now, false));
+            if feed_volume(state, now, true, 3) {
+                *state = (now, now, false);
+                if now - last_run >= 10_000 { triggers.push(now - 100_000); last_run = now; }
+            }
+        }
+        assert_eq!(triggers, vec![3520, 16320], "sources separate: {separate_sources}");
+    }
+}
+
+#[test]
+fn a_custom_saved_volume_seed_keeps_its_threshold_duration_and_output() {
+    let fixture = Fixture::new();
+    seed(&fixture.core, false);
+    let mut custom = seeds(false).remove(1);
+    custom.watcher = Watcher::Volume { level: 0.23, seconds: 7 };
+    custom.enabled = true;
+    custom.cooldown_secs = 67;
+    custom.publishers = vec![Publisher::Card { text: "Custom quiet card".into() }];
+    fixture.core.commit(vec![Change::AppRemoved { id: custom.id.clone() }, Change::AppRegistered { app: custom }]);
+    seed(&fixture.core, false);
+    let (_, loaded) = Journal::open(&fixture.path).unwrap();
+    let a = loaded.apps.iter().find(|a| a.id == "app-volume").unwrap();
+    assert!(matches!(a.watcher, Watcher::Volume { level: 0.23, seconds: 7 }));
+    assert!(a.enabled);
+    assert_eq!(a.cooldown_secs, 67);
+    assert!(matches!(&a.publishers[..], [Publisher::Card { text }] if text == "Custom quiet card"));
+}
+
+#[tokio::test]
+async fn volume_cooldown_suppresses_publication_but_resets_the_due_streak() {
+    let fixture = Fixture::new();
+    seed(&fixture.core, false);
+    toggle(&fixture.core, "app-volume".into(), true);
+    let now = now_ms();
+    fixture.core.commit(vec![Change::AppRan { id: "app-volume".into(), at_ms: now }]);
+    fixture.core.apps.state.lock().unwrap().volume.insert(("mic".into(), "app-volume".into()), (now - 4000, now, false));
+    volume(&fixture.core, "mic", 0.2);
+    tokio::task::yield_now().await;
+    assert!(fixture.core.snapshot().suggestions.is_empty(), "cooldown blocks another publication");
+    let state = fixture.core.apps.state.lock().unwrap().volume[&("mic".into(), "app-volume".into())];
+    assert!(state.0 >= now && !state.2, "a due streak resets even during cooldown");
+    fixture.core.commit(vec![Change::AppRan { id: "app-volume".into(), at_ms: 0 }]);
+    volume(&fixture.core, "mic", 0.2);
+    tokio::task::yield_now().await;
+    assert!(fixture.core.snapshot().suggestions.is_empty(), "the reset streak needs a new sustained stretch");
 }

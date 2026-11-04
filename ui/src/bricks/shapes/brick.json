@@ -1,0 +1,8 @@
+{
+  "id": "shapes",
+  "name": "Shapes",
+  "does": "Place and adjust a rounded rectangle on Canvas, for this visit only.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": true
+}

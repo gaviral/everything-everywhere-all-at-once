@@ -34,3 +34,13 @@
   .level-chart { height: 48px; }
   .level-help { display: none; }
 }
+
+.level-meter { max-height: calc(100dvh - var(--dock-height, 120px) - 32px); overflow-y: auto; }
+.level-calibration { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+.level-calibration summary { cursor: pointer; color: var(--ink); }
+.level-calibration p { line-height: 1.4; }
+.level-calibration fieldset { margin: 8px 0; padding: 8px; border: 1px solid var(--line); }
+.level-calibration label { display: flex; flex-direction: column; gap: 3px; margin-bottom: 7px; }
+.level-calibration input, .level-calibration select { width: 100%; min-width: 0; box-sizing: border-box; font: inherit; padding: 5px; }
+.level-calibration button { font: inherit; margin: 3px 4px 3px 0; padding: 6px; }
+.level-calibration button:disabled { opacity: .5; }

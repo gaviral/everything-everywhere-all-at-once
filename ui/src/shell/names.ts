@@ -20,6 +20,8 @@ export const NAMES = {
   close: "Close",
   backToMap: "Back to the Canvas",
   show: "Show",
+  inspectHere: "Inspect here",
+  openOriginal: "Open original",
   tabs: { talk: "Talk", history: "History", catalog: "Features", settings: "Settings" },
   composer: { idle: "Type a thought · Enter adds it", firstTap: "Tap to talk", firstType: "or type a thought", call: "Type to the call" },
   held: { label: "Held for a pause", asks: "asks when you stop", answer: "Answer", later: "Later" },
@@ -58,13 +60,18 @@ export type FeatureName = { name: string; aka?: string; does?: string; lives?: s
 /** The app's features by id (a feature's folder name, or a built-in's own id): what the shell calls each. A feature
  *  missing here shows its brick.json name and line. */
 export const FEATURE_NAMES: Record<string, FeatureName> = {
+  terse: { name: "Terse", does: "Read short nested lines; tap any line for its complete original.", lives: "The Canvas" },
+  "bring-here": { name: "Bring here", does: "Inspect a live topic beside Find or History without moving the Canvas. Open original goes to its place.", lives: "Find and History" },
+  "full-content": { name: "Full content", does: "Inspect complete topic titles, recognized words and displayed points on a separate canvas, with optional wrapping.", lives: "Canvas actions" },
   // Built in: switched here, as the features are.
   email: { name: "Email", does: "Email an allowed contact from this laptop after a countdown you can stop. Say ‘Email Mia that the cut is ready’.", lives: "Above your words" },
   helpers: { name: "Thinking helpers", does: "Say ‘put five helpers on the pitch’. Stop during the countdown; read their answers in Work spine.", lives: "Work spine and the topic" },
+  "canvas-tools": { name: "Canvas tools", does: "Move Type a thought, Features and History onto the Canvas. Focus a tool to read it; Exit restores the ordinary shell.", lives: "The Canvas" },
   partner: { name: "Conversation partner", does: "E2A2O answers explicit questions with short spoken replies using Meta. Say ‘Partner, …’ for a follow-up. Cancel a reply at any time.", lives: "Beside your words and in Talk" },
   cards: { name: "Cards", aka: "List view", does: "Every topic as a card of its points, in a list you scroll and search.", lives: "A view" },
   pictures: { name: "Pictures", aka: "Gallery", does: "Every topic as its picture, side by side.", lives: "A view" },
   "semantic-zoom": { name: "Semantic zoom", aka: "Readable overview", does: "Zoom out to topic titles and thought counts; zoom in to read the thoughts.", lives: "The Canvas" },
+  "rotate-canvas": { name: "Rotate canvas", does: "Turn your view with Angle and Reset, or a rotation gesture in browsers that expose one. Thoughts keep their world positions.", lives: "The Canvas" },
   listening: { name: "Listening", aka: "Voice input", does: "The mic: tap it or press ⌘D, and your words land as you talk.", lives: "The input box" },
   recap: { name: "Recap", aka: "Summary", does: "A short summary of this session, on R or “recap”.", lives: "Top right" },
   import: { name: "Import chats", aka: "Import", does: "Brings an exported chat in as thoughts on your map.", lives: "Top right" },
@@ -73,7 +80,7 @@ export const FEATURE_NAMES: Record<string, FeatureName> = {
   countdown: { name: "Deadlines", aka: "Countdown", does: "Keeps upcoming deadlines in view and lets you add or change them.", lives: "Above the camera" },
   spine: { name: "Canvas", aka: "One big board", does: "Your talk as a canvas: each topic a column, tangents beside their words.", lives: "The map" },
   // names-ok: the chronological presentation is distinct from the existing Canvas feature.
-  "conversation-spine": { name: "Conversation spine", does: "Keep turns in time order on the Canvas, with automatic topics linked beside them. Turn off to compare the current layout.", lives: "The Canvas" },
+  "conversation-spine": { name: "Conversation spine", does: "See each session in Time, or the same thoughts in Topics. Turn off to compare the current layout.", lives: "The Canvas" },
   "bubble-flight": { name: "Fly-in", aka: "Words fly to their place", does: "Carries your words from the input box to the topic where they land.", lives: "The Canvas" },
   "tiny-transcript": { name: "Tiny transcript", aka: "Small live words, compact transcript", does: "Your words as you say them, very small, at the bottom.", lives: "The status line" },
   "notice-timeline": { name: "Notification history", aka: "Recent notices", does: "Every notice kept, each with what takes it back.", lives: "History" },

@@ -17,7 +17,8 @@ function FollowIcon() {
   </svg>;
 }
 
-export function Corner({ following, title, stop, narrow, follow, seeAll, choose }: {
+export function Corner({ following, title, stop, narrow, follow, seeAll, choose, lens, switchLens }: {
+  lens?: "time" | "topics"; switchLens?(view: "time" | "topics"): void;
   following: boolean; title: string; stop: Stop; narrow: boolean;
   follow(): void; seeAll(): void; choose(stop: Stop): void;
 }) {
@@ -28,9 +29,13 @@ export function Corner({ following, title, stop, narrow, follow, seeAll, choose 
     {title && !narrow && <><span className="spine-follow-sep" aria-hidden="true">·</span><span className="spine-follow-title">{title}</span></>}
     {!narrow && <kbd className="spine-key">F</kbd>}
   </button>;
-  if (narrow) return <>{!following && followButton}<button type="button" className="spine-pill" onClick={seeAll} title="See everything (0)">See all</button></>;
+  const lenses = lens && <div className="spine-lenses spine-stops" role="group" aria-label="Organize thoughts">
+    {(["time", "topics"] as const).map(view => <button key={view} type="button" className="spine-stop" aria-pressed={lens === view} onClick={() => switchLens?.(view)}>{view === "time" ? "Time" : "Topics"}</button>)}
+  </div>;
+  if (narrow) return <>{lenses}{!following && followButton}<button type="button" className="spine-pill" onClick={seeAll} title="See everything (0)">See all</button></>;
   return <div className="spine-camera" role="group" aria-label="Camera">
     <div className="spine-camera-row">
+      {lenses}
       <div className="spine-stops" role="group" aria-label="Zoom stops">
         {STOPS.map((s) => <button key={s.stop} type="button" className="spine-stop" aria-pressed={stop === s.stop} onClick={() => choose(s.stop)} title={`${s.label}: ${s.does} (${s.key})`}>
           {s.label}<kbd className="spine-key">{s.key}</kbd>

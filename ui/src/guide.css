@@ -190,6 +190,13 @@
 .guide-held-text { margin: 4px 0 8px; font-size: 15px; line-height: 21px; overflow-wrap: anywhere; }
 .guide-held-acts { display: flex; gap: 8px; }
 .guide-held-acts .guide-btn { height: 28px; padding: 0 10px; font-size: 12px; }
+/* A question that reads "A, or B?" (Guide.tsx `HeldCard`): its two answers as the stage's caption offers them, one above the other
+   so each keeps its words whole in the card's width, above Answer and Later. No keys on them: 1 and 2 zoom the canvas until a
+   question is asked. */
+.guide-held-choices { display: flex; flex-direction: column; gap: 6px; margin: 0 0 8px; }
+.guide-held-choices .guide-btn.guide-choice { width: 100%; min-height: 32px; padding: 5px 12px; font-size: 13px; line-height: 18px; }
+.guide-held-choices .guide-choice-words { text-wrap: balance; }
+.guide-held-card .guide-problem { margin: 0 0 8px; }
 /* One thing at a time: the next in line shows; the rest are a count that opens them. */
 .guide-held-more {
   align-self: flex-end;

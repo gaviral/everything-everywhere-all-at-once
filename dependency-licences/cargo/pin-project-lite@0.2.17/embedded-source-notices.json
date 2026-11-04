@@ -1,0 +1,242 @@
+[
+  {
+    "source_file": "src/lib.rs",
+    "source_sha256": "09a84ff233021dabb75200ef71ebcb1c5a47c94484ce294ef5dcf43797873ba4",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/auxiliary/mod.rs",
+    "source_sha256": "52a78b77be05c67737c56865fbce4477eaacc6482d6377af2a5822f05a2ce061",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/compiletest.rs",
+    "source_sha256": "48cfd92c7271345d57a6c222a7a61e00449f38e6ba379130813c45b31a5589c9",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/drop_order.rs",
+    "source_sha256": "9b13b6461e44be1c1beca6ec47387de83efcb988326e4ff832183b8fad17a3f4",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/expand/default/enum.rs",
+    "source_sha256": "ebe6b6403e35459420f6fe979243c382972d2d582376d69f6c630ab5ba2599b5",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/expand/default/struct.rs",
+    "source_sha256": "05767cd68ec5cddc481cff5ad677b5146f7d6fd1effcf1ff131d24c334d85032",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/expand/multifields/enum.rs",
+    "source_sha256": "d38eb301c86307edbf5cb07ed434b64a10a68aaef32dfb8b15029b5cc5586b0b",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/expand/multifields/struct.rs",
+    "source_sha256": "1fe2b911e8782eaac5952d9e0914473d46d82db45b1da859bdc6b8dc3978e549",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/expand/naming/enum-all.rs",
+    "source_sha256": "ebe6b6403e35459420f6fe979243c382972d2d582376d69f6c630ab5ba2599b5",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/expand/naming/enum-mut.rs",
+    "source_sha256": "bf215d055b29a7f9fdb84cabf34576d9dec8e87c33cebe2b553d1fe5e5cb0882",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/expand/naming/enum-none.rs",
+    "source_sha256": "115968816e1a1a6b3634b8594dde4815d4641d817d69ebdd90879b96a8a2808e",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/expand/naming/enum-ref.rs",
+    "source_sha256": "e09ce2ca812b9fcf7dc59b486e5b50b84db08860a2ceda63ba094d7351bb391f",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/expand/naming/struct-all.rs",
+    "source_sha256": "0d6b64bc687fbc19329a5558461329e3d2cfa367ff8adb7be76efe2d3160d33e",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/expand/naming/struct-mut.rs",
+    "source_sha256": "36edd8db816c122c80ccb139b4305cad8edfdf9b7ee4aebacafa1180613a5075",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/expand/naming/struct-none.rs",
+    "source_sha256": "05767cd68ec5cddc481cff5ad677b5146f7d6fd1effcf1ff131d24c334d85032",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/expand/naming/struct-ref.rs",
+    "source_sha256": "dd249875f962d16dd9ec821acf0c2b5c1ed0ed05569f6e874ccd5caca2759acf",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/expand/not_unpin/enum.rs",
+    "source_sha256": "c65aac4d2083e83d2dfc3bec8ce243e3e9169ef5f986f077f0a8b4226d39f7c3",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/expand/not_unpin/struct.rs",
+    "source_sha256": "99d77727393e4a050d2ceb99710172dfdd13dfcb6e6416f63de39e5df3a9f03f",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/expand/pinned_drop/enum.rs",
+    "source_sha256": "8f590791cb4693bb077c562f0d93128f9452e6a5f60c631b5fd624a221883ebd",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/expand/pinned_drop/struct.rs",
+    "source_sha256": "8da271d7d3182b33be297d985a1e3b57d6067406db21eca8ac2c448ef1a0869a",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/expand/pub/enum.rs",
+    "source_sha256": "fdbd806e92cfad4e67737d1f782544aa4e3116bae702161c43b5c22bfbf3a208",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/expand/pub/struct.rs",
+    "source_sha256": "05cb3f03ef9801fecf0a7c86bbd236c97218b34ac01ee507cb7de9a78efaeffa",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/expandtest.rs",
+    "source_sha256": "a4336ab879d79824ab3144ea385a7a00ba77604c3b6639ae53b6283850b421df",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/include/basic.rs",
+    "source_sha256": "8c06c765c92d696284dde5b4762488100ce0ee1661ead307023a85d5c82d8ddc",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/proper_unpin.rs",
+    "source_sha256": "83790eb38ae2fd5aed97fc67da79d91c1071f08d1e5aaef0c71e65d8b5767403",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/test.rs",
+    "source_sha256": "3bfff987a820770bd0126656a77871d5609f21c9c3b6825bd1606561aa37b572",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/ui/not_unpin/conflict-unpin.rs",
+    "source_sha256": "23c7e081d86f2000838c32844dce1eee98d1b118eb1a29daf65c705aad5c68fb",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/ui/not_unpin/negative_impls_stable.rs",
+    "source_sha256": "f014d5398d505ca5f482905cb9597a2d5fced563b9350229468c3751dd7f92ae",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/ui/pin_project/conflict-drop.rs",
+    "source_sha256": "a1964fa136080cc354479ff55b8428e5fa79305681fb2475cc37d6071cd64112",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/ui/pin_project/conflict-unpin.rs",
+    "source_sha256": "37e7b2f9ab1be70d0521c9dbbc954067f22a2321511e008f0f72e13d0edb4afe",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/ui/pin_project/invalid-bounds.rs",
+    "source_sha256": "4068e272a4f5d44851e0901dd6cfa806ead000c2e1a507a2b42be51d26d17056",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/ui/pin_project/invalid.rs",
+    "source_sha256": "1c84cc089623dd31f483011ed6543f169af341b028a212fcf00146bc96dd792f",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/ui/pin_project/negative_impls_stable.rs",
+    "source_sha256": "1e70055fbec4bc0a53454fd93a0663f8785440d37dcf359ab29958d97fd51e9d",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/ui/pin_project/overlapping_lifetime_names.rs",
+    "source_sha256": "ac9c29b389e8e067e9e384cf04be69c0e5bb862cf373de0e3b4296fe2007809b",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/ui/pin_project/overlapping_unpin_struct.rs",
+    "source_sha256": "cb3d6d4087b8b4c917bc71e55764775f6bb018a77cda5c6b726afacd66789859",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/ui/pin_project/packed.rs",
+    "source_sha256": "6a24ac14e61e5d3e3b495f49d226318ec500e5aa46f34acf8e4f3e0827bd9604",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/ui/pin_project/unpin_sneaky.rs",
+    "source_sha256": "6e6385e067679c3bf5233163b3fa99ff2fc28bcb93fe594a5c987c0db7c0eaa6",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/ui/pin_project/unsupported.rs",
+    "source_sha256": "3ad5f584f9e56be3573133fba026a7bb378595d0a4b7b1bcbb6b78e37cef20a7",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/ui/pinned_drop/call-drop-inner.rs",
+    "source_sha256": "0618b60a450c99b5953b302e26c68df1abe7632af3d9baf3639eb60091e4ff4e",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  },
+  {
+    "source_file": "tests/ui/pinned_drop/conditional-drop-impl.rs",
+    "source_sha256": "df03f38b2a331f339af2734fdd4ad2f637b2e2189d9928599adebe04ebee517f",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: Apache-2.0 OR MIT\n"
+  }
+]

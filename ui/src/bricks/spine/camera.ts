@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Box } from "./layout";
 import { READ } from "./nodes";
 import { FILM, connectFilmCamera, filmHeld, type FilmOptions, type FilmTarget } from "./film";
+import { anchorAt, screenBounds, screenToWorld, worldToScreen } from "./rotation";
 
 export type Viewport = { x: number; y: number; zoom: number };
 /** What the camera needs of React Flow's instance. */
@@ -33,7 +34,7 @@ const AIM = 0.55;
 const COMFORT = { left: 0.08, right: 0.92, top: 0.1, bottom: 0.8 };
 export const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
 
-export function useCamera(flow: Flow, area: () => Area, reduced: boolean, pane: () => HTMLElement | null, node?: (key: string) => Box | undefined) {
+export function useCamera(flow: Flow, area: () => Area, reduced: boolean, pane: () => HTMLElement | null, node?: (key: string) => Box | undefined, angle = 0) {
   /** When the camera last moved, and the follow's move waiting out its spacing. */
   const last = useRef(0);
   const waiting = useRef(0);
@@ -87,13 +88,14 @@ export function useCamera(flow: Flow, area: () => Area, reduced: boolean, pane: 
     const w = a.x1 - a.x0, h = a.y1 - a.y0;
     // How far what's in the middle of the view travels on screen.
     const cx = (a.x0 + a.x1) / 2, cy = (a.y0 + a.y1) / 2;
-    const fx = (cx - was.x) / was.zoom, fy = (cy - was.y) / was.zoom;
-    const tx = fx * next.zoom + next.x - cx, ty = fy * next.zoom + next.y - cy;
+    const center = screenToWorld({ x: cx, y: cy }, { ...was, angle });
+    const to = worldToScreen(center, { ...next, angle });
+    const tx = to.x - cx, ty = to.y - cy;
     const zoomed = Math.abs(Math.log(next.zoom / was.zoom));
     if (zoomed < 0.05 && (Math.abs(tx) > w || Math.abs(ty) > h)) { crossFade(next); return; }
     const travel = Math.hypot(tx, ty) + zoomed * 400;
     void flow.setViewport(next, { duration: Math.round(Math.min(GLIDE_MAX, GLIDE_MIN + travel * 0.3)), ease, interpolate: "linear" });
-  }, [flow, area, reduced, crossFade, flash]);
+  }, [flow, area, reduced, crossFade, flash, angle]);
 
   /** Where `box` goes on screen: across the middle, `AIM` down the free part; at `zoom`, else reading size if far out. */
   const viewFor = useCallback((box: Box, zoom?: number): Viewport => {
@@ -102,8 +104,8 @@ export function useCamera(flow: Flow, area: () => Area, reduced: boolean, pane: 
     const z = zoom ?? (was.zoom < READ ? 1 : was.zoom);
     // A box taller than the free part shows its top: the tip, with its slot under it.
     const h = Math.min(box.h, (a.y1 - a.y0) * 0.6 / z);
-    return { x: (a.x0 + a.x1) / 2 - (box.x + box.w / 2) * z, y: a.y0 + (a.y1 - a.y0) * AIM - (box.y + h / 2) * z, zoom: z };
-  }, [flow, area]);
+    return anchorAt({ x: box.x + box.w / 2, y: box.y + h / 2 }, { x: (a.x0 + a.x1) / 2, y: a.y0 + (a.y1 - a.y0) * AIM }, z, angle);
+  }, [flow, area, angle]);
 
   /** Puts `box` where you'd look for it, at once (the opening frame) or as a move. */
   const aim = useCallback((box: Box, options: { zoom?: number; ring?: string; instant?: boolean } = {}) => {
@@ -120,20 +122,22 @@ export function useCamera(flow: Flow, area: () => Area, reduced: boolean, pane: 
     window.clearTimeout(waiting.current);
     const a = area();
     const w = a.x1 - a.x0, h = a.y1 - a.y0;
-    const zoom = Math.max(least, Math.min(most, (w - 64) / Math.max(box.w, 1), (h - 64) / Math.max(box.h, 1)));
-    const next = { x: (a.x0 + a.x1) / 2 - (box.x + box.w / 2) * zoom, y: (a.y0 + a.y1) / 2 - (box.y + box.h / 2) * zoom, zoom };
+    const rotated = screenBounds(box, { x: 0, y: 0, zoom: 1, angle });
+    const zoom = Math.max(least, Math.min(most, (w - 64) / Math.max(rotated.w, 1), (h - 64) / Math.max(rotated.h, 1)));
+    const next = anchorAt({ x: box.x + box.w / 2, y: box.y + box.h / 2 }, { x: (a.x0 + a.x1) / 2, y: (a.y0 + a.y1) / 2 }, zoom, angle);
     if (options.instant) { last.current = Date.now(); void flow.setViewport(next, { duration: 0 }); return; }
     move(next);
-  }, [area, move, flow]);
+  }, [area, move, flow, angle]);
 
   /** Whether `box` sits in the comfortable middle, at reading size. */
   const comfortable = useCallback((box: Box) => {
     const a = area();
     const w = a.x1 - a.x0, h = a.y1 - a.y0;
-    const { x, y, zoom } = flow.getViewport();
-    const sx = box.x * zoom + x - a.x0, sy = box.y * zoom + y - a.y0;
-    return zoom >= READ && sx >= w * COMFORT.left && sx + box.w * zoom <= w * COMFORT.right && sy >= h * COMFORT.top && sy + Math.min(box.h * zoom, h * 0.6) <= h * COMFORT.bottom;
-  }, [area, flow]);
+    const view = flow.getViewport();
+    const b = screenBounds(box, { ...view, angle });
+    const sx = b.x - a.x0, sy = b.y - a.y0;
+    return view.zoom >= READ && sx >= w * COMFORT.left && sx + b.w <= w * COMFORT.right && sy >= h * COMFORT.top && sy + Math.min(b.h, h * 0.6) <= h * COMFORT.bottom;
+  }, [area, flow, angle]);
 
   /** The follow: `target()` (asked when the move is due, so it's the latest) into the comfortable middle, if it left it;
    *  spaced at least SPACING_MS from the camera's last move. */

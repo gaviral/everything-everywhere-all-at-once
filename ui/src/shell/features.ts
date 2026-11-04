@@ -5,9 +5,13 @@ import { useSyncExternalStore } from "react";
 import { talkOn, watchTalk } from "../talk-preset";
 import type { BrickKind } from "../bricks/contract";
 
-export type BuiltIn = { id: "helpers" | "conversation-spine" | "email" | "partner" | "listening" | "recap" | "import" | "export" | "cards" | "pictures" | "semantic-zoom"; kind: BrickKind; defaultOn: boolean };
+export type BuiltIn = { id: "full-content" | "canvas-tools" | "terse" | "helpers" | "conversation-spine" | "email" | "partner" | "listening" | "recap" | "import" | "export" | "cards" | "pictures" | "semantic-zoom" | "bring-here" | "rotate-canvas"; kind: BrickKind; defaultOn: boolean };
 
 export const BUILT_INS: readonly BuiltIn[] = [
+  { id: "full-content", kind: "panel", defaultOn: false },
+  { id: "canvas-tools", kind: "panel", defaultOn: false },
+  { id: "terse", kind: "view", defaultOn: false },
+  { id: "bring-here", kind: "panel", defaultOn: false },
   { id: "conversation-spine", kind: "view", defaultOn: false },
   { id: "email", kind: "input", defaultOn: true },
   { id: "helpers", kind: "input", defaultOn: true },
@@ -16,6 +20,7 @@ export const BUILT_INS: readonly BuiltIn[] = [
   { id: "cards", kind: "view", defaultOn: false },
   { id: "pictures", kind: "view", defaultOn: false },
   { id: "semantic-zoom", kind: "panel", defaultOn: false },
+  { id: "rotate-canvas", kind: "panel", defaultOn: false },
   { id: "listening", kind: "input", defaultOn: true },
   { id: "import", kind: "input", defaultOn: false },
   { id: "recap", kind: "panel", defaultOn: true },

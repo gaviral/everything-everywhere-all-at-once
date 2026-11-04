@@ -1,0 +1,14 @@
+[
+  {
+    "source_file": "dist/d3-ease.js",
+    "source_sha256": "52f929eda4decb85a17b0b3fbbd96a9433a02fe76e2656ea806926490c196f17",
+    "line": 1,
+    "text": "// https://d3js.org/d3-ease/ v3.0.1 Copyright 2010-2021 Mike Bostock, 2001 Robert Penner\n"
+  },
+  {
+    "source_file": "dist/d3-ease.min.js",
+    "source_sha256": "e60a1ed750a1ad138dd18e8d3f463238113cfbf7d89685a13d19bd4e048dc3ce",
+    "line": 1,
+    "text": "// https://d3js.org/d3-ease/ v3.0.1 Copyright 2010-2021 Mike Bostock, 2001 Robert Penner\n"
+  }
+]

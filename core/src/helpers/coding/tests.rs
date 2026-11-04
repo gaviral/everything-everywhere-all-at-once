@@ -17,7 +17,7 @@ async fn repository() -> PathBuf {
             "-c",
             "user.name=E2A2O Helper",
             "-c",
-            "user.email=helper@example.invalid",
+            "user.email=helper@example.com",
             "commit",
             "-q",
             "--no-gpg-sign",
@@ -168,7 +168,7 @@ async fn acceptance(command: Option<String>) {
                 git(&repo, &["log", "-1", format, branch])
                     .await
                     .unwrap(),
-                "E2A2O Helper <helper@example.invalid>"
+                "E2A2O Helper <helper@example.com>"
             );
         }
     }
