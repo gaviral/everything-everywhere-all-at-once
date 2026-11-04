@@ -205,6 +205,8 @@ export interface BrickActions {
   /** Shows a thread as a Palace picture does: back to the Map with the thread open, in view and highlighted. Your
    *  place moves there too. */
   openThread(threadId: string): void;
+  /** Opens this exact live placed thought through the shared jump path. False, with a notice, if it is gone. */
+  openThought(thoughtId: string): boolean;
   /** Makes a thread "this", as pointing at its card does: what "rename this" or "expand this" said next acts on.
    *  null lets it go. A view's own elements can skip this: one marked `data-thread={id}` is "this" while pointed at. */
   select(threadId: string | null): void;

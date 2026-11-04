@@ -159,6 +159,9 @@ export default function App() {
   // Leaving the map keeps its place; coming back to it, from the Palace or a view brick, puts it back.
   const showView = (next: string) => {
     if (next === view) return;
+    if (view === "decisions" && next === "map" && isOn("decisions")) requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>('[data-guide="catalog"]')?.focus({ preventScroll: true });
+    });
     setDestination(null);
     if (view === "map") {
       mapScroll.current = window.scrollY;
@@ -824,6 +827,11 @@ export default function App() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (document.querySelector("dialog[open]")) return;
+      if (event.key === "Escape" && view === "decisions" && !event.defaultPrevented && !document.querySelector(".shell-rail")) {
+        event.preventDefault();
+        showView("map");
+        return;
+      }
       const target = event.target as HTMLElement;
       if (event.key === "Escape" && document.querySelector(".shortcuts[open]")) {
         event.preventDefault();
@@ -872,7 +880,7 @@ export default function App() {
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [world.threads, activePath, hasAway, away.dismiss, core.undoLast]);
+  }, [world.threads, activePath, hasAway, away.dismiss, core.undoLast, view]);
 
   const previousPlaced = useRef<number | null>(null);
   useEffect(() => {
@@ -1115,6 +1123,19 @@ export default function App() {
     addThought: core.sendText,
     resume: (id,keyboard) => finishPause(id,keyboard),
     openThread: (id) => { const thread = threadById.get(resolveMerged(world, id)); if (thread) goBack(thread); },
+    openThought: (id) => {
+      const live = worldNow.current;
+      const thought = live.thoughts.find(thought => thought.id === id && thought.placed);
+      const threadId = thought?.thread_id ? resolveMerged(live, thought.thread_id) : null;
+      if (!threadId || !live.threads.some(thread => thread.id === threadId)) {
+        core.showNotice("Original thought is no longer on this map.");
+        return false;
+      }
+      jumps.jumped(live, threadId);
+      reveal(threadId, id);
+      core.focus(threadId);
+      return true;
+    },
     select: core.select,
     notify: (text) => core.showNotice(text),
     position: core.position,
@@ -1398,7 +1419,7 @@ export default function App() {
       </nav>}
       {talk && spine ? <BrickMount brick={spine} host={brickHost} />
         : view === "palace" && world.threads.length > 0 ? <Palace threads={world.threads} active={world.active} onOpen={goBack} />
-        : viewBrick && world.threads.length > 0 ? <BrickMount brick={viewBrick} host={brickHost} /> : <main ref={mapRef} className={talking && world.active && !search ? "map talking" : "map"} aria-label="Cards" data-guide="map">
+        : viewBrick && (world.threads.length > 0 || view === "decisions") ? <BrickMount brick={viewBrick} host={brickHost} /> : <main ref={mapRef} className={talking && world.active && !search ? "map talking" : "map"} aria-label="Cards" data-guide="map">
         {/* Before the first snapshot the world is the empty one: nothing, not a welcome to a map that isn't empty. */}
         {world.threads.length === 0 ? (
           core.snapshotRevision === 0 ? null : <div className="empty">
@@ -1634,7 +1655,7 @@ export default function App() {
             <MapCards active={world.active} rooms={rooms} activePath={activePath} childrenByParent={children} thoughtsByThread={thoughtsByThread} ideasByThread={ideasByThread} actionsByThread={actionsByThread} held={held} expanded={expanded} setExpanded={setExpanded} keptOpen={keptOpen} on={on} />
           </MovesProvider></TidyProvider></NotesContext.Provider>
         </main>
-        : !talk && viewBrick && viewBrick.info.id !== "spine" && !empty ? <BrickMount brick={viewBrick} host={brickHost} />
+        : !talk && viewBrick && viewBrick.info.id !== "spine" && (!empty || view === "decisions") ? <BrickMount brick={viewBrick} host={brickHost} />
         : !empty && spine ? <BrickMount brick={spine} host={brickHost} />
         : <main ref={mapRef} className="shell-main" aria-label="Your map" data-guide="map">
           {/* Before the first snapshot the world is the empty one: nothing, not a welcome to a map that isn't empty. */}
@@ -1649,7 +1670,7 @@ export default function App() {
         </main>}
       {view !== "map" && <div className="shell-corner shell-bl" data-slot="bottom-left">
         <button type="button" className="shell-pill shell-button" onClick={() => showView("map")} aria-keyshortcuts="M">
-          <Icon name="back" /><span className="shell-label">{NAMES.backToMap}</span><Keycap>M</Keycap>
+          <Icon name="back" /><span className="shell-label">{view === "decisions" ? "Close Decisions" : NAMES.backToMap}</span><Keycap>M</Keycap>
         </button>
       </div>}
 
