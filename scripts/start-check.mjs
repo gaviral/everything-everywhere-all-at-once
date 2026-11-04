@@ -11,6 +11,9 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { bundledCore, check, coreAddresses, corePort, free, lanIp, launchUrl, loadDotenv, rustFloor, toolchainProblem } from "./start.mjs";
 
+// These subprocesses start several Node fixtures; allow cold starts while other gate checks compile in parallel.
+const fixtureTimeout = 60_000;
+
 const load = (text, env = {}) => { const out = { ...env }; const r = loadDotenv(text, out); return { ...out, ...r }; };
 
 // dotenvy's own test file (iter.rs test_parse_line_env) reads to these values.
@@ -225,7 +228,9 @@ process.exit(Number(process.env.CORE_EXIT ?? 0));
     FIXTURE_LOG: join(dir, "events"), FIXTURE_MARKER: "kept value", E2A2O_DATA: "../fixture-data",
     OPENSSL_DIR: "/fixture/ssl" };
   const run = (args = [], extra = {}) => spawnSync(join(dir, "run.sh"), args,
-    { cwd: tmpdir(), env: { ...env, ...extra }, encoding: "utf8", timeout: 15000 });
+    // run.sh starts Node four times before the fixture core starts a fifth process.
+    // Keep the cold-start allowance for both the whole launch and single-process preflight below.
+    { cwd: tmpdir(), env: { ...env, ...extra }, encoding: "utf8", timeout: fixtureTimeout });
   const events = () => { try { return readFileSync(env.FIXTURE_LOG, "utf8"); } catch { return ""; } };
   const binary = join(dir, `e2a2o-core-${process.platform}-${process.arch}`);
   return { dir, env, run, events, binary };
@@ -267,7 +272,7 @@ assert.equal(selected.stderr, "");
 assert.equal(bundle.events(), "");
 const preflight = spawnSync(process.execPath,
   [join(bundle.dir, "scripts/start.mjs"), "--selected-core", bundle.binary, "sample"],
-  { env: bundle.env, encoding: "utf8", timeout: 15000 });
+  { env: bundle.env, encoding: "utf8", timeout: fixtureTimeout });
 assert.equal(preflight.status, 0, preflight.stderr);
 assert.equal(preflight.stdout, "0\n", "preflight stdout stays a machine-readable port");
 assert.equal(preflight.stderr, "");

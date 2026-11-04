@@ -31,10 +31,18 @@ export function onReading(listener: (level: number) => void) {
 }
 
 let sound: AudioContext | undefined;
+const tuneWatchers = new Set<() => void>();
+export const tuneRunning = () => sound?.state === "running";
+export const watchTune = (listener: () => void) => { tuneWatchers.add(listener); return () => { tuneWatchers.delete(listener); }; };
+const tuneChanged = () => tuneWatchers.forEach((listener) => listener());
 
 export function unlockTune() {
   try {
-    sound ??= new AudioContext();
+    if (!sound) {
+      sound = new AudioContext();
+      sound.onstatechange = tuneChanged;
+    }
+    tuneChanged();
     if (sound.state === "suspended") void sound.resume().catch(() => {});
   } catch { /* A card and a play button stay available when sound is blocked. */ }
 }

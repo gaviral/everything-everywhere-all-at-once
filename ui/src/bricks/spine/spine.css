@@ -38,6 +38,36 @@
 .spine-flow { position: absolute; inset: 0; --xy-background-color: transparent; mask-image: linear-gradient(to bottom, transparent, #000 18px); }
 .spine-grid { --xy-background-pattern-color: color-mix(in srgb, var(--ink) 10%, transparent); }
 
+/* Semantic zoom: the layout stays put. One zoom subscription sets the blend and inverse scale;
+   panning only moves React Flow's viewport, without rerendering the thoughts. */
+.spine-semantic-item, .spine-semantic-detail { position: relative; width: 100%; height: 100%; }
+.spine-semantic-small {
+  --semantic-detail: var(--semantic-detail-small);
+  --semantic-overview: var(--semantic-overview-small);
+  --semantic-detail-visible: var(--semantic-detail-visible-small);
+  --semantic-overview-visible: var(--semantic-overview-visible-small);
+}
+.spine-semantic-detail { opacity: var(--semantic-detail, 1); visibility: var(--semantic-detail-visible, visible); }
+.spine-frame .spine-semantic-summary {
+  position: absolute; top: 0; left: 0; display: flex; flex-direction: column; gap: 3px;
+  width: max-content; max-width: 220px; min-height: 44px; box-sizing: border-box; margin: 0; padding: 8px 10px;
+  border: 1px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--spine-room, var(--ink));
+  font: inherit; text-align: left; white-space: normal; overflow-wrap: anywhere; cursor: pointer;
+  transform: scale(var(--spine-k, 1)) translateY(var(--semantic-shift, 0px)); transform-origin: 0 0;
+  transition: none; opacity: var(--semantic-overview, 0); visibility: var(--semantic-overview-visible, hidden);
+}
+.spine-semantic .spine-tuck { opacity: var(--semantic-detail-small, 1); visibility: var(--semantic-detail-visible-small, visible); transition: none; }
+.spine-semantic-title { font-size: 15px; font-weight: 600; line-height: 20px; }
+.spine-semantic-count { color: var(--muted); font-size: 13px; line-height: 18px; }
+.spine-frame .spine-semantic-here { border-color: var(--accent); }
+.spine-semantic-summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.spine-semantic .spine-link-spine { opacity: calc(.42 * var(--semantic-detail, 1)); }
+.spine-semantic .spine-link-slot { opacity: calc(.5 * var(--semantic-detail, 1)); }
+.spine-semantic .spine-link-pulled { opacity: calc(.6 * var(--semantic-detail, 1)); }
+.spine-semantic .spine-link-note { opacity: calc(.45 * var(--semantic-detail, 1)); }
+.spine-semantic .spine-link-end-note { opacity: calc(.5 * var(--semantic-detail, 1)); }
+.spine-frame .spine-semantic .spine-group-name { font-size: max(24px, calc(18px * var(--spine-k, 1))); line-height: 1.3; }
+
 /* Lines: behind everything, the same width on screen at any zoom. */
 .spine-links { position: absolute; top: 0; left: 0; width: 1px; height: 1px; overflow: visible; pointer-events: none; }
 .spine-link { fill: none; stroke: var(--muted); stroke-linecap: round; vector-effect: non-scaling-stroke; }

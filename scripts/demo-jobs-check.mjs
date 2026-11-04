@@ -8,11 +8,13 @@ import { fileURLToPath } from "node:url";
 import { parseArgs, validateFixture, connectionURL, nextDelay, schedulePlayback, startFeed } from "./demo-jobs.mjs";
 
 const cli = fileURLToPath(new URL("./demo-jobs.mjs", import.meta.url));
+// Keep the cold-start allowance and explicit spawn-error checks; pacing is verified separately.
+const CLI_STARTUP_MS = 60_000;
 const fixture = JSON.parse(readFileSync(new URL("../samples/demo-jobs.json", import.meta.url), "utf8"));
 const copy = (value) => structuredClone(value);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-async function until(test, description) {
-  const end = performance.now() + 7000;
+async function until(test, description, timeout = 7000) {
+  const end = performance.now() + timeout;
   while (!test()) {
     assert.ok(performance.now() < end, `Timed out: ${description}`);
     await sleep(5);
@@ -106,11 +108,14 @@ function checkFixtureAndArguments() {
   }
   assert.equal(constructions, 0);
   // Each invocation exits without a server, including help; import above also had no side effects.
-  const help = spawnSync(process.execPath, [cli, "--help"], { encoding: "utf8", timeout: 3000 });
+  // This bounds process startup too: concurrent gate jobs can spend several seconds starting Node.
+  const help = spawnSync(process.execPath, [cli, "--help"], { encoding: "utf8", timeout: CLI_STARTUP_MS });
+  assert.ifError(help.error);
   assert.equal(help.status, 0); assert.match(help.stdout, /Usage:/); assert.match(help.stdout, /simulated/); assert.match(help.stdout, /Ctrl\+C/);
   for (const args of badArgs) {
-    const child = spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", timeout: 3000 });
-    assert.equal(child.status, 1, JSON.stringify(args));
+    const child = spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", timeout: CLI_STARTUP_MS });
+    assert.ifError(child.error);
+    assert.equal(child.status, 1, `${JSON.stringify(args)}: ${child.error?.message ?? child.stderr}`);
     assert.ok(child.stderr.trim());
     assert.doesNotMatch(child.stdout + child.stderr, /Connection failed|Connected as/);
   }
@@ -376,14 +381,25 @@ async function checkWireWithControlledTime() {
 }
 
 function childFeed(port, extra = []) {
-  const child = spawn(process.execPath, [cli, "--port", String(port), ...extra], { stdio: ["ignore", "pipe", "pipe"] });
+  // Trace actual sends in the CLI process. Receiver callbacks can batch already-paced
+  // packets when this test process is descheduled, so arrival times cannot measure pacing.
+  const trace = `const send = WebSocket.prototype.send;
+    WebSocket.prototype.send = function (...args) {
+      const at = performance.now();
+      const result = send.apply(this, args);
+      process.stderr.write('CLI_SEND_AT ' + at + '\\n');
+      return result;
+    };`;
+  const preload = `data:text/javascript,${encodeURIComponent(trace)}`;
+  const child = spawn(process.execPath, ["--import", preload, cli, "--port", String(port), ...extra], { stdio: ["ignore", "pipe", "pipe"] });
   let stdout = "", stderr = "";
   child.stdout.on("data", (data) => { stdout += data; });
   child.stderr.on("data", (data) => { stderr += data; });
   const exited = new Promise((resolve, reject) => { child.once("error", reject); child.once("exit", (code, signal) => resolve({ code, signal })); });
-  const watchdog = setTimeout(() => child.kill("SIGKILL"), 10000);
+  const watchdog = setTimeout(() => child.kill("SIGKILL"), CLI_STARTUP_MS + 10000);
   exited.finally(() => clearTimeout(watchdog));
-  return { child, exited, out: () => stdout, err: () => stderr };
+  return { child, exited, out: () => stdout, err: () => stderr,
+    sentAt: () => [...stderr.matchAll(/^CLI_SEND_AT ([\d.]+)$/gm)].map(m => Number(m[1])) };
 }
 
 async function checkCLI() {
@@ -392,11 +408,15 @@ async function checkCLI() {
   try {
     // Actual CLI, built-in WebSocket, real pacing, and SIGINT after the full feed.
     run = childFeed(endpoint.port, ["--speed", "1000"]);
+    await until(() => /Connected as/.test(run.out()), "CLI connected before playback", CLI_STARTUP_MS);
     await until(() => /feed complete/.test(run.out()), "full CLI playback");
     await until(() => endpoint.heard.length === fixture.length, "all CLI wire payloads");
     assert.deepEqual(endpoint.heard, fixture.map((e) => e.message));
     assert.deepEqual([...endpoint.urls[0].searchParams], [["name", "agent"], ["ai", "true"]]);
-    assertPaced(endpoint.times);
+    // The scheduler/lifecycle fixtures above verify the exact send budget with controlled time. A busy parent
+    // can receive several already-paced socket frames together, so receipt timestamps cannot measure send pacing.
+    await until(() => run.sentAt().length === fixture.length, "all CLI send timestamps");
+    assertPaced(run.sentAt());
     assert.match(run.out(), /pacing stretches/);
     assert.equal(run.child.exitCode, null);
     endpoint.send({ type: "answer", by: "Reader", text: "Thanks for the options." });
@@ -407,7 +427,7 @@ async function checkCLI() {
     await until(() => endpoint.connected() === 0, "CLI Ctrl+C socket cleanup");
 
     run = childFeed(endpoint.port);
-    await until(() => /Connected as/.test(run.out()), "CLI connected before unexpected drop");
+    await until(() => /Connected as/.test(run.out()), "CLI connected before unexpected drop", CLI_STARTUP_MS);
     endpoint.drop();
     assert.equal((await run.exited).code, 1);
     assert.match(run.err(), /Unexpected disconnect/);

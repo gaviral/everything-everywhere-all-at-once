@@ -1,7 +1,7 @@
 import { cancelPageReply, usePlayback } from "./page-speech";
 import RecoveryPanel from "./RecoveryPanel";
 import { PartnerStatus } from "./PartnerStatus";
-import { SpeechFixesContext } from "./bricks/contract";
+import { SpeechFixesContext, SemanticZoomContext } from "./bricks/contract";
 import { switchTalk, useTalk } from "./talk-preset";
 import "./talk-preset.css";
 import { useCardNotice } from "./notice-queue";
@@ -66,6 +66,7 @@ import { BRICKS, closeCatalog, isCore, isOn, openCatalogAt, switchBrick, useBric
 import { BrickMount, BrickSlot, useBrickHost } from "./BrickSlot";
 import type { ViewDestination } from "./bricks/contract";
 import { Catalog } from "./Catalog";
+import { AppParts, type AppPartsState } from "./AppParts";
 import { Guide } from "./Guide";
 import { showHint } from "./guide-core";
 import { Markdown } from "./md";
@@ -556,8 +557,8 @@ export default function App() {
     micStart.current = attempt;
     const sameConnection = core.micConnection();
     setStartingMic(true);
-    if (micNotice(core.notice)) core.clearNotice();
     setMicFailed(false);
+    if (micNotice(core.notice)) core.clearNotice();
     try {
       let stopped = false;
       // The browser ended the mic itself (unplugged, or another app took it): off, and said so, rather than
@@ -1269,6 +1270,7 @@ export default function App() {
     <AttentionProvider value={attention.value}>
     <WhyContext.Provider value={whyAsk}>
     <SpeechFixesContext.Provider value={speechFixes}>
+    <SemanticZoomContext.Provider value={builtIns.has("semantic-zoom")}>
     <StayProvider thread={world.stay_here ?? null} connected={core.connected} stay={core.stay}>
     <div className="app" onClickCapture={(event) => {
       const target = event.target as HTMLElement;
@@ -1516,7 +1518,8 @@ export default function App() {
       {!talk && <TalkRail host={brickHost} />}
       <BrickSlot kind="input" host={brickHost} />
       {!talk && <Tips />}
-      {!talk && <Catalog />}
+      {!talk && <Catalog apps={world.apps} state={{ connected: core.connected, noKey: core.noKey, keyRefused: core.keyRefused,
+        resting: core.resting, callsCapped: !!core.usage && core.usage.calls.used >= core.usage.calls.limit, microphone: !!stopMic }} />}
       {/* Another participant pointing at a part of the screen, or saying a caption (docs/guide.md). */}
       <Guide world={world} view={view} query={query} focus={focusMode} />
       <Recap view={talk ? null : core.recap.view} world={world} connected={core.connected} noKey={core.noKey} resting={core.resting} listening={core.listening} onRequest={core.requestRecap} onMark={core.mark} onClose={core.recap.close} onFocus={(id) => {
@@ -1529,6 +1532,7 @@ export default function App() {
       }} />
     </div>
     </StayProvider>
+    </SemanticZoomContext.Provider>
     </SpeechFixesContext.Provider>
     </WhyContext.Provider>
     </AttentionProvider>
@@ -1554,6 +1558,8 @@ export default function App() {
   // A view's Show: takes you to it, and the rail gets out of its way (a sheet over it on a phone; on a laptop it covers
   // the cards' right-hand column, where the buttons are).
   const openView = (id: string) => { setRailTab(null); showView(id); };
+  const partsState: AppPartsState = { connected: core.connected, noKey: core.noKey, keyRefused: core.keyRefused,
+    resting: core.resting, callsCapped: !!core.usage && core.usage.calls.used >= core.usage.calls.limit, microphone: !!stopMic };
   const rows: CatalogRow[] = [
     { id: "preset-talk", kind: "panel" as const, name: "Talk", does: "Keep just what you need to talk. Turn off to bring your features back.",
       on: talk, core: false, toggle: switchTalk },
@@ -1570,7 +1576,8 @@ export default function App() {
         toggle: (value) => { switchBuiltIn(b.id, value); if (!value && shows === view) showView("map"); }, show: shows && builtIns.has(b.id) ? () => openView(shows) : undefined };
     }),
     ...world.apps.map((app): CatalogRow => ({ id: `app-${app.id}`, kind: "app", name: app.name, does: app.purpose, on: app.enabled, core: false,
-      toggle: (value) => core.toggleApp(app.id, value), disabled: !core.connected })),
+      toggle: (value) => core.toggleApp(app.id, value), disabled: !core.connected,
+      parts: <AppParts app={app} apps={world.apps} state={partsState} /> })),
   ].sort((a, b) => Number(b.core) - Number(a.core) || a.name.localeCompare(b.name));
   const undoEntry = (entry: Entry) => {
     const undo = entry.undo;
@@ -1597,6 +1604,7 @@ export default function App() {
     <AttentionProvider value={attention.value}>
     <WhyContext.Provider value={whyAsk}>
     <SpeechFixesContext.Provider value={speechFixes}>
+    <SemanticZoomContext.Provider value={builtIns.has("semantic-zoom")}>
     <StayProvider thread={world.stay_here ?? null} connected={core.connected} stay={core.stay}>
     <div className="app shell" onClickCapture={(event) => {
       const target = event.target as HTMLElement;
@@ -1762,6 +1770,7 @@ export default function App() {
       }} />
     </div>
     </StayProvider>
+    </SemanticZoomContext.Provider>
     </SpeechFixesContext.Provider>
     </WhyContext.Provider>
     </AttentionProvider>

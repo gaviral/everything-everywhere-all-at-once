@@ -120,9 +120,9 @@ try {
   assert.equal(core.handoff, "", "yours arrived: the pill takes over");
   // No thought came of it (filler set aside): the words go after 1.5 s.
   say({ type: "partial", text: "um so yeah" });
+  const ended = Date.now();
   say({ type: "partial", text: "" });
   await until(() => core.handoff === "um so yeah", "the hand-off");
-  const ended = Date.now();
   await until(() => core.handoff === "", "the hand-off to end");
   assert.ok(Date.now() - ended >= 1400, "after its moment, not at once");
   // A tap stops the mic mid-sentence: the stream it stopped still ends, and its last words hand off as at a turn's end

@@ -104,7 +104,7 @@ try {
   for (const notice of ["The AI key was refused. Check MODEL_API_KEY in .env, then restart.", "Moved to Health", ""]) assert.ok(!micNotice(notice), notice);
   const appText = readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8");
   const startPath = appText.slice(appText.indexOf("const toggleMic"), appText.indexOf("await startMic("));
-  assert.match(startPath, /setStartingMic\(true\);\s*if \(micNotice\(core\.notice\)\) core\.clearNotice\(\);/, "the tap that starts the mic clears its notice");
+  assert.match(startPath, /setStartingMic\(true\);\s*setMicFailed\(false\);\s*if \(micNotice\(core\.notice\)\) core\.clearNotice\(\);/, "the tap that starts the mic clears its failure state and notice");
   for (const notice of [quiet, busy]) assert.ok(staysUp(notice), notice);
 
   // A notice with Undo stays until a slow reader could notice it, read it and its button, check the map, decide and
