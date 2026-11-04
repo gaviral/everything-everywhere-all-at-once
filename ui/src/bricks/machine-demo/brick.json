@@ -1,0 +1,8 @@
+{
+  "id": "machine-demo",
+  "name": "Machine readiness",
+  "does": "Compare supplied example machine profiles and missing requirements.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": true
+}

@@ -1,0 +1,9 @@
+.dependency-sequences-example { position: fixed; inset: 78px 24px 160px; z-index: 39; overflow: auto; overscroll-behavior: contain; padding: 24px; border: 1px solid var(--line); border-radius: 18px; background: var(--bg); color: var(--ink); box-shadow: var(--shadow); font: 20px/1.5 system-ui, sans-serif; }
+.dependency-sequences-example > div:first-child { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 20px; }
+.dependency-sequences-example :is(button, input, select, textarea) { font: inherit; min-height: 44px; }
+.dependency-sequences-example * { font-size: inherit !important; }
+.dependency-sequences-example header { display: block; position: static; z-index: auto; padding: 0; background: transparent; backdrop-filter: none; }
+.dependency-sequences-example header::after { content: none; }
+.dependency-sequences-example :is(h1, h2) { font-size: 1.3em !important; }
+.dependency-sequences-example svg { max-width: 100%; }
+@media (max-width: 600px) { .dependency-sequences-example { inset: 70px 8px 150px; padding: 12px; font-size: 18px; } }

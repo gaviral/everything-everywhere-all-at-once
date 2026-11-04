@@ -1,0 +1,8 @@
+{
+  "id": "live-area",
+  "name": "Development activity",
+  "does": "Follow two example workers and their matching build status.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": true
+}
