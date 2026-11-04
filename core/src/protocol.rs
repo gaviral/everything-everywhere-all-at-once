@@ -161,7 +161,9 @@ pub enum ServerMsg {
         #[serde(skip)]
         from: u64,
     },
-    /// A live job update, retained in memory for replay and sent to every window except its origin (guide.rs).
+    /// A live job update, retained verbatim for replay (including execution times, helper kind,
+    /// requested children and outcome). IDs stay stable through preparing/queued/running/terminal states.
+    /// Provider, call IDs, PIDs and raw CLI events remain in the private trace, never this message.
     Job {
         #[serde(flatten)]
         job: crate::guide::Job,

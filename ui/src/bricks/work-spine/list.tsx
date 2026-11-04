@@ -14,8 +14,8 @@ const SETTLE_MS = 600;
 /** How long after a wheel, a finger, a key or a press the list's place is its reader's. */
 const HAND_MS = 400;
 
-const COUNT_CLASS = { running: "work-spine-running", waiting: "work-spine-waiting", failed: "work-spine-failed" } as const;
-const STATE_CLASS = { running: "work-spine-state-running", waiting: "work-spine-state-waiting", failed: "work-spine-state-failed", done: "work-spine-state-done" } as const;
+const COUNT_CLASS = { preparing: "work-spine-preparing", queued: "work-spine-queued", stopped: "work-spine-stopped", running: "work-spine-running", waiting: "work-spine-waiting", failed: "work-spine-failed" } as const;
+const STATE_CLASS = { preparing: "work-spine-state-preparing", queued: "work-spine-state-queued", stopped: "work-spine-state-stopped", running: "work-spine-state-running", waiting: "work-spine-state-waiting", failed: "work-spine-state-failed", done: "work-spine-state-done" } as const;
 
 /** "2 running · 1 waiting": what isn't over, or went wrong (waiting counts the questions that need you); the quiet words
  *  when nothing is. */
@@ -115,17 +115,18 @@ function Bubble({ node, shared }: { node: Node; shared: Shared }) {
   const more = parts(tally(folded, shared.asks));
   const inside = !open && shared.latest !== null && folded.some((hidden) => hidden.id === shared.latest);
   const side = folded.length === 1 ? "job" : "jobs";
-  return <li ref={item} className="work-spine-job" data-job-id={job.id} data-status={job.status} data-fresh={shared.fresh.get(job.id)}>
+  return <li ref={item} className="work-spine-job" data-job-id={job.id} data-status={job.status} data-helper-kind={job.helper_kind} data-parent={job.parent} data-fresh={shared.fresh.get(job.id)}>
     <article className="work-spine-bubble">
       {shared.many && <p className="work-spine-by">{shared.ai(job.by) && <span className="ai-mark" aria-hidden="true">✦ </span>}{job.by}</p>}
       <p className="work-spine-job-title">{job.title}</p>
+      {job.helper_kind && !job.parent && <p className="work-spine-requested">{job.requested_count} {job.helper_kind} helpers requested</p>}
       <p className={`work-spine-state ${STATE_CLASS[job.status]}`}>
         <span className="work-spine-mark" aria-hidden="true">{state.mark || <i className="work-spine-pulse" />}</span>
         <span className="work-spine-word">{state.word}</span>
         {state.clock && <>{" "}<span className="work-spine-clock">{state.clock}</span></>}
         {shared.latest === job.id && <>{" "}<span className="work-spine-now">Just now</span></>}
       </p>
-      {job.result && (job.id.startsWith("helpers:") && job.parent && !job.title.startsWith("Coding helper") && job.status === "done"
+      {job.result && (job.id.startsWith("helpers:") && job.parent && job.helper_kind === "thinking" && job.status === "done"
         ? <details className="work-spine-result"><summary>Read answer</summary><p>{job.result}</p></details>
         : <p className={shared.asks.has(job.id) ? "work-spine-question" : "work-spine-result"}>{job.result}</p>)}
     </article>

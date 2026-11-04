@@ -65,11 +65,14 @@ impl Trace {
         self.file.is_some()
     }
 
-    /// Appends `line` with the time, as one line. Built only when on, so an off trace costs nothing.
+    /// Appends `line`, keeping its event time or adding the current time when absent.
+    /// Built only when on, so an off trace costs nothing.
     pub fn write(&self, line: impl FnOnce() -> Value) {
         let Some(file) = &self.file else { return };
         let mut line = line();
-        line["at"] = json!(crate::now_ms());
+        if line.get("at").is_none() {
+            line["at"] = json!(crate::now_ms());
+        }
         let mut text = line.to_string();
         text.push('\n');
         if let Err(e) = file.lock().unwrap().write_all(text.as_bytes()) {
@@ -163,6 +166,26 @@ mod tests {
         let trace = Trace::default();
         assert!(!trace.is_on());
         trace.write(|| panic!("an off trace builds no line"));
+    }
+
+    #[test]
+    fn supplied_event_times_survive_publication_and_missing_times_are_added() {
+        let dir = dir("event-time");
+        let trace = Trace::to(&dir);
+        let completed_at = crate::now_ms() - 5_000;
+        trace.write(|| json!({"kind": "helpers_speech_end", "at": 0}));
+        trace.write(|| json!({"kind": "helpers_execution", "phase": "start", "at": completed_at - 100}));
+        trace.write(|| json!({"kind": "helpers_execution", "phase": "end", "at": completed_at}));
+        let before = crate::now_ms();
+        trace.write(|| json!({"kind": "placed"}));
+        let after = crate::now_ms();
+
+        let lines = lines(&dir);
+        assert_eq!(lines.len(), 4);
+        assert_eq!(lines[0]["at"], 0);
+        assert_eq!(lines[1]["at"], completed_at - 100);
+        assert_eq!(lines[2]["at"], completed_at);
+        assert!((before..=after).contains(&lines[3]["at"].as_u64().unwrap()));
     }
 
     #[test]

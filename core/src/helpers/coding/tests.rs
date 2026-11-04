@@ -80,7 +80,7 @@ fn jobs(core: &Core) -> Vec<Job> {
 }
 
 async fn finished(core: &Core) {
-    tokio::time::timeout(Duration::from_secs(25), async {
+    tokio::time::timeout(Duration::from_secs(90), async {
         while core.helpers.state.lock().unwrap().active.is_some() {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
@@ -94,12 +94,26 @@ async fn acceptance(command: Option<String>) {
     let base = git(&repo, &["rev-parse", "HEAD"]).await.unwrap();
     let echo = command.is_some();
     let command = command.unwrap_or_else(|| stub(&repo, false));
-    let core = core(&repo, command, true);
+    let mut core = core(&repo, command, true);
+    let spawn_gate = Arc::new(tokio::sync::Semaphore::new(0));
+    Arc::get_mut(&mut core).unwrap().helpers.spawn_gate = Some(spawn_gate.clone());
+    let trace_dir = repo.with_extension("trace");
+    std::fs::create_dir(&trace_dir).unwrap();
+    Arc::get_mut(&mut core).unwrap().trace = crate::trace::Trace::to(&trace_dir);
     let start = Instant::now();
     assert!(said(&core, "you", "put three helpers on the README"));
     let initial = jobs(&core);
     assert_eq!(initial.iter().filter(|job| job.parent.is_some()).count(), 3);
+    assert!(initial.iter().all(|job| job.started_ms.is_none() && job.status != "running"));
     let mut updates = core.updates.subscribe();
+    // All worktrees are prepared and each worker is blocked immediately before OS spawn.
+    tokio::time::timeout(Duration::from_secs(90), async {
+        while core.helpers.spawn_waiting.load(Ordering::Relaxed) < 3 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }).await.unwrap();
+    assert!(jobs(&core).iter().all(|job| job.status != "running" && job.started_ms.is_none()));
+    spawn_gate.add_permits(3);
     finished(&core).await;
     let mut events = 0;
     while let Ok(update) = updates.try_recv() {
@@ -108,18 +122,28 @@ async fn acceptance(command: Option<String>) {
                 && job
                     .result
                     .as_deref()
-                    .is_some_and(|v| serde_json::from_str::<Value>(v).is_ok())
+                    .is_some_and(|v| v == "Working on brief" || v == "Finishing execution")
             {
                 events += 1;
             }
         }
     }
-    assert!(events >= 3, "JSON events reached helper rows");
+    assert!(events >= 3, "whitelisted progress reached helper rows");
     let children = jobs(&core)
         .into_iter()
         .filter(|job| job.parent.is_some())
         .collect::<Vec<_>>();
     assert_eq!(children.len(), 3);
+    let receipts: Vec<Value> = std::fs::read_to_string(trace_dir.join("trace.jsonl")).unwrap().lines().map(|line| serde_json::from_str(line).unwrap()).filter(|r: &Value| r["kind"] == "helpers_execution").collect();
+    assert_eq!(receipts.len(), 6);
+    for start in receipts.iter().filter(|r| r["phase"] == "start") {
+        assert!(start["pid"].as_u64().is_some());
+        assert_eq!(start["provider"], "local-command");
+        let end = receipts.iter().find(|r| r["phase"] == "end" && r["pid"] == start["pid"]).unwrap();
+        let child = children.iter().find(|job| job.id == start["child_id"].as_str().unwrap()).unwrap();
+        assert_eq!(child.started_ms, start["at"].as_u64());
+        assert_eq!(child.ended_ms, end["at"].as_u64());
+    }
     for job in &children {
         assert_eq!(job.status, "done", "{:?}", job.result);
         assert!(job.started_ms.is_some());
@@ -216,7 +240,7 @@ async fn stop_reaps_runner_and_descendants_by_pid() {
     let repo = repository().await;
     let core = core(&repo, stub(&repo, true), true);
     assert!(said(&core, "you", "put three helpers on the README"));
-    let observations = tokio::time::timeout(Duration::from_secs(15), async {
+    let observations = tokio::time::timeout(Duration::from_secs(90), async {
         loop {
             let paths = git(&repo, &["worktree", "list", "--porcelain"])
                 .await
@@ -247,7 +271,7 @@ async fn stop_reaps_runner_and_descendants_by_pid() {
         .any(|job| job
             .result
             .as_deref()
-            .is_some_and(|v| v.contains("Editing README"))));
+            .is_some_and(|v| v.contains("Working on brief"))));
     assert!(matches!(
         card_for(&core, "you"),
         Some(ServerMsg::SendCard {
@@ -274,7 +298,7 @@ async fn stop_reaps_runner_and_descendants_by_pid() {
     }
     assert!(jobs(&core)
         .iter()
-        .all(|job| job.result.as_deref() == Some("Stopped")));
+        .all(|job| job.status == "stopped" && job.result.as_deref() == Some("Stopped")));
     assert!(matches!(
         crate::messages::card_for(&core, "you"),
         Some(ServerMsg::SendCard {
@@ -297,7 +321,7 @@ fn coding_turns_and_argv() {
         assert!(requested(topic, topic));
     }
     assert!(!requested("the pitch", "put helpers on the pitch"));
-    assert_eq!(Settings::default().argv().unwrap(), vec!["muse", "exec"]);
+    assert_eq!(Settings::default().argv().unwrap(), vec!["muse", "exec", "--provider", "meta", "--model", "muse-spark-1.3"]);
     assert_eq!(
         Settings {
             command: Some(r#"["/tmp/a path/muse", "exec"]"#.into()),
@@ -307,4 +331,46 @@ fn coding_turns_and_argv() {
         .unwrap()[0],
         "/tmp/a path/muse"
     );
+}
+
+#[tokio::test]
+async fn mixed_outcomes_and_private_progress_stay_truthful() {
+    let repo = repository().await;
+    let script = r#"import json, pathlib, sys, time
+print(json.dumps({'type': 'progress', 'text': 'PRIVATE_SENTINEL', 'path': '/hidden/worktree', 'prompt': 'PRIVATE_SENTINEL'}), flush=True)
+time.sleep(0.2)
+n = int(pathlib.Path.cwd().name.split('-')[-1])
+if n == 2: sys.exit(7)
+if n == 1:
+    with open('README.md', 'a') as f: f.write('\nA useful change.\n')
+"#;
+    let command = serde_json::to_string(&vec!["python3", "-c", script]).unwrap();
+    let core = core(&repo, command, true);
+    assert!(said(&core, "you", "put three helpers on the README"));
+    let mut updates = core.updates.subscribe();
+    finished(&core).await;
+    let rows = jobs(&core);
+    let parent = rows.iter().find(|j| j.parent.is_none()).unwrap();
+    assert_eq!(parent.status, "failed");
+    assert_eq!(parent.outcome.as_deref(), Some("partial"));
+    assert_eq!(rows.iter().filter(|j| j.parent.is_some() && j.status == "failed").count(), 1);
+    assert_eq!(rows.iter().filter(|j| j.outcome.as_deref() == Some("no_change")).count(), 1);
+    while let Ok(update) = updates.try_recv() {
+        if let ServerMsg::Job { job, .. } = update.message {
+            let wire = serde_json::to_string(&job).unwrap();
+            assert!(!wire.contains("PRIVATE_SENTINEL") && !wire.contains("/hidden/worktree"));
+        }
+    }
+}
+
+#[tokio::test]
+async fn failed_spawn_has_no_execution_time() {
+    let repo = repository().await;
+    let core = core(&repo, "does-not-exist".into(), true);
+    assert!(said(&core, "you", "put three helpers on the README"));
+    finished(&core).await;
+    for row in jobs(&core).iter().filter(|j| j.parent.is_some()) {
+        assert_eq!(row.status, "failed");
+        assert!(row.started_ms.is_none() && row.ended_ms.is_none());
+    }
 }

@@ -25,7 +25,7 @@ impl Settings {
         }
     }
     fn argv(&self) -> anyhow::Result<Vec<String>> {
-        let value = self.command.as_deref().unwrap_or("muse exec");
+        let value = self.command.as_deref().unwrap_or("muse exec --provider meta --model muse-spark-1.3");
         let args: Vec<String> = if value.trim_start().starts_with('[') {
             serde_json::from_str(value).context("HELPERS_CMD must be an argv JSON array")?
         } else {
@@ -62,18 +62,19 @@ fn slug(topic: &str) -> String {
 }
 
 async fn git(repo: &Path, args: &[&str]) -> anyhow::Result<String> {
-    let output = Command::new("git")
-        .args(args)
+    let mut command = Command::new("git");
+    command.args(args)
         .current_dir(repo)
         // The helper's own identity, passed with -c, must beat whatever the host exports.
         .env_remove("GIT_AUTHOR_NAME")
         .env_remove("GIT_AUTHOR_EMAIL")
         .env_remove("GIT_COMMITTER_NAME")
         .env_remove("GIT_COMMITTER_EMAIL")
-        .kill_on_drop(true)
-        .output()
-        .await
-        .context("Couldn't start git")?;
+        .kill_on_drop(true);
+    // Fixtures are self-contained: host Git hooks, filters and configuration are outside the test.
+    #[cfg(test)]
+    command.env("GIT_CONFIG_GLOBAL", "/dev/null").env("GIT_CONFIG_NOSYSTEM", "1");
+    let output = command.output().await.context("Couldn't start git")?;
     // Keep local paths and credentials out of cards and traces.
     ensure!(
         output.status.success(),
@@ -102,11 +103,9 @@ pub(super) async fn execute(core: &Arc<Core>, run: &Arc<Run>) {
     run.counting.store(false, Ordering::Relaxed);
     if !core.helpers.coding.enabled {
         for i in 0..run.ask.count {
-            row(core, run, Some(i), &title(i), "done", Some(format!(
-                "Dry run: would create helpers/{}-{} from HELPERS_REPO HEAD and run HELPERS_CMD for brief {}: {}",
-                slug(&run.ask.topic), i + 1, i + 1, run.ask.topic)));
+            row_with_outcome(core, run, Some(i), &title(i), "done", Some("Dry run: no process started and no files changed".into()), Some("dry_run"));
         }
-        row(
+        row_with_outcome(
             core,
             run,
             None,
@@ -116,6 +115,7 @@ pub(super) async fn execute(core: &Arc<Core>, run: &Arc<Run>) {
                 "Dry run: {} helpers would start; set HELPERS_RUN=on",
                 run.ask.count
             )),
+            Some("dry_run"),
         );
         end_card(
             core,
@@ -125,11 +125,12 @@ pub(super) async fn execute(core: &Arc<Core>, run: &Arc<Run>) {
         );
         return;
     }
-    end_card(core, run, SendState::Running, "Coding helpers running");
+    row(core, run, None, "Coding helpers", "preparing", Some("Preparing isolated work".into()));
+    end_card(core, run, SendState::Running, "Preparing coding helpers · follow Work");
     let result = prepare(core, run).await;
     let (folder, jobs) = match result {
         Ok(value) => value,
-        Err(error) => {
+        Err(_) => {
             if !run.stopped.load(Ordering::Relaxed) {
                 for i in 0..run.ask.count {
                     row(
@@ -138,7 +139,7 @@ pub(super) async fn execute(core: &Arc<Core>, run: &Arc<Run>) {
                         Some(i),
                         &title(i),
                         "failed",
-                        Some(error.to_string()),
+                        Some("Couldn’t prepare isolated work".into()),
                     );
                 }
                 row(
@@ -147,9 +148,9 @@ pub(super) async fn execute(core: &Arc<Core>, run: &Arc<Run>) {
                     None,
                     "Coding helpers",
                     "failed",
-                    Some(error.to_string()),
+                    Some("Couldn’t prepare isolated work".into()),
                 );
-                end_card(core, run, SendState::Failed, &error.to_string());
+                end_card(core, run, SendState::Failed, "Couldn’t prepare isolated work");
             }
             return;
         }
@@ -193,7 +194,6 @@ pub(super) async fn execute(core: &Arc<Core>, run: &Arc<Run>) {
 }
 
 struct Work {
-    branch: String,
     path: PathBuf,
     brief: PathBuf,
 }
@@ -244,7 +244,6 @@ async fn prepare(core: &Core, run: &Run) -> anyhow::Result<(PathBuf, Vec<Work>)>
             "Coding helper {} of {}. Task: {}.\nFocus this independent implementation on {focus}. Inspect this repository and make a useful, small change for the task. Work only in this worktree. Do not commit, push, merge, or open a PR. Do not include personal paths, private data, secrets, .env files, journals, or personal quotes. Do not invoke other agents or providers.\n",
             i + 1, run.ask.count, run.ask.topic))?;
         jobs.push(Work {
-            branch,
             path,
             brief,
         });
@@ -256,36 +255,34 @@ async fn worker(core: &Core, run: &Run, _folder: &Path, i: usize, job: &Work) ->
     if run.stopped.load(Ordering::Relaxed) {
         return false;
     }
-    run.started.lock().unwrap().insert(i, crate::now_ms());
-    row(
-        core,
-        run,
-        Some(i),
-        &title(i),
-        "running",
-        Some(format!("{} · starting", job.branch)),
-    );
+    row(core, run, Some(i), &title(i), "queued", None);
     let result = work(core, run, i, job).await;
     if run.stopped.load(Ordering::Relaxed) {
+        if !run.finished.lock().unwrap().contains(&i) {
+            row(core, run, Some(i), &title(i), "stopped", Some("Stopped".into()));
+        }
         return false;
     }
-    row(
-        core,
-        run,
-        Some(i),
-        &title(i),
+    row_with_outcome(
+        core, run, Some(i), &title(i),
         if result.is_ok() { "done" } else { "failed" },
-        Some(
-            result
-                .as_ref()
-                .cloned()
-                .unwrap_or_else(|e| format!("{} · {e}", job.branch)),
-        ),
+        Some(result.as_ref().map(|r| r.summary.clone()).unwrap_or_else(|_| "Coding helper failed · any local changes kept".into())),
+        result.as_ref().ok().map(|r| r.outcome),
     );
     result.is_ok()
 }
 
-async fn work(core: &Core, run: &Run, i: usize, job: &Work) -> anyhow::Result<String> {
+struct Completion { summary: String, outcome: &'static str }
+
+async fn work(core: &Core, run: &Run, i: usize, job: &Work) -> anyhow::Result<Completion> {
+    #[cfg(test)]
+    if let Some(gate) = &core.helpers.spawn_gate {
+        core.helpers.spawn_waiting.fetch_add(1, Ordering::Relaxed);
+        tokio::select! {
+            _ = cancelled(run) => anyhow::bail!("Stopped"),
+            permit = gate.acquire() => { permit.unwrap().forget(); },
+        }
+    }
     let argv = core.helpers.coding.argv()?;
     let mut command = Command::new(&argv[0]);
     command.args(&argv[1..]);
@@ -302,24 +299,47 @@ async fn work(core: &Core, run: &Run, i: usize, job: &Work) -> anyhow::Result<St
         .kill_on_drop(true)
         .spawn()
         .context("Couldn't start HELPERS_CMD")?;
+    // Spawn succeeded: only now can this child be running. Never expose argv or event text.
+    let selected = |flag: &str| argv.windows(2).find(|pair| pair[0] == flag).map(|pair| pair[1].as_str())
+        .or_else(|| argv.iter().find_map(|arg| arg.strip_prefix(&format!("{flag}="))));
+    let provider = selected("--provider").unwrap_or("local-command");
+    let model = selected("--model").unwrap_or("unspecified");
+    let execution = Execution::new(core, run, i, provider, model, json!({"pid":child.id().unwrap()}));
+    execution.start();
     let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
-    let status = loop {
+    let status: anyhow::Result<std::process::ExitStatus> = loop {
         tokio::select! {
             biased;
-            _ = cancelled(run) => { stop_child(&mut child).await; return Err(anyhow::anyhow!("Stopped")); },
-            line = lines.next_line() => match line? {
-                Some(line) => if serde_json::from_str::<Value>(&line).is_ok() {
-                    row(core, run, Some(i), &title(i), "running", Some(line));
+            _ = cancelled(run) => {
+                stop_child(&mut child).await;
+                break Err(anyhow::anyhow!("Stopped"));
+            },
+            line = lines.next_line() => match line {
+                Ok(Some(line)) => if let Some(progress) = progress(&line) {
+                    row(core, run, Some(i), &title(i), "running", Some(progress.into()));
                 },
-                None => break tokio::select! {
+                Ok(None) => break tokio::select! {
                     biased;
-                    _ = cancelled(run) => { stop_child(&mut child).await; return Err(anyhow::anyhow!("Stopped")); },
-                    status = child.wait() => status?,
+                    _ = cancelled(run) => { stop_child(&mut child).await; Err(anyhow::anyhow!("Stopped")) },
+                    status = child.wait() => status.map_err(Into::into),
+                },
+                Err(error) => {
+                    stop_child(&mut child).await;
+                    break Err(error.into());
                 },
             }
         }
     };
+    let reaped_at = crate::now_ms();
+    // Postprocessing is preparation, never running time; retain the actual reap time on replay.
+    execution.completed(reaped_at);
+    row(core, run, Some(i), &title(i), "preparing", Some("Checking local outcome".into()));
+    let outcome = if run.stopped.load(Ordering::Relaxed) { "stopped" }
+        else if status.as_ref().is_ok_and(|s| s.success()) { "done" } else { "failed" };
+    if outcome != "done" { execution.end(reaped_at, outcome); }
+    let status = status?;
     ensure!(!run.stopped.load(Ordering::Relaxed), "Stopped");
+    ensure!(status.success(), "HELPERS_CMD exited unsuccessfully; local changes kept");
     git(&job.path, &["add", "--all"]).await?;
     let stats = git(&job.path, &["diff", "--cached", "--numstat"]).await?;
     let (mut files, mut added, mut removed) = (0, 0_u64, 0_u64);
@@ -330,6 +350,11 @@ async fn work(core: &Core, run: &Run, i: usize, job: &Work) -> anyhow::Result<St
             added += fields[0].parse::<u64>().unwrap_or(0);
             removed += fields[1].parse::<u64>().unwrap_or(0);
         }
+    }
+    ensure!(!run.stopped.load(Ordering::Relaxed), "Stopped");
+    if files == 0 {
+        execution.end(reaped_at, "no_change");
+        return Ok(Completion { summary: "No changes · 0 files changed · +0 -0".into(), outcome: "no_change" });
     }
     git(
         &job.path,
@@ -346,14 +371,17 @@ async fn work(core: &Core, run: &Run, i: usize, job: &Work) -> anyhow::Result<St
         ],
     )
     .await?;
-    ensure!(
-        status.success(),
-        "HELPERS_CMD exited unsuccessfully; changes committed"
-    );
-    Ok(format!(
-        "{} · {files} files changed · +{added} -{removed}",
-        job.branch
-    ))
+    execution.end(reaped_at, "done");
+    Ok(Completion { summary: format!("{files} files changed · +{added} -{removed}"), outcome: "done" })
+}
+
+fn progress(line: &str) -> Option<&'static str> {
+    let event: Value = serde_json::from_str(line).ok()?;
+    match event.get("type")?.as_str()? {
+        "progress" => Some("Working on brief"),
+        "done" => Some("Finishing execution"),
+        _ => None,
+    }
 }
 
 /// Only the runner PID and descendants discovered beneath that PID belong to us.

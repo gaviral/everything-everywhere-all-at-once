@@ -128,7 +128,7 @@ async fn stop_button_voice_and_draft_cancel_before_thinking() {
             .subscribe(&core)
             .1
             .iter()
-            .all(|m| matches!(m, ServerMsg::Job { job, .. } if job.status == "failed")));
+            .all(|m| matches!(m, ServerMsg::Job { job, .. } if job.status == "stopped")));
         assert!(matches!(
             crate::messages::card_for(&core, "you"),
             Some(ServerMsg::SendCard {
@@ -255,6 +255,8 @@ async fn stub_run_on_free_port_rows_parallel_finish_and_land_without_blocking_ta
             }
             if m["type"] == "job" {
                 assert!(saw_card);
+                assert_eq!(m["status"], "preparing");
+                assert!(m["started_ms"].is_null());
                 break;
             }
         }
@@ -262,6 +264,10 @@ async fn stub_run_on_free_port_rows_parallel_finish_and_land_without_blocking_ta
             began.elapsed() < Duration::from_millis(300),
             "first row precedes the delayed splitter"
         );
+        let initial = core.guide.subscribe(&core).1;
+        assert_eq!(initial.iter().filter(|m| matches!(m, ServerMsg::Job { job, .. } if job.parent.is_some() && job.status == "queued" && job.started_ms.is_none())).count(), 3);
+        tokio::time::sleep(Duration::from_millis(350)).await;
+        assert!(core.guide.subscribe(&core).1.iter().all(|m| matches!(m, ServerMsg::Job { job, .. } if job.status != "running" && job.started_ms.is_none())), "delayed split and countdown never start children");
         ws.send(send("The phone needs a clear primary action"))
             .await
             .unwrap();
@@ -279,7 +285,7 @@ async fn stub_run_on_free_port_rows_parallel_finish_and_land_without_blocking_ta
             };
             if m["type"] == "job" {
                 rows.insert(m["id"].as_str().unwrap().to_string(), m.clone());
-                if m["parent"].is_null() && m["status"] == "done" {
+                if m["parent"].is_null() && matches!(m["status"].as_str(), Some("done" | "failed")) {
                     break;
                 }
             }
@@ -302,6 +308,9 @@ async fn stub_run_on_free_port_rows_parallel_finish_and_land_without_blocking_ta
         );
         for child in &children {
             assert!(child["started_ms"].as_u64().is_some());
+            assert!(child["ended_ms"].as_u64().unwrap() >= child["started_ms"].as_u64().unwrap());
+            assert_eq!(child["helper_kind"], "thinking");
+            assert_eq!(child["requested_count"], 3);
             assert!(
                 child["at_ms"].as_u64().unwrap() - child["started_ms"].as_u64().unwrap() < 1000,
                 "helper seconds exclude the countdown"
@@ -344,6 +353,23 @@ async fn stub_run_on_free_port_rows_parallel_finish_and_land_without_blocking_ta
         assert!(trace.iter().any(|l| l["kind"] == "helpers_first_row"
             && l["speech_end_to_first_row_ms"].as_u64().unwrap() < 300));
         assert!(trace.iter().any(|l| l["kind"] == "helpers_landed"));
+        let receipts: Vec<_> = trace.iter().filter(|l| l["kind"] == "helpers_execution").collect();
+        assert_eq!(receipts.len(), 6);
+        for start in receipts.iter().filter(|l| l["phase"] == "start") {
+            let end = receipts.iter().find(|l| l["phase"] == "end" && l["call_id"] == start["call_id"]).unwrap();
+            let child = children.iter().find(|l| l["id"] == start["child_id"]).unwrap();
+            assert_eq!(start["at"], child["started_ms"]);
+            assert_eq!(end["at"], child["ended_ms"]);
+            assert_eq!(start["provider"], "meta");
+            assert_eq!(start["model"], MODEL);
+        }
+        assert_eq!(rows.values().find(|r| r["parent"].is_null()).unwrap()["outcome"], if fail_one { "partial" } else { "done" });
+        let replay = core.guide.subscribe(&core).1;
+        for child in &children {
+            let replayed = replay.iter().find_map(|m| match m { ServerMsg::Job { job, .. } if job.id == child["id"].as_str().unwrap() => Some(job), _ => None }).unwrap();
+            assert_eq!(replayed.started_ms, child["started_ms"].as_u64());
+            assert_eq!(replayed.ended_ms, child["ended_ms"].as_u64());
+        }
         app.abort();
         model.abort();
         std::fs::remove_file(path).unwrap();
