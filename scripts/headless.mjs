@@ -3,7 +3,7 @@
 // Chrome over the DevTools protocol. `ready()` says why a check can't run here (no Chrome, or the UI isn't built);
 // a check then exits 3, which scripts/test.sh and precheck read as skipped, not failed.
 import { createServer } from "node:http";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync, readFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, extname, normalize } from "node:path";
@@ -56,8 +56,9 @@ function unframe(buffer) {
  *  `door`: what /room says (alone on a laptop unless a check opens a room, or runs as the hosted site). A check that
  *  answers as the core would hears each message with the window's query (`onMessage`) and each window closing
  *  (`onClose`). */
-export async function standInCore(joinReply, { door = { room: false, member: true }, onMessage = null, onClose = null, port = 0 } = {}) {
+export async function standInCore(joinReply, { heartbeat = true, door = { room: false, member: true }, onMessage = null, onClose = null, port = 0 } = {}) {
   const sockets = new Set();
+  const identity = randomUUID();
   const heard = [];
   const server = createServer((req, res) => {
     const path = normalize(decodeURIComponent(new URL(req.url, "http://x").pathname)).replace(/^(\.\.[/\\])+/, "");
@@ -85,10 +86,13 @@ export async function standInCore(joinReply, { door = { room: false, member: tru
         let message;
         try { message = JSON.parse(text); } catch { continue; /* not a message */ }
         heard.push(message);
+        if (heartbeat && message.type === "heartbeat") socket.write(frame(JSON.stringify(message)));
         onMessage?.(message, query);
       }
     });
     sockets.add(socket);
+    // Match the identified core handshake while keeping legacy protocol fixtures unchanged.
+    if (query.has("identity") && !messages.some(message => message.type === "map_identity")) socket.write(frame(JSON.stringify({ type: "map_identity", id: identity })));
     for (const message of messages) socket.write(frame(JSON.stringify(message)));
   });
   await new Promise((resolve) => server.listen(port, "127.0.0.1", resolve));

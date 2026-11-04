@@ -244,7 +244,10 @@ type Change =
   // An import's record of the messages it read; only the core uses it.
   | { type: "messages_read"; at_ms: number[] };
 
+export type Capture = { id: string; text: string; thought_ids: string[]; saved: boolean; local: boolean; replay: boolean; mapped?: boolean; receivedOnly?: boolean; at: number };
+
 type ServerMsg =
+  | { type: "capture_saved"; capture: { id: string; text: string; thought_ids: string[] }; replay: boolean }
   | { type: "map_identity"; id: string }
   | { type: "heartbeat"; id: string }
   | { type: "recoverable_speech"; id: string; text: string }
@@ -780,6 +783,12 @@ export function useCore(speaker?: string) {
   const identityReady = useRef(false);
   const queueKey = useRef<string | null>(null);
   const outbox = useRef<string[]>([]);
+  const [captures, setCaptures] = useState<Capture[]>([]);
+  const keepCaptures = (messages: string[], local: boolean) => setCaptures(was => {
+    const added = messages.map(message => JSON.parse(message)).filter(message => !was.some(capture => capture.id === message.id))
+      .map(message => ({ id: message.id, text: message.text, thought_ids: [], saved: false, local, replay: false, at: Date.now() }));
+    return added.length ? [...was, ...added] : was;
+  });
   // Explicit, non-durable sends stay here until receipts arrive. Never replay them automatically in another map.
   const onlineSend = useRef<{ map: string; text: string; messages: string[]; awaiting: Set<string>; received: () => void } | null>(null);
   const [recovery, setRecovery] = useState<RecoveryState>({ entries: [], storageUnavailable: false });
@@ -892,6 +901,7 @@ export function useCore(speaker?: string) {
             break;
           case "map_identity": {
             if (!msg.id) break;
+            if (mapId.current !== msg.id) setCaptures([]);
             if (mapId.current !== msg.id) setRecovery(state => ({ ...state, entries: state.entries.filter(entry => entry.kind !== "speech") }));
             mapId.current = msg.id;
             identityReady.current = true;
@@ -900,16 +910,25 @@ export function useCore(speaker?: string) {
             try { outbox.current = readWaiting(queueKey.current); }
             catch { outbox.current = []; }
             setQueuedCount(outbox.current.length);
+            keepCaptures(outbox.current, true);
             refreshRecovery();
             for (const message of outbox.current) ws.send(message);
             break;
           }
+          case "capture_saved":
+            setCaptures(was => {
+              const old = was.find(capture => capture.id === msg.capture.id);
+              const capture = { ...msg.capture, saved: true, local: true, mapped: true, replay: msg.replay, at: old?.at ?? Date.now() };
+              return [...was.filter(item => item.id !== capture.id), capture];
+            });
+            break;
           case "recoverable_speech": {
             setRecovery(state => ({ ...state, entries: [...state.entries.filter(entry => entry.id !== msg.id),
               ...(msg.text ? [{ id: msg.id, text: msg.text, kind: "speech" as const }] : [])] }));
             break;
           }
           case "text_received": {
+            setCaptures(was => was.map(capture => capture.id === msg.id ? { ...capture, saved: true, local: true } : capture));
             if (!identityReady.current || !queueKey.current) break;
             const pending = onlineSend.current;
             if (pending?.map === mapId.current && pending.awaiting.delete(msg.id) && pending.awaiting.size === 0) {
@@ -950,6 +969,8 @@ export function useCore(speaker?: string) {
             break;
           case "change": {
             const change = msg.change;
+            if (change.type === "thought_split") setCaptures(was => was.map(capture => capture.thought_ids.includes(change.thought_id)
+              ? { ...capture, thought_ids: [...new Set([...capture.thought_ids, change.rest.id])] } : capture));
             // An AI rename, a merge, or one undone: said above the map, with Undo where it can be taken back.
             const note = tidyNote(currentWorld, change);
             if (note) {
@@ -1114,6 +1135,7 @@ export function useCore(speaker?: string) {
       queueKey.current = mapId.current ? waitingKey(speaker ?? "you", mapId.current) : null;
       if (queueKey.current) outbox.current = readWaiting(queueKey.current);
       setQueuedCount(outbox.current.length);
+      keepCaptures(outbox.current, true);
     } catch { /* A failed save keeps the draft. */ }
     refreshRecovery();
     const storageChanged = () => {
@@ -1191,6 +1213,17 @@ export function useCore(speaker?: string) {
   };
 
   return {
+    captures,
+    retryCapture: (id: string) => {
+      const capture = captures.find(capture => capture.id === id);
+      if (!capture || !identityReady.current) return false;
+      if (!capture.saved) {
+        const message = outbox.current.find(message => JSON.parse(message).id === id);
+        return !!message && send(message);
+      }
+      if (noKey) { sayNotice("Your words are saved. Add a working AI key to place them automatically."); return false; }
+      return capture.thought_ids.some(thought => send(JSON.stringify({ type: "retry_placement", id: thought })));
+    },
     recovery: { ...recovery, onlineAvailable: connected && identityReady.current },
     sendOnline: (text: string, received: () => void) => {
       const ws = socket.current;
@@ -1203,6 +1236,7 @@ export function useCore(speaker?: string) {
         const messages = parts.map(part => JSON.stringify({ type: "text", id: thoughtId(), text: part }));
         pending = { map: mapId.current, text, messages, awaiting: new Set(messages.map(message => JSON.parse(message).id)), received };
         onlineSend.current = pending;
+        keepCaptures(messages, false);
       }
       pending.received = received;
       setRecovery(state => ({ ...state, onlinePending: true }));
@@ -1351,6 +1385,7 @@ export function useCore(speaker?: string) {
           sayNotice("Couldn't save this thought. Keep it here, or choose Send online and wait for its receipt."); answered(); return false;
         }
         setRecovery(state => ({ ...state, storageUnavailable: false }));
+        keepCaptures(messages, true);
         outbox.current = readWaiting(queueKey.current!);
         setQueuedCount(outbox.current.length);
       }

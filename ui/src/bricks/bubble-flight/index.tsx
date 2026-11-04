@@ -171,19 +171,24 @@ function driftAim(id: string, active: string | null): Aim | null {
 }
 /** Where it landed: its slot (the view then rings it), its point on the Map (the brick rings it), its point in a view
  *  that's showing it, or its thread's mark. */
-function landingAim(id: string, threadId: string, words: string): { aim: Aim; ring: Element | null; into: boolean } | null {
+function visibleTarget(el: Element | null): boolean {
+  if (!shown(el)) return false;
+  const r = el!.getBoundingClientRect();
+  const bottom = document.querySelector(".dock")?.getBoundingClientRect().top ?? innerHeight;
+  if (!(r.left >= 8 && r.right <= innerWidth - 8 && r.top >= 48 && r.bottom <= bottom - 8)) return false;
+  return ![...document.querySelectorAll('.shell-corner button, .spine-corner button')].some(control => {
+    const c = control.getBoundingClientRect();
+    return c.width > 0 && c.height > 0 && c.left < r.right && c.right > r.left && c.top < r.bottom && c.bottom > r.top;
+  });
+}
+function landingAim(id: string, _threadId: string, words: string): { aim: Aim; ring: Element | null; into: boolean } | null {
   const slot = slotOf(id);
-  if (shown(slot)) return { aim: aimAt(slot!, words), ring: null, into: false };
+  if (visibleTarget(slot)) return { aim: aimAt(slot!, words), ring: null, into: false };
   const point = document.getElementById(`point-${id}`);
-  if (shown(point)) return { aim: aimAt(point!, words), ring: point, into: false };
+  if (visibleTarget(point)) return { aim: aimAt(point!, words), ring: point, into: false };
   const marked = document.querySelector(`[data-thought="${CSS.escape(id)}"]`);
-  if (shown(marked)) return { aim: aimAt(marked!, words), ring: null, into: false };
-  const card = document.getElementById(`thread-${threadId}`);
-  if (shown(card)) return { aim: aimAt(card!, null), ring: card, into: true };
-  const mark = [...document.querySelectorAll(`[data-thread="${CSS.escape(threadId)}"]`)].find(shown);
-  if (!mark) return null;
-  const r = mark.getBoundingClientRect();
-  return { aim: { x: r.left + r.width / 2 - 40, y: r.top + r.height / 2, scale: 0.6 }, ring: null, into: true };
+  if (visibleTarget(marked)) return { aim: aimAt(marked!, words), ring: null, into: false };
+  return null;
 }
 /** Where your words were: the named input, wherever the shell places it. None, no flight: never a made-up
  *  origin (the playground has no composer). */
@@ -193,7 +198,7 @@ function originOf(): { words: Point; top: number } | null {
   if (!composer || !box || !box.height) return null;
   const field = composer.querySelector("textarea, input:not([type=hidden])")?.getBoundingClientRect();
   // It rises clear of the dock's "Waiting" pills on today's layout, which show the same words.
-  const pills = document.querySelector(".dock .pending")?.getBoundingClientRect();
+  const pills = document.querySelector(".dock .pending, .dock .capture-pending")?.getBoundingClientRect();
   const top = pills && pills.height ? Math.min(box.top, pills.top) : box.top;
   return field && field.width ? { words: { x: field.left, y: field.top + field.height / 2 }, top }
     : { words: { x: box.left + 16, y: box.top + box.height / 2 }, top };
@@ -253,7 +258,7 @@ function Bubble({ flight, active, layer, remove }: { flight: Flight; active: str
     let frame = 0;
 
     const draw = (now: number) => {
-      const p = inside(at, scale);
+      const p = phase === "fly" || phase === "settle" ? at : inside(at, scale);
       bubble.style.transform = `translate(${p.x - WORDS_X * scale}px, ${p.y - (h * scale) / 2}px) scale(${scale})`;
       bubble.style.opacity = String(opacity);
       if (glass.current) glass.current.style.opacity = phase === "settle" ? String(clamp(1 - (now - since) / (SETTLE_MS * 0.7), 0, 1)) : "1";
@@ -291,7 +296,7 @@ function Bubble({ flight, active, layer, remove }: { flight: Flight; active: str
       const f = latest.current.flight;
       const landing = landingAim(f.id, f.threadId!, f.text);
       if (!landing) return false;
-      const goal = inside(landing.aim, landing.aim.scale);
+      const goal = landing.aim;
       const way = curve && phase === "drift" ? heading(curve, Math.max(driftS, 0.02)) : { x: 0, y: -1 };
       curve = phase === "wait" ? rising(at, goal) : turning(at, way, goal);
       const distance = Math.hypot(goal.x - at.x, goal.y - at.y);
@@ -343,6 +348,7 @@ function Bubble({ flight, active, layer, remove }: { flight: Flight; active: str
         const k = clamp(t() / fly.ms, 0, 1);
         // The aim moves with the view (the Spine's camera following the landing): the curve's end follows it.
         const landing = landingAim(f.id, f.threadId!, f.text);
+        if (!landing) { land(); phase = "fade"; since = now; }
         if (landing && curve) {
           curve = { ...curve, b: inside(landing.aim, landing.aim.scale) };
           fly.to = landing.aim.scale;
@@ -449,7 +455,7 @@ export default function BubbleFlight({ map, on }: BrickProps) {
   const [hinted, setHinted] = useState(() => readSetting(HINTED) !== null);
   const [hinting, setHinting] = useState(false);
   const [landedOnce, setLandedOnce] = useState(0);
-  const flies = !reduced || show;
+  const flies = (!reduced || show) && !map.placingUnavailable;
   const remove = (id: string) => setFlights((was) => was.filter((flight) => flight.id !== id));
   const setShow = (next: boolean) => { setShowState(next); saveSetting(SHOW, String(next)); };
 
@@ -459,6 +465,18 @@ export default function BubbleFlight({ map, on }: BrickProps) {
     changed();
     preference.addEventListener("change", changed);
     return () => preference.removeEventListener("change", changed);
+  }, []);
+  useEffect(() => {
+    const cancel = (event: Event) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest('[data-guide="composer"], input, textarea')) return;
+      if (event.type === "keydown" && !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Escape"].includes((event as KeyboardEvent).key)) return;
+      setFlights([]);
+    };
+    document.addEventListener("pointerdown", cancel);
+    document.addEventListener("wheel", cancel, { passive: true });
+    document.addEventListener("keydown", cancel);
+    return () => { document.removeEventListener("pointerdown", cancel); document.removeEventListener("wheel", cancel); document.removeEventListener("keydown", cancel); };
   }, []);
   // Switched to no flight: the bubbles in the air go at once.
   useEffect(() => { if (!flies) setFlights([]); }, [flies]);
@@ -479,7 +497,7 @@ export default function BubbleFlight({ map, on }: BrickProps) {
     for (const thought of map.thoughts) {
       if (seen.current.has(thought.id)) continue;
       seen.current.add(thought.id);
-      if (thought.placed || thought.speaker !== map.me || !flies) continue;
+      if (thought.placed || thought.speaker !== map.me || !flies || document.querySelector('.spine-follow')?.getAttribute('aria-pressed') === 'false') continue;
       const short = count.current++ >= FULL_FLIGHTS;
       added.push({ id: thought.id, text: thought.text, short, stack: short ? 0 : stacked++ });
     }

@@ -1,4 +1,5 @@
 import { cancelPageReply, usePlayback } from "./page-speech";
+import RecoveryPanel from "./RecoveryPanel";
 import { PartnerStatus } from "./PartnerStatus";
 import { SpeechFixesContext } from "./bricks/contract";
 import { switchTalk, useTalk } from "./talk-preset";
@@ -533,6 +534,7 @@ export default function App() {
   // Capture starts only from a gesture in this tab. The mic button's click (keyboard activation too) passes its event,
   // which must be the browser's own, never a script's; a caller without one (a brick's listen, the Keys brick's ⌘D)
   // still meets mic.ts's check that a click or key press is under way in this tab.
+  const [keyHelp, setKeyHelp] = useState(false);
   const toggleMic = async (event?: { isTrusted: boolean }) => {
     if (event && !event.isTrusted) return;
     if (micStart.current) { micStart.current.abort(); core.listen(false); return; }
@@ -546,6 +548,7 @@ export default function App() {
     }
     // Without a key the core can't listen: say so, without asking the browser for the microphone first.
     if (core.noKey) {
+      setKeyHelp(true);
       core.showNotice(core.keyNotice);
       return;
     }
@@ -613,6 +616,29 @@ export default function App() {
   };
 
   // Your own thoughts on their way; in a room the other person's land on the map with their name.
+  const captures = useMemo(() => {
+    const known = new Set(core.captures.flatMap(capture => capture.thought_ids));
+    const linked = core.captures.map(capture => {
+      if (capture.thought_ids.length) return capture;
+      const thought = world.thoughts.find(thought => thought.speaker === me && !known.has(thought.id) && thought.text === capture.text);
+      if (!thought) return capture;
+      known.add(thought.id);
+      return { ...capture, thought_ids: [thought.id] };
+    });
+    return [...linked, ...world.thoughts.filter(thought => thought.speaker === me && !thought.placed && !known.has(thought.id))
+      .map(thought => ({ id: thought.id, text: thought.text, thought_ids: [thought.id], saved: false, local: true, replay: true, mapped: true, receivedOnly: true, at: thought.at_ms }))]
+      .filter(capture => capture.local && !(capture.mapped && !capture.thought_ids.length) && (!capture.mapped || core.snapshotRevision === 0 || capture.thought_ids.some(id => world.thoughts.some(thought => thought.id === id)))).sort((a, b) => {
+        const ia = world.thoughts.findIndex(thought => a.thought_ids.includes(thought.id));
+        const ib = world.thoughts.findIndex(thought => b.thought_ids.includes(thought.id));
+        const at = ia >= 0 ? world.thoughts[ia].at_ms : a.at, bt = ib >= 0 ? world.thoughts[ib].at_ms : b.at;
+        return at - bt || (ia >= 0 && ib >= 0 ? ia - ib : 0);
+      });
+  }, [core.captures, core.snapshotRevision, world.thoughts, me]);
+  const waitingCaptures = captures.filter(capture => !capture.thought_ids.length || capture.thought_ids.some(id => !world.thoughts.find(thought => thought.id === id)?.placed));
+  const placedCapture = [...captures].reverse().find(capture => !capture.replay && capture.thought_ids.length && capture.thought_ids.every(id => world.thoughts.find(thought => thought.id === id)?.placed));
+  const savedReason = core.keyRefused ? "waiting for a working key" : core.resting ? "waiting for free tries" : core.noKey ? "placing needs an AI key" : "Finding its place";
+  const captureLabel = (capture: typeof captures[number]) => capture.receivedOnly ? "Finding its place · awaiting persistence receipt" : !capture.saved ? "Kept on this device · sending"
+    : capture.thought_ids.some(id => core.placing.retryAt[id] !== undefined && core.placing.now !== id) && !core.noKey ? "Saved · placement failed" : `Saved · ${savedReason}`;
   const pending = useMemo(() => world.thoughts.filter((t) => !t.placed && t.speaker === me), [world.thoughts, me]);
   // While you talk the map quiets all but where you are (legible.css); at a natural pause everything reads again.
   // On its way means about to land: not a thought waiting for a key or for a retry, which can wait for minutes.
@@ -1051,7 +1077,7 @@ export default function App() {
     annotate: core.annotate,
     openCatalog: (id) => openCatalogAt(id ?? null),
     hint: showHint,
-  }, destination, core.usage);
+  }, destination, core.usage, core.noKey || core.keyRefused || core.resting);
   const bricksOn = useBricksOn();
   const builtIns = useBuiltInsOn();
   // A brick that shows your live words itself (brick.json `showsLiveWords`: Tiny transcript) takes them from the dock.
@@ -1172,7 +1198,7 @@ export default function App() {
     if (key === "r" && builtIns.has("recap") && world.thoughts.length) { event.preventDefault(); core.requestRecap(); return; }
     if (key === "l" && heldQuestions.length) { event.preventDefault(); const top = heldQuestions[0]; dropHeld(top.id); top.later?.(); return; }
     if (key === "m" && view !== "map") { event.preventDefault(); showView("map"); }
-    if (key === "e" && !world.threads.length && !world.thoughts.length && site.sample && core.connected) { event.preventDefault(); loadSample(); }
+    if (key === "e" && !world.threads.length && !world.thoughts.length && site.sample && core.connected && core.queuedCount === 0 && !core.recovery.onlinePending) { event.preventDefault(); loadSample(); }
     if (key === "e" && builtIns.has("export") && (world.threads.length || world.thoughts.length)) { event.preventDefault(); exportMap(); }
   };
   useEffect(() => {
@@ -1351,8 +1377,11 @@ export default function App() {
         )}
       </main>}
 
+      {sampleMap && <div className="sample-recovery-actions"><button type="button" onClick={() => core.sendText("Where was I?")}>Where was I?</button><button type="button" onClick={() => showView("palace")}>Pictures</button></div>}
       <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{announcement}</div>
       <section ref={dockRef} className={view === "palace" ? "dock in-palace" : "dock"} aria-label="Your thoughts">
+        <RecoveryPanel recovery={core.recovery} recover={core.recover} discardRecovery={core.discardRecovery} sendOnline={core.sendOnline}
+          draft={draft} clearDraft={exact => setDraft(current => current === exact ? "" : current)} />
         <div className="dock-inner">
           <div className="sr-only" role="status" aria-live="polite">{hasAway ? "Since you left. Your thoughts are ready to explore above the input box." : ""}</div>
           {!talk && <>
@@ -1535,6 +1564,7 @@ export default function App() {
         <RoomControl speakers={world.thoughts.map((thought) => thought.speaker)} />
       </TopRight>
 
+      {sampleMap && <div className="sample-recovery-actions"><button type="button" onClick={() => core.sendText("Where was I?")}>Where was I?</button><button type="button" onClick={() => showView("palace")}>Pictures</button></div>}
       <div className="sr-only" role="status">{friendlyNotice}</div>
       <div className="sr-only" role="status">{mapAnnouncement}</div>
       <Explain explanations={core.explanations} explain={core.explain} mark={core.mark} />
@@ -1549,10 +1579,12 @@ export default function App() {
         : !empty && spine ? <BrickMount brick={spine} host={brickHost} />
         : <main ref={mapRef} className="shell-main" aria-label="Your map" data-guide="map">
           {/* Before the first snapshot the world is the empty one: nothing, not a welcome to a map that isn't empty. */}
-          {core.snapshotRevision > 0 && empty && <Welcome models={!core.noKey ? modelsLine(site.models) : ""} sample={site.sample && !core.listening && !pending.length && !world.thoughts.length
+          {core.snapshotRevision > 0 && empty && <Welcome models={!core.noKey ? modelsLine(site.models) : ""} sample={site.sample && !core.listening
             ? <p className="shell-samples">
-              <button type="button" className="shell-btn shell-sample" onClick={() => loadSample()} disabled={!core.connected} aria-keyshortcuts="E">See an example<Keycap>E</Keycap></button>
+              <button type="button" className="shell-btn shell-sample" onClick={() => loadSample()} disabled={!core.connected || waitingCaptures.length > 0 || core.recovery.onlinePending} aria-keyshortcuts="E">See an example<Keycap>E</Keycap></button>
+              <button type="button" className="shell-btn" onClick={() => loadSample("debug-break")} disabled={!core.connected || waitingCaptures.length > 0 || core.recovery.onlinePending}>Try an unfinished thought</button>
               <span>A student's week. Add your own thoughts.</span>
+              {moreSamples(site.samples).map(choice => <button key={choice.id} type="button" className="shell-btn" onClick={() => loadSample(choice.id)} disabled={!core.connected || waitingCaptures.length > 0 || core.recovery.onlinePending}>{choice.label}</button>)}
             </p> : null} />}
           {!empty && !spine && <p className="shell-empty-line">{NAMES.findNone}</p>}
         </main>}
@@ -1566,6 +1598,20 @@ export default function App() {
       <footer ref={dockRef} className="dock shell-dock">
       {/* Cards, notices and captions stay above the bottom bar's input row. */}
       <section className="shell-stage" data-slot="stage" aria-label="Your thoughts">
+        {keyHelp && core.noKey && <p className="keyless-help" role="status">Your words can be saved. Add a working AI key for automatic placement and listening.</p>}
+        <RecoveryPanel recovery={core.recovery} recover={core.recover} discardRecovery={core.discardRecovery} sendOnline={core.sendOnline}
+          draft={draft} clearDraft={exact => setDraft(current => current === exact ? "" : current)} />
+        {waitingCaptures.length > 0 && <section className="capture-pending" aria-label="Thoughts waiting for placement">
+          {waitingCaptures.map(capture => <article className="capture-item" key={capture.id} data-capture={capture.id} data-saved={capture.saved} aria-label={`${captureLabel(capture)}: ${capture.text}`}>
+            <p>{capture.text}</p><span className="capture-state">{captureLabel(capture)}</span>
+            {(!capture.receivedOnly && (!capture.saved || captureLabel(capture).includes("placement failed"))) && <button className="shell-btn" type="button" onClick={() => core.retryCapture(capture.id)}>Retry</button>}
+          </article>)}
+        </section>}
+        {placedCapture && <div className="capture-placed" data-capture-placed={placedCapture.id}>
+          <button type="button" onClick={() => { const thought = world.thoughts.find(thought => thought.id === placedCapture.thought_ids[0]); if (thought?.thread_id) { core.focus(thought.thread_id); reveal(thought.thread_id, thought.id); } }}>
+            Placed in {world.threads.find(thread => thread.id === world.thoughts.find(thought => thought.id === placedCapture.thought_ids[0])?.thread_id)?.title ?? "your map"} · Show
+          </button><details><summary>Original words</summary><p>{placedCapture.text}</p></details>
+        </div>}
         <div className="shell-cards" hidden={talk}>
           <NotesContext.Provider value={notes}>
           <Away queue={core.noticeQueue} items={away.items} onDismiss={away.dismiss} onDismissFocus={() => composerRef.current?.focus({ preventScroll: true })} onFollow={(item) => {
@@ -1625,7 +1671,7 @@ export default function App() {
         mic, typingOnly: !listeningOn, hosted: site.hosted, since: micSince, now, call: inCall,
         first: !world.thoughts.length, waiting: pending.length,
         stalled: stalled ? pendingLabel(stalled, core.placing, now, core.noKey, core.keyRefused, core.resting) : "",
-        queued: core.queuedCount, connected: core.connected,
+        queued: core.queuedCount, connected: core.connected, saved: !draft && !!captures.at(-1)?.saved, savedId: captures.at(-1)?.id,
       }}>
         <form className={big ? "shell-composer shell-composer-big" : "shell-composer"} onSubmit={submit} data-guide="composer">
           {listeningOn && <MicButton state={mic} capturing={!!stopMic} disabled={!core.connected && !stopMic && !startingMic} onClick={toggleMic} shortcut={modAria("D")} />}

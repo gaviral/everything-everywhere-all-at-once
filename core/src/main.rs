@@ -153,33 +153,36 @@ impl Core {
     /// Commits `changes` only while `still` holds, checked under the same lock as the commit, so nothing comes
     /// between: a placement whose words were taken back while the model thought (catalog.rs) changes nothing.
     pub fn commit_if(&self, still: impl Fn(&World) -> bool, changes: Vec<Change>) -> bool {
+        self.try_commit_if(still, changes).unwrap_or(false)
+    }
+
+    pub(crate) fn try_commit_if(&self, still: impl Fn(&World) -> bool, changes: Vec<Change>) -> anyhow::Result<bool> {
         self.commit_speaking(still, changes, false)
     }
 
-    fn commit_speaking(&self, still: impl Fn(&World) -> bool, changes: Vec<Change>, speak: bool) -> bool {
+    fn commit_speaking(&self, still: impl Fn(&World) -> bool, changes: Vec<Change>, speak: bool) -> anyhow::Result<bool> {
         {
             let mut world = self.world.lock().unwrap();
             if !still(&world) {
-                return false;
+                return Ok(false);
             }
             let mut journal = self.journal.lock().unwrap();
+            if let Err(error) = journal.append_many(&changes) {
+                self.journal_save_failed(&error);
+                return Err(error);
+            }
             for change in &changes {
-                // Accepted deliveries must reach disk before they can affect the map.
-                if world::source_active() {
-                    if let Err(error) = journal.append(change) { self.journal_save_failed(&error); return false; }
-                }
-                Arc::make_mut(&mut world).apply(change);
+                let state = Arc::make_mut(&mut world);
+                state.apply(change);
+                if let Some((speaker, id, text)) = world::source_capture() { state.capture(&speaker, &id, Some(&text), change); }
                 positions::settle(self, &world);
-                if !world::source_active() {
-                    if let Err(e) = journal.append(change) { self.journal_save_failed(&e); }
-                }
             }
             // Under the same lock, so every window gets changes in the journal's order (a broadcast send never waits).
             for change in changes {
                 self.send_speaking(ServerMsg::Change { change }, speak);
             }
         }
-        true
+        Ok(true)
     }
 
     /// Journals a change that only the record keeps (an Explain answer, a mark on one): the world and the windows
@@ -413,8 +416,25 @@ impl Core {
         }
     }
 
-    fn source_work(&self, speaker: &str, id: &str, work: impl FnOnce()) -> bool {
-        let (_, status) = world::with_source(speaker, id, work);
+    fn capture_receipts(&self, speaker: &str) -> Vec<world::CaptureReceipt> {
+        let world = self.snapshot();
+        let mut captures: Vec<_> = world.captures.iter().filter(|((who, _), _)| who == speaker).map(|(_, capture)| capture.clone()).collect();
+        for thought in world.thoughts.iter().filter(|thought| thought.speaker == speaker && !thought.placed) {
+            if !captures.iter().any(|capture| capture.thought_ids.contains(&thought.id)) {
+                captures.push(world::CaptureReceipt { id: thought.id.clone(), text: thought.text.clone(), thought_ids: vec![thought.id.clone()] });
+            }
+        }
+        captures
+    }
+
+    fn capture_saved(&self, speaker: &str, id: &str) {
+        if let Some(capture) = self.snapshot().captures.get(&(speaker.into(), id.into())).cloned() {
+            self.send_to(speaker, ServerMsg::CaptureSaved { capture, replay: false });
+        }
+    }
+
+    fn source_work(&self, speaker: &str, id: &str, text: &str, work: impl FnOnce()) -> bool {
+        let (_, status) = world::with_source(speaker, id, text, work);
         if status.accepted { Arc::make_mut(&mut self.world.lock().unwrap()).received_text.insert((speaker.into(), id.into())); }
         !status.failed
     }
@@ -423,8 +443,9 @@ impl Core {
         let _receipt = self.typed_receipts.lock().unwrap();
         if self.snapshot().speech_resolved.contains(id) { return; }
         if !text.is_empty() && !self.snapshot().received_text.contains(&(speaker.into(), id.into())) {
-            if !self.source_work(speaker, id, || self.take_turn(speaker, text, true, false, false, window)) { return; }
+            if !self.source_work(speaker, id, text, || self.take_turn(speaker, text, true, false, false, window)) { return; }
         }
+        self.capture_saved(speaker, id);
         self.resolve_speech(speaker, id);
     }
 
@@ -432,27 +453,32 @@ impl Core {
         let _receipt = self.typed_receipts.lock().unwrap();
         let Some(draft) = self.snapshot().speech_drafts.get(id).filter(|draft| draft.speaker == speaker).cloned() else { return };
         if keep && !self.snapshot().received_text.contains(&(speaker.into(), id.into())) {
-            if !self.source_work(speaker, id, || { self.keep_complete(speaker, &draft.text, false, false); }) { return; }
+            if !self.source_work(speaker, id, &draft.text, || { self.keep_complete(speaker, &draft.text, false, false); }) { return; }
         }
+        self.capture_saved(speaker, id);
         self.resolve_speech(speaker, id);
     }
 
-    fn receive_typed(self: &Arc<Self>, speaker: &str, id: &str, text: &str, speak: bool, window: Option<u64>) {
-        if uuid::Uuid::parse_str(id).is_err() { return; }
+    fn receive_typed(self: &Arc<Self>, speaker: &str, id: &str, text: &str, speak: bool, window: Option<u64>) -> bool {
+        if uuid::Uuid::parse_str(id).is_err() { return false; }
         // Two reconnecting windows can retry the same entry at once.
         let _receipt = self.typed_receipts.lock().unwrap();
         let key = (speaker.to_string(), id.to_string());
         if !self.snapshot().received_text.contains(&key) {
-            if !self.source_work(speaker, id, || self.take_turn(speaker, text, true, true, speak, window)) { return; }
+            if !self.source_work(speaker, id, text, || self.take_turn(speaker, text, true, true, speak, window)) { return false; }
             let change = Change::TextReceived { speaker: speaker.into(), id: id.into() };
             let mut world = self.world.lock().unwrap();
-            if let Err(e) = self.journal.lock().unwrap().append(&change) {
+            let (saved, _) = world::with_source(speaker, id, text, || self.journal.lock().unwrap().append(&change));
+            if let Err(e) = saved {
                 self.journal_save_failed(&e);
-                return;
+                return false;
             }
-            Arc::make_mut(&mut world).apply(&change);
+            let state = Arc::make_mut(&mut world);
+            state.apply(&change);
+            state.capture(speaker, id, Some(text), &change);
         }
         self.send_to(speaker, ServerMsg::TextReceived { id: id.into() });
+        true
     }
 
     /// `add_turn`, saying why when `typed` filler is set aside. Only a live originating window may opt into the partner.
@@ -631,10 +657,11 @@ impl Core {
             let placing = stay::placement(&world, &thought);
             let pinned = placing.is_some();
             let changes = std::iter::once(Change::ThoughtAdded { thought: thought.clone() }).chain(placing.into_iter().flatten()).collect();
-            if self.commit_speaking(|w| w.stay_here == world.stay_here, changes, speak) {
-                break pinned;
+            match self.commit_speaking(|w| w.stay_here == world.stay_here, changes, speak) {
+                Ok(true) => break pinned,
+                Ok(false) => continue,
+                Err(_) => return id,
             }
-            if world::source_failed() { return id; }
         };
         if pinned {
             self.new_threads.cancel(speaker);
@@ -1626,11 +1653,12 @@ async fn connect(
     let ai = join.ai.is_some() && speaker != "you" && speaker != GUEST;
     let remote = join.remote.is_some() && !ai;
     upgrade.on_upgrade(move |mut socket| async move {
-        if join.identity.is_some() {
+        let identified = join.identity.is_some();
+        if identified {
             let id = core.journal.lock().unwrap().map_id().to_string();
             if socket.send(Message::Text(serde_json::to_string(&ServerMsg::MapIdentity { id }).unwrap().into())).await.is_err() { return; }
         }
-        session(socket, core, speaker, link.here(), renamed, ai, remote, seat).await
+        session(socket, core, speaker, link.here(), renamed, ai, remote, seat, identified).await
     })
 }
 
@@ -1725,7 +1753,7 @@ fn catch_up(core: &Core, speaker: &str) -> Vec<ServerMsg> {
 /// participant's window (`Join::ai`); `remote`: a person's Remote (`Join::remote`). `_seat` holds its name in a room
 /// until it closes.
 #[allow(clippy::too_many_arguments)]
-async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool, renamed: bool, ai: bool, remote: bool, _seat: Seat) {
+async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool, renamed: bool, ai: bool, remote: bool, _seat: Seat, identified: bool) {
     let (mut out, mut incoming) = socket.split();
     if core.room.is_some() {
         tracing::info!("{speaker} joined the shared map");
@@ -1736,6 +1764,11 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
     // listed there too, as a Remote.
     let _here = if remote { call::join_remote(&core, &speaker) } else { call::join(&core, &speaker, ai) };
     let (updates, replay) = subscribe_catch_up(&core, &speaker);
+    if identified {
+        for capture in core.capture_receipts(&speaker) {
+            if write(&mut out, &ServerMsg::CaptureSaved { capture, replay: true }).await.is_err() { return; }
+        }
+    }
     for message in replay {
         if write(&mut out, &message).await.is_err() { return; }
     }
@@ -1774,6 +1807,11 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
         };
         match message {
             Message::Text(text) => match serde_json::from_str::<ClientMsg>(text.as_str()) {
+                Ok(ClientMsg::RetryPlacement { id }) => {
+                    if core.snapshot().thoughts.iter().any(|thought| thought.id == id && thought.speaker == speaker && !thought.placed) {
+                        let _ = core.placer_queue.send(placer::Job::Place(id));
+                    }
+                }
                 Ok(ClientMsg::Heartbeat { id }) => {
                     if id.len() <= 128 { core.send_to(&speaker, ServerMsg::Heartbeat { id }); }
                 }
@@ -1797,7 +1835,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                     core.send_to(&speaker, ServerMsg::Notice { message: protocol::THOUGHT_TOO_LONG.into() });
                 }
                 Ok(ClientMsg::Text { text, speak, id }) if !text.trim().is_empty() => {
-                    if let Some(id) = id { core.receive_typed(&speaker, &id, text.trim(), speak && ai, Some(window)); }
+                    if let Some(id) = id { if core.receive_typed(&speaker, &id, text.trim(), speak && ai, Some(window)) && identified { core.capture_saved(&speaker, &id); } }
                     else { core.take_turn(&speaker, text.trim(), true, true, speak && ai, Some(window)); }
                 }
                 // A listener whose voice service ended has a closed channel; start a fresh one.
@@ -2134,6 +2172,74 @@ mod tests {
     }
 
     #[test]
+    fn capture_failed_batch_never_applies_or_announces_changes() {
+        let path = std::env::temp_dir().join(format!("e2a2o-capture-fault-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, world) = crate::Journal::open(&path).unwrap();
+        drop(journal);
+        let core = Core::test(crate::Journal::read_only(&path).unwrap(), world);
+        let mut updates = core.updates.subscribe();
+        assert!(!core.commit_if(|_| true, vec![Change::ActiveChanged { thread_id: "missing".into(), speaker: "you".into() }]));
+        assert_eq!(core.snapshot().active, None, "failed persistence cannot mutate the map");
+        assert!(std::iter::from_fn(|| updates.try_recv().ok()).all(|out| !matches!(out.message, ServerMsg::Change { .. } | ServerMsg::CaptureSaved { .. } | ServerMsg::TextReceived { .. })));
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[tokio::test]
+    async fn capture_failed_identified_window_gets_no_saved_receipt() {
+        let path = std::env::temp_dir().join(format!("e2a2o-capture-wire-fault-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, world) = crate::Journal::open(&path).unwrap();
+        drop(journal);
+        let core = Arc::new(Core::test(crate::Journal::read_only(&path).unwrap(), world));
+        let routes = axum::Router::new().route("/ws", axum::routing::get(super::connect)).with_state(core.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, routes.into_make_service_with_connect_info::<Link>()).await });
+        let (mut window, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws?identity=1")).await.unwrap();
+        let id = uuid::Uuid::new_v4().to_string();
+        window.send(tokio_tungstenite::tungstenite::Message::Text(serde_json::json!({"type":"text","id":id,"text":"These words must not be called saved"}).to_string().into())).await.unwrap();
+        let mut warned = false;
+        while let Ok(message) = tokio::time::timeout(std::time::Duration::from_millis(200), received(&mut window)).await {
+            assert!(!["text_received", "capture_saved", "change"].contains(&message["type"].as_str().unwrap_or_default()), "{message}");
+            warned |= message["type"] == "notice" && message["message"].as_str().is_some_and(|text| text.contains("Couldn't save"));
+        }
+        assert!(warned);
+        assert!(core.snapshot().thoughts.is_empty());
+        server.abort();
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn capture_nonthought_command_gets_a_receipt_without_a_pending_point() {
+        let (core, _queue, path) = keyless(World::default());
+        let id = uuid::Uuid::new_v4().to_string();
+        assert!(core.receive_typed("you", &id, "What can I say?", false, None));
+        let receipt = core.capture_receipts("you").into_iter().find(|capture| capture.id == id).unwrap();
+        assert!(receipt.thought_ids.is_empty());
+        assert_eq!(receipt.text, "What can I say?");
+        let (journal, world) = crate::Journal::open(&path).unwrap();
+        let restored = Core::test(journal, world);
+        assert!(restored.capture_receipts("you").iter().any(|capture| capture.id == id && capture.thought_ids.is_empty()));
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn capture_receipt_replays_original_words_and_thought_ids() {
+        let (core, _queue, path) = keyless(World::default());
+        let id = uuid::Uuid::new_v4().to_string();
+        assert!(core.receive_typed("you", &id, "Keep this original capture", false, None));
+        let receipt = core.capture_receipts("you").into_iter().find(|capture| capture.id == id).unwrap();
+        assert_eq!(receipt.text, "Keep this original capture");
+        assert_eq!(receipt.thought_ids, [core.snapshot().thoughts[0].id.clone()]);
+        let (journal, world) = crate::Journal::open(&path).unwrap();
+        let restarted = Core::test(journal, world);
+        let again = restarted.capture_receipts("you").into_iter().find(|capture| capture.id == id).unwrap();
+        assert_eq!(again.text, receipt.text);
+        assert_eq!(again.thought_ids, receipt.thought_ids);
+        assert!(restarted.capture_receipts("someone else").is_empty());
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
     fn delivery_identity_survives_restart_and_is_not_an_address() {
         let first = std::env::temp_dir().join(format!("e2a2o-identity-{}.jsonl", uuid::Uuid::new_v4()));
         let other = std::env::temp_dir().join(format!("e2a2o-identity-{}.jsonl", uuid::Uuid::new_v4()));
@@ -2172,7 +2278,7 @@ mod tests {
             let id = uuid::Uuid::new_v4().to_string();
             let text = "Keep the original words after a crash";
             match kind {
-                "typed" => core.receive_typed("you", &id, text, false, None),
+                "typed" => { core.receive_typed("you", &id, text, false, None); },
                 "speech" => core.finish_speech("you", &id, text, None),
                 _ => {
                     core.remember_speech(crate::world::SpeechDraft { id: id.clone(), speaker: "you".into(), text: text.into() });
@@ -2190,7 +2296,7 @@ mod tests {
             let (journal, world) = crate::Journal::open(&path).unwrap();
             let reopened = Arc::new(Core::test(journal, world));
             match kind {
-                "typed" => reopened.receive_typed("you", &id, text, false, None),
+                "typed" => { reopened.receive_typed("you", &id, text, false, None); },
                 "speech" => reopened.finish_speech("you", &id, text, None),
                 _ => reopened.recover_speech("you", &id, true),
             }

@@ -288,16 +288,40 @@ export function senders(FOR_MS = 60_000) {
 /** Listeners by event name, for `on`; `emit` calls each, and says how many heard it. */
 export function brickEvents() {
   const listeners = new Map<keyof BrickEvents, Set<(value: never) => void>>();
-  const on: BrickOn = (name, listener) => {
+  let last: { value: BrickEvents["landed"]; at: number } | null = null;
+  const consumed = new Map<string, string>();
+  const consumers = new Map<unknown, string>();
+  const on: BrickOn = (name, listener, consumer) => {
     const set = listeners.get(name) ?? new Set();
     listeners.set(name, set);
     set.add(listener as (value: never) => void);
-    return () => { set.delete(listener as (value: never) => void); };
+    if (consumer && name === "landed") {
+      consumers.set(listener, consumer);
+      const cached = last;
+      if (cached && Date.now() - cached.at <= 5000 && consumed.get(consumer) !== cached.value.thoughtId) {
+        queueMicrotask(() => {
+          if (set.has(listener as (value: never) => void) && consumed.get(consumer) !== cached.value.thoughtId) {
+            consumed.set(consumer, cached.value.thoughtId);
+            (listener as (value: BrickEvents["landed"]) => void)(cached.value);
+          }
+        });
+      }
+    }
+    return () => { set.delete(listener as (value: never) => void); consumers.delete(listener); };
   };
   const emit = <K extends keyof BrickEvents>(name: K, value: BrickEvents[K]): number => {
     const heard = [...(listeners.get(name) ?? [])];
-    for (const listener of heard) (listener as (value: BrickEvents[K]) => void)(value);
+    if (name === "landed") last = { value: value as BrickEvents["landed"], at: Date.now() };
+    for (const listener of heard) {
+      const consumer = consumers.get(listener);
+      if (name === "landed" && consumer) {
+        const id = (value as BrickEvents["landed"]).thoughtId;
+        if (consumed.get(consumer) === id) continue;
+        consumed.set(consumer, id);
+      }
+      (listener as (value: BrickEvents[K]) => void)(value);
+    }
     return heard.length;
   };
-  return { on, emit };
+  return { on, emit, clearReplay: () => { last = null; } };
 }

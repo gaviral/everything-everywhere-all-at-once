@@ -30,10 +30,10 @@ pub fn set(core: &Core, speaker: &str, thread_id: Option<&str>) -> bool {
             },
             None => None,
         };
-        if core.commit_if(
+        if match core.try_commit_if(
             |w| id.as_deref().is_none_or(|id| w.thread(id).is_some()),
             vec![Change::StayChanged { thread_id: id.clone() }],
-        ) {
+        ) { Ok(done) => done, Err(_) => return false } {
             let message = title.map(|title| format!("Staying here: {title}. Everyone's new thoughts land here whole."))
                 .unwrap_or_else(|| "Let go: new thoughts find their own topics again.".into());
             core.send_to(speaker, ServerMsg::Notice { message });
@@ -59,18 +59,23 @@ pub fn placement(world: &World, thought: &Thought) -> Option<Vec<Change>> {
 }
 
 /// A queued thought (including one waiting when a pin was set or a journal reopened) lands without a model.
+#[cfg(test)]
 pub fn place_waiting(core: &Core, thought_id: &str) -> bool {
+    try_place_waiting(core, thought_id).unwrap_or(false)
+}
+
+pub(crate) fn try_place_waiting(core: &Core, thought_id: &str) -> anyhow::Result<bool> {
     loop {
         let world = core.snapshot();
-        let Some(thought) = world.thoughts.iter().find(|t| t.id == thought_id && !t.placed) else { return false };
-        let Some(changes) = placement(&world, thought) else { return false };
-        if core.commit_if(
+        let Some(thought) = world.thoughts.iter().find(|t| t.id == thought_id && !t.placed) else { return Ok(false) };
+        let Some(changes) = placement(&world, thought) else { return Ok(false) };
+        if core.try_commit_if(
             |w| w.stay_here == world.stay_here && w.thoughts.iter().any(|t| t.id == thought_id && !t.placed),
             changes.clone(),
-        ) {
+        )? {
             core.new_threads.cancel(&thought.speaker);
             core.new_threads.placed(thought_id, &changes, None);
-            return true;
+            return Ok(true);
         }
     }
 }

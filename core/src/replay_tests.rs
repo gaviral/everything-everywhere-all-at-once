@@ -76,7 +76,7 @@ fn save_failure_notice() -> serde_json::Value {
 }
 
 #[test]
-fn journal_save_failure_commit_batch_reports_once_and_preserves_changes_and_return_values() {
+fn journal_save_failure_commit_batch_reports_once_and_rejects_unsaved_changes() {
     journal_save_failure_without_deadlock(async {
         for failing in [false, true] {
             let f = SaveFailureFixture::new(failing);
@@ -89,20 +89,17 @@ fn journal_save_failure_commit_batch_reports_once_and_preserves_changes_and_retu
                 Change::ActiveChanged { thread_id: "T1".into(), speaker: "you".into() },
             ];
             let mut expected = (*f.core.snapshot()).clone();
-            for change in &changes {
-                expected.apply(change);
-            }
-            assert!(f.core.commit_if(|_| true, changes.clone()));
-            assert_eq!(full(&f.core.snapshot()), full(&expected), "failed writes still apply the whole batch");
+            if !failing { for change in &changes { expected.apply(change); } }
+            assert_eq!(f.core.commit_if(|_| true, changes.clone()), !failing);
+            assert_eq!(full(&f.core.snapshot()), full(&expected), "only durable changes enter the map");
             let sent = save_failure_updates(&mut first_window);
             assert_eq!(sent, save_failure_updates(&mut second_window), "both windows receive the same broadcast");
             let notices: Vec<_> = sent.iter().filter(|out| out["message"]["type"] == "notice").cloned().collect();
             assert_eq!(notices, if failing { vec![save_failure_notice()] } else { vec![] });
-            let mut wanted: Vec<_> = changes.iter().map(|change| serde_json::json!({ "to": null, "message": { "type": "change", "change": change } })).collect();
-            if failing {
-                wanted.insert(0, save_failure_notice());
-            }
-            assert_eq!(sent, wanted, "the notice precedes changes; change order and broadcast routing stay the same");
+            let wanted: Vec<_> = if failing { vec![save_failure_notice()] } else {
+                changes.iter().map(|change| serde_json::json!({ "to": null, "message": { "type": "change", "change": change } })).collect()
+            };
+            assert_eq!(sent, wanted, "failed writes broadcast only the failure; successful change order stays the same");
 
             assert!(!f.core.commit_if(|_| false, changes));
             assert!(f.core.commit_if(|_| true, vec![]));
@@ -113,9 +110,8 @@ fn journal_save_failure_commit_batch_reports_once_and_preserves_changes_and_retu
                 assert_eq!(std::fs::read_to_string(&f.path).unwrap(), before);
                 let change = Change::ActiveChanged { thread_id: "T2".into(), speaker: "Sam".into() };
                 f.core.commit(vec![change.clone()]);
-                expected.apply(&change);
                 for updates in [&mut first_window, &mut second_window] {
-                    assert_eq!(save_failure_updates(updates), vec![serde_json::json!({ "to": null, "message": { "type": "change", "change": change } })]);
+                    assert!(save_failure_updates(updates).is_empty(), "failed changes are not broadcast, and the warning is throttled");
                 }
                 assert_eq!(full(&f.core.snapshot()), full(&expected));
                 assert_eq!(std::fs::read_to_string(&f.path).unwrap(), before);
@@ -124,6 +120,21 @@ fn journal_save_failure_commit_batch_reports_once_and_preserves_changes_and_retu
                 assert_eq!(std::fs::read_to_string(&f.path).unwrap().lines().count(), 4);
             }
         }
+    });
+}
+
+#[test]
+fn journal_save_failure_stay_returns_without_spinning() {
+    journal_save_failure_without_deadlock(async {
+        let f = SaveFailureFixture::new(false);
+        let mut thought = crate::world::fixtures::thought("pending", "T1", "Keep these words", 1);
+        thought.placed = false;
+        f.core.commit(vec![Change::StayChanged { thread_id: Some("T1".into()) }, Change::ThoughtAdded { thought }]);
+        *f.core.journal.lock().unwrap() = Journal::read_only(&f.path).unwrap();
+        assert!(!crate::stay::set(&f.core, "you", None));
+        assert!(!crate::stay::place_waiting(&f.core, "pending"));
+        assert_eq!(f.core.snapshot().stay_here.as_deref(), Some("T1"));
+        assert!(!f.core.snapshot().thoughts.iter().find(|thought| thought.id == "pending").unwrap().placed);
     });
 }
 
@@ -237,7 +248,7 @@ fn journal_save_failure_shared_gate_reopens_at_ten_seconds() {
         let mark = Change::AnswerMarked { kind: "explain".into(), id: "answer".into(), off: true, speaker: "Sam".into(), at_ms: 3 };
         let started = Instant::now();
         f.core.commit(vec![change.clone()]);
-        let wanted = vec![save_failure_notice(), serde_json::json!({ "to": null, "message": { "type": "change", "change": change } })];
+        let wanted = vec![save_failure_notice()];
         assert_eq!(save_failure_updates(&mut first_window), wanted);
         assert_eq!(save_failure_updates(&mut second_window), wanted);
 
@@ -252,13 +263,12 @@ fn journal_save_failure_shared_gate_reopens_at_ten_seconds() {
             let held = f.core.snapshot().positions["T1"].clone();
             crate::positions::flush_all(&f.core);
             let wanted = vec![
-                serde_json::json!({ "to": null, "message": { "type": "change", "change": change } }),
                 serde_json::json!({ "to": null, "message": { "type": "change", "change":
                     { "type": "positioned", "id": "T1", "x": first.x, "y": first.y, "by": first.by, "at_ms": first.at_ms } } }),
                 serde_json::json!({ "to": null, "message": { "type": "change", "change":
                     { "type": "positioned", "id": "T1", "x": held.x, "y": held.y, "by": held.by, "at_ms": held.at_ms } } }),
             ];
-            assert_eq!(save_failure_updates(&mut first_window), wanted, "suppressed failures still broadcast live changes in order");
+            assert_eq!(save_failure_updates(&mut first_window), wanted, "failed map changes stay suppressed; existing position updates keep their order");
             assert_eq!(save_failure_updates(&mut second_window), wanted);
         }
         assert_eq!(Instant::now() - started, Duration::from_secs(10) - Duration::from_nanos(1));
@@ -271,7 +281,7 @@ fn journal_save_failure_shared_gate_reopens_at_ten_seconds() {
         assert_eq!(save_failure_updates(&mut second_window), vec![save_failure_notice()]);
         f.core.record(mark.clone());
         f.core.commit(vec![change.clone()]);
-        let wanted = vec![serde_json::json!({ "to": null, "message": { "type": "change", "change": change } })];
+        let wanted: Vec<serde_json::Value> = vec![];
         assert_eq!(save_failure_updates(&mut first_window), wanted);
         assert_eq!(save_failure_updates(&mut second_window), wanted);
         advance(Duration::from_secs(10)).await;
@@ -279,7 +289,7 @@ fn journal_save_failure_shared_gate_reopens_at_ten_seconds() {
         assert_eq!(save_failure_updates(&mut first_window), vec![save_failure_notice()]);
         assert_eq!(save_failure_updates(&mut second_window), vec![save_failure_notice()]);
         assert_eq!(f.core.snapshot().positions["T1"].x, 5.0);
-        assert_eq!(f.core.snapshot().active_by["Sam"], "T1");
+        assert!(!f.core.snapshot().active_by.contains_key("Sam"), "failed active changes never take effect");
         assert_eq!(std::fs::read_to_string(&f.path).unwrap(), before);
     });
 }
