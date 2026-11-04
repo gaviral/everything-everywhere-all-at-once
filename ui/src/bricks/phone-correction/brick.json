@@ -1,0 +1,8 @@
+{
+  "id": "phone-correction",
+  "name": "Correct a landing",
+  "does": "Move a thought to the right topic, then undo that exact correction.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": true
+}

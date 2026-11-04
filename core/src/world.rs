@@ -361,6 +361,10 @@ pub struct Agreement {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct World {
+    #[serde(default, skip_serializing)]
+    pub correction_receipts: std::collections::HashMap<(String, String), crate::moves::CorrectionReceipt>,
+    #[serde(default, skip_serializing)]
+    pub landing_versions: std::collections::HashMap<String, u64>,
     #[serde(default)] pub evidence_kept: Vec<EvidenceKept>,
     #[serde(default)] pub choice_maps: Vec<ChoiceMap>,
     #[serde(default, skip_serializing)] pub choice_receipts: std::collections::HashMap<(String, String), (ChoiceRequest, ChoiceMap)>,
@@ -487,6 +491,7 @@ pub struct World {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Change {
+    LandingCorrected { receipt: crate::moves::CorrectionReceipt },
     EvidenceKept { evidence: EvidenceKept },
     ChoiceMapSaved { choice: ChoiceMap, actor: String, request: ChoiceRequest },
     ResearchKept { research: crate::research::ResearchKept, request: crate::research::Command },
@@ -803,9 +808,33 @@ impl World {
     }
 
     pub fn apply(&mut self, change: &Change) {
+        // Merging a topic and bringing it back is also a later landing change.
+        // It must not revive an older phone Undo just because the topic ID matches again.
+        let regrouped = match change {
+            Change::ThreadMerged { from, .. } => self.thoughts.iter()
+                .filter(|t| t.thread_id.as_deref().is_some_and(|id| self.resolve(id) == self.resolve(from)))
+                .map(|t| t.id.clone()).collect::<Vec<_>>(),
+            Change::ThreadUnmerged { unmerge } => unmerge.thoughts.clone(),
+            _ => Vec::new(),
+        };
+        for id in regrouped {
+            *self.landing_versions.entry(id).or_default() += 1;
+        }
+        let changed_landing = match change {
+            Change::ThoughtMoved { thought_id, .. } | Change::ThoughtPlaced { thought_id, .. }
+                | Change::ThoughtSkipped { thought_id } => Some(thought_id),
+            Change::ThoughtAdded { thought } => Some(&thought.id),
+            _ => None,
+        };
+        if let Some(id) = changed_landing {
+            *self.landing_versions.entry(id.clone()).or_default() += 1;
+        }
         let change = self.resolved(change);
         crate::tidy::follow(self, &change);
         match change.as_ref() {
+            Change::LandingCorrected { receipt } => {
+                self.correction_receipts.insert((receipt.actor.clone(), receipt.request.request_id.clone()), receipt.clone());
+            }
             Change::EvidenceKept { evidence } => {
                 if let Some(old) = self.evidence_kept.iter_mut().find(|e| e.request_id == evidence.request_id) { *old = evidence.clone(); }
                 else { self.evidence_kept.push(evidence.clone()); }
@@ -2304,6 +2333,12 @@ mod tests {
             decided: false,
         };
         let changes = vec![
+            Change::LandingCorrected { receipt: crate::moves::CorrectionReceipt {
+                actor: "you".into(), request: crate::moves::CorrectionRequest {
+                    request_id: "00000000-0000-4000-8000-000000000002".into(), thought_id: "a".into(),
+                    observed_text: "Pottery class".into(), from: "T1".into(), to: "T2".into(), undo_of: None,
+                }, version: 1, note: None, message: "Moved to Pottery class".into(),
+            } },
             Change::ResearchKept { research: crate::research::ResearchKept { id: "research-fixture".into(), owner: "you".into(), thought_id: "p1".into(), quote: "When?".into(), source_point: "When?".into(), topic_id: "T1".into(), topic_title: "Venue".into(), query: "Hours".into(), answer: "Open at nine.".into(), citations: vec![crate::research::Citation { title: "Venue hours".into(), url: "https://example.com/hours".into(), start: 0, end: 13 }], at_ms: 100, model: "synthetic".into(), simulated: true, revision: 1, removed: false, request_id: "keep-fixture".into() }, request: crate::research::Command { request_id: "keep-fixture".into(), op: "keep".into(), answer_id: "research-fixture".into(), ..Default::default() } },
             Change::DiscussionStatus { discussion: crate::discussion::DiscussionStatus { thread_id: "T1".into(), status: "resolved".into(), actor: "Sam".into(), at_ms: 100, revision: 1, request_id: "fixture-discussion".into(), observed_revision: 0, reply_count: 1 } },
             Change::QuestionSaved { question: Question { id: "00000000-0000-4000-8000-000000000001".into(), owner: "Ana".into(), question: "Which route?".into(), thought_id: None, answer: String::new(), status: "open".into(), revision: 1, updated_ms: 100 } },
@@ -2564,6 +2599,7 @@ mod tests {
         for change in &changes {
             match change {
                 Change::AgreementSource { .. } | Change::ThoughtAgreement { .. }
+                | Change::LandingCorrected { .. }
                 | Change::CaptionAdded { .. }
                 | Change::RecapSaved { .. }
                 | Change::AppRegistered { .. }
@@ -2639,7 +2675,7 @@ mod tests {
         let changes = every_change();
         let kinds: std::collections::HashSet<String> =
             changes.iter().map(|c| serde_json::to_value(c).unwrap()["type"].as_str().unwrap().to_string()).collect();
-        assert_eq!(kinds.len(), 70, "one of each kind of change");
+        assert_eq!(kinds.len(), 71, "one of each kind of change");
         for change in &changes {
             let json = serde_json::to_string(change).unwrap();
             let back: Change = serde_json::from_str(&json).unwrap_or_else(|e| panic!("{json} didn't read back: {e}"));

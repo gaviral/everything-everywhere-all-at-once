@@ -14,7 +14,7 @@ try {
   browser = await openPage('about:blank', { width, height: 900 });
   const { page, evaluate, until } = browser;
   await page('Page.enable');
-  await page('Page.addScriptToEvaluateOnNewDocument', { source: "localStorage.setItem('e2a2o.toured','1');localStorage.setItem('e2a2o.install-hint','1')" });
+  await page('Page.addScriptToEvaluateOnNewDocument', { source: "localStorage.setItem('e2a2o.features', JSON.stringify({'learned-action-labels':true}));localStorage.setItem('e2a2o.toured','1');localStorage.setItem('e2a2o.install-hint','1')" });
   await page('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }, { name: 'prefers-reduced-motion', value: 'reduce' }] });
   const feature = '[data-guide="catalog"]';
   const word = `${feature} .learned-action-word`;
@@ -43,7 +43,7 @@ try {
       await click(preference);
       assert.ok(await until(`document.querySelector('${preference}')?.getAttribute('aria-checked')==='${on}'`), 'the Features preference changes');
     };
-    assert.equal(await evaluate(`document.querySelector('${preference}')?.getAttribute('aria-checked')`), 'true', 'learned controls starts on');
+    assert.equal(await evaluate(`document.querySelector('${preference}')?.getAttribute('aria-checked')`), 'true', 'learned controls explicitly enabled for this comparison');
     await toggle(false);
     await key('Escape', 'Escape', 27);assert.ok(await until("!document.querySelector('.shell-rail')"));
     await evaluate('document.activeElement?.blur()');await key('c', 'KeyC', 67);

@@ -130,6 +130,26 @@ def packages(path, text):
     return [name for field in ("dependencies", "devDependencies", "optionalDependencies") for name in data.get(field, {})]
 
 
+# A reviewed publication reference displayed only as an explicit reader-opened link.
+# This permits one JSON data field, never an executable network-call site or another URL.
+CITATION_PATH = "ui/src/msg1351/research-walkthrough/evidence.json"
+CITATION_URL = "https://www.microsoft.com/en-us/research/publication/data-mountain-using-spatial-memory-for-document-management/"
+
+
+def citation_text(path, text):
+    if path != CITATION_PATH:
+        return text
+    try:
+        data = json.loads(text)
+    except (ValueError, TypeError):
+        return text
+    if isinstance(data, dict) and data.get("sourceUrl") == CITATION_URL:
+        # Blank only the exact field value; all other fields keep the normal scan.
+        return re.sub(r'("sourceUrl"\s*:\s*)"' + re.escape(CITATION_URL) + r'"',
+                      lambda match: match[1] + '"reviewed-publication-link"', text)
+    return text
+
+
 def breaches(files):
     """files: {path: text}. Each breach as 'path:line: what'."""
     found = []
@@ -139,7 +159,7 @@ def breaches(files):
             continue
         if not path.startswith(RUNTIME):
             continue
-        code = runtime_part(path, text)
+        code = runtime_part(path, citation_text(path, text))
         for n, line in enumerate(code.splitlines(), 1):
             if HOSTS.search(line):
                 found.append(f"{path}:{n}: a non-Meta model API: {line.strip()[:120]}")
@@ -201,6 +221,12 @@ def self_test():
         "README.md": "Calls api.openai.com? No: README text isn't code.\n",
     }
     assert breaches(clean) == [], breaches(clean)
+    citation = json.dumps({"sourceUrl": CITATION_URL})
+    assert breaches({CITATION_PATH: citation}) == [], "reviewed reader-opened citation"
+    assert breaches({CITATION_PATH: json.dumps({"sourceUrl": "https://other.test.evil/paper"})}), "changed citation stays guarded"
+    assert breaches({CITATION_PATH: json.dumps({"sourceUrl": CITATION_URL, "endpoint": "https://other.test.evil/api"})}), "other fields stay guarded"
+    assert breaches({"ui/src/citation.ts": 'fetch("' + CITATION_URL + '")'}), "executable calls stay guarded"
+    assert breaches({"ui/src/other.json": citation}), "other files stay guarded"
     planted = {
         "core/src/placer.rs": 'const URL: &str = "https://api.openai.com/v1/chat/completions";\n',
         "core/src/refiner.rs": '"model": "gpt-4o-mini",\n',

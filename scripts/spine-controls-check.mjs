@@ -57,8 +57,8 @@ for (const [width, height] of [[1440, 900], [390, 844], [320, 844]]) for (const 
     await page('Input.insertText', { text: 'Keep this draft unchanged' });
     const identity = await evaluate(`localStorage.getItem('e2a2o.last-map.you')`);
     assert.ok(identity, 'fixture has a real map identity');
-    assert.deepEqual(await evaluate(`[...document.querySelectorAll('[data-zoom-stop]')].map(e=>e.textContent.replace(/[123]/g,'').trim())`), ['Read', 'Topics', 'Overview']);
-    assert.ok(await evaluate(`document.querySelector('[data-camera-follow]').textContent.includes('Auto-follow on')`), 'follow state is explicit at every width');
+    assert.deepEqual(await evaluate(`[...document.querySelectorAll('[data-zoom-stop]')].map(e=>e.textContent.replace(/[123]/g,'').trim())`), ['Words', 'Titles', 'Pictures']);
+    assert.ok(await evaluate(`document.querySelector('[data-camera-follow]').textContent.includes('Following')`), 'follow state is explicit at every width');
     await click('[data-camera-follow]');
     assert.ok(await until(`document.querySelector('[data-camera-follow]').getAttribute('aria-pressed')==='false'`), 'auto-follow can be turned off');
     await click('[data-camera-follow]');
@@ -114,7 +114,7 @@ for (const [width, height] of [[1440, 900], [390, 844], [320, 844]]) for (const 
     assert.equal(await evaluate(`localStorage.getItem('e2a2o.last-map.you')`), identity, 'zoom preserves map identity');
     await click('.spine-head[data-thread="T1"] .stay-here');
     assert.ok(await until(`!!document.querySelector('.spine-head[data-thread="T1"] .staying-here')`), 'routing is explicit and shared');
-    assert.equal(await evaluate(`document.querySelector('.spine-head[data-thread="T1"] .staying-here span').textContent`), 'New thoughts go here');
+    assert.equal(await evaluate(`document.querySelector('.spine-head[data-thread="T1"] .staying-here span').textContent`), 'Staying here');
     await click('.spine-head[data-thread="T1"] .staying-here button');
     assert.ok(await until(`!document.querySelector('.staying-here')`), 'Stop releases routing');
     const fresh = { ...thought('new', null, 'Water the herbs on Friday'), placed: false };

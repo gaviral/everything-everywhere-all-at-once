@@ -4,6 +4,8 @@ import { ClarificationView, createClarification } from "../../msg1351/clarificat
 import type { SelectedSource, SelectedSourceAdapter } from "../../msg1351/clarification/contracts";
 import "../../msg1351/clarification/clarification.css";
 import "./example.css";
+import { LookSwitch, type Look } from "./looks/LookSwitch";
+import "./looks/looks.css";
 
 function useExampleSource() {
   const editor = useRef<HTMLTextAreaElement>(null);
@@ -29,12 +31,14 @@ function useExampleSource() {
 export default function ClarificationExample({ actions }: BrickProps) {
   const { editor, example } = useExampleSource();
   const [text, setText] = useState(example.text);
+  const [look, setLook] = useState<Look>("original");
   return <section className="clarification-example" aria-label="Clarification example" data-guide="clarification">
     <div><strong>Clarification · local example</strong><button onClick={() => actions.openCatalog("clarification")}>Features</button></div>
     <p>The example selects “handoff”. Select any other words to ask about them.</p>
     <label>Example thought<textarea ref={editor} value={text} onChange={event => {
       setText(event.target.value); example.publish({ source: { id: "example-thought", revision: event.target.value, text: event.target.value }, selection: null });
     }} onSelect={event => { const field = event.currentTarget; example.publish({ source: { id: "example-thought", revision: text === example.text ? "1" : text, text }, selection: field.selectionEnd > field.selectionStart ? { start: field.selectionStart, end: field.selectionEnd, quote: text.slice(field.selectionStart, field.selectionEnd) } : null }); }} /></label>
-    <ClarificationView controller={example.controller} />
+    <LookSwitch look={look} onChange={setLook} />
+    <div className={`clarification-look clarification-look--${look}`}><ClarificationView controller={example.controller} /></div>
   </section>;
 }
