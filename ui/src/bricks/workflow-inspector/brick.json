@@ -1,0 +1,8 @@
+{
+  "id": "workflow-inspector",
+  "name": "Workflow inspector",
+  "does": "Run an example workflow and review the handoff between its steps.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": true
+}
