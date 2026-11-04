@@ -40,7 +40,12 @@ export default function Crew({ on, actions, map }: BrickProps) {
   const heardUpTo = useRef(0);
   const faulted = useRef(false);
   const latest = useRef<Run | null>(null);
-  const change = useCallback((next: (old: Run) => Run) => setRun(old => { const value = old ? next(old) : old; latest.current = value; return value; }), []);
+  const change = useCallback((next: (old: Run) => Run) => {
+    if (!latest.current) return;
+    const value = next(latest.current);
+    latest.current = value;
+    setRun(value);
+  }, []);
 
   useEffect(() => {
     if (!run || run.doneMs !== undefined) return;
@@ -113,6 +118,9 @@ export default function Crew({ on, actions, map }: BrickProps) {
     if (!event.mine) return;
     const at = map.thoughts.findIndex(thought => thought.id === event.thoughtId);
     if (at < 0 || !BUILD_ALL.test(map.thoughts[at].text)) return;
+    // The sheet gets first refusal, including a command it already heard as live words.
+    const request = new CustomEvent("e2a2o:draw-build", { detail: map.thoughts[at].text, cancelable: true });
+    if (!dispatchEvent(request)) { heardUpTo.current = at + 1; return; }
     const said = map.thoughts.slice(heardUpTo.current, at).map(thought => thought.text).join(" ");
     heardUpTo.current = at + 1;
     void go(said);

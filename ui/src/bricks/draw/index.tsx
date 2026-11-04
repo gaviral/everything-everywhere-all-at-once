@@ -10,7 +10,7 @@ import { clausesIn, namedIn, strokesMeant, type Label } from "./labels";
 import { pickedBy } from "./lasso";
 import { Answers, Notes, type Reply } from "./Notes";
 import { drawBack, onTheInk, pictureOf, readSketch, type Reading } from "./reading";
-import { commandIn } from "./spoken";
+import { buildAllIn, commandIn } from "./spoken";
 import "./draw.css";
 
 const SAID_MAX = 1800;
@@ -91,21 +91,25 @@ export default function Draw({ on, actions, map }: BrickProps) {
     });
   }, [setLabels]);
 
-  const inRead = useRef(false);
+  const inRead = useRef<Promise<Reading | null> | null>(null);
   const readCount = useRef(0);
-  const read = useCallback(async (quietly = false) => {
+  const read = useCallback((quietly = false): Promise<Reading | null> => {
     const { strokes: ink, labels: names } = now.current;
-    if (!ink.length || inRead.current) return now.current.reading?.value ?? null;
-    inRead.current = true;
+    if (inRead.current) return inRead.current;
+    if (!ink.length) return Promise.resolve(now.current.reading?.value ?? null);
     readCount.current = ink.length;
     if (!quietly) setBusy("reading");
-    try {
-      const box = sheet.current?.getBoundingClientRect();
-      const answer = await readSketch(pictureOf(ink, names, box ? box.width / box.height : 16 / 9), names, said.current);
-      const placed = onTheInk(answer.reading, now.current.strokes, now.current.labels);
-      setReading({ value: placed, ms: answer.ms });
-      return placed;
-    } catch (error) { if (!quietly) failed(error); return null; } finally { inRead.current = false; setBusy(""); }
+    const task = (async () => {
+      try {
+        const box = sheet.current?.getBoundingClientRect();
+        const answer = await readSketch(pictureOf(ink, names, box ? box.width / box.height : 16 / 9), names, said.current);
+        const placed = onTheInk(answer.reading, now.current.strokes, now.current.labels);
+        setReading({ value: placed, ms: answer.ms });
+        return placed;
+      } catch (error) { if (!quietly) failed(error); return null; } finally { inRead.current = null; setBusy(""); }
+    })();
+    inRead.current = task;
+    return task;
   }, [failed]);
 
   // Keeps up: it reads along at each pause in the drawing, and waits while the pen is moving.
@@ -158,13 +162,17 @@ export default function Draw({ on, actions, map }: BrickProps) {
     said.current = "";
   }, [setLabels, setStrokes]);
 
+  const claimedBuild = useRef("");
   const obey = useCallback((sentence: string) => {
     const command = commandIn(sentence);
     if (command === "open") setOpen(true);
     if (!open) return;
     if (command === "read") { clearTimeout(pause.current); void read(); }
     if (command === "back") void answerInInk();
-    if (command === "build") void build();
+    if (command === "build" && now.current.strokes.length) {
+      if (buildAllIn(sentence)) claimedBuild.current = plainWords(sentence);
+      void build();
+    }
     if (command === "undo") undo();
     if (command === "clear") clear();
     if (command === "close") setOpen(false);
@@ -197,6 +205,18 @@ export default function Draw({ on, actions, map }: BrickProps) {
     heard.current = { words: "", names: [] };
     if (sentence) finished(sentence);
   });
+  useEffect(() => {
+    const fromCrew = (event: Event) => {
+      const sentence = (event as CustomEvent<string>).detail;
+      if (claimedBuild.current === plainWords(sentence)) { claimedBuild.current = ""; event.preventDefault(); return; }
+      if (!open || !now.current.strokes.length) return;
+      event.preventDefault();
+      finished(sentence);
+      claimedBuild.current = "";
+    };
+    addEventListener("e2a2o:draw-build", fromCrew);
+    return () => removeEventListener("e2a2o:draw-build", fromCrew);
+  });
   // A typed sentence, or one the mic didn't give word by word here, counts the same.
   useBrickEvent(on, "landed", event => {
     const text = event.mine ? map.thoughts.find(thought => thought.id === event.thoughtId)?.text : null;
@@ -213,8 +233,8 @@ export default function Draw({ on, actions, map }: BrickProps) {
   }, [open]);
 
   if (!open) return <button className="draw-open" onClick={() => setOpen(true)} aria-label="Open the drawing sheet">Draw</button>;
-  return <div className={seeThrough ? "draw-sheet draw-see-through" : "draw-sheet"} ref={sheet} style={{ bottom: barHeight }}>
-    <div className={reply ? "draw-page draw-page-shared" : "draw-page"}>
+  return <div className={seeThrough ? "draw-sheet draw-see-through" : "draw-sheet"} style={{ bottom: barHeight }}>
+    <div ref={sheet} className={reply ? "draw-page draw-page-shared" : "draw-page"}>
     <InkSheet
       strokes={strokes} tool={tool}
       onStroke={stroke => {
