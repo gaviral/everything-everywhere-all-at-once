@@ -294,7 +294,7 @@ export const HistoryTab = memo(function HistoryTab({ entries, undoId, now, recap
 // ── Catalog ──────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export type CatalogRow = { id: string; kind: BrickKind | "app"; name: string; aka?: string; does: string; lives?: string; on: boolean; core: boolean;
-  toggle?: (on: boolean) => void; disabled?: boolean; /** A view that's on: shows it. */ show?: () => void };
+  toggle?: (on: boolean) => void; disabled?: boolean; parts?: ReactNode; /** A view that's on: shows it. */ show?: () => void };
 
 /** One short page: a row per feature, grouped by kind, each with its switch (the core's: on, built in). Arrows move
  *  between the switches; Space switches the one focused. */
@@ -328,6 +328,7 @@ export const CatalogTab = memo(function CatalogTab({ rows, at }: { rows: Catalog
           : <button type="button" role="switch" aria-checked={row.on} aria-label={row.name} aria-describedby={`does-${row.id}`} disabled={row.disabled}
             className={cls("shell-switch", row.on && "shell-on")} onClick={() => row.toggle?.(!row.on)}><i aria-hidden="true" /></button>}
         <span id={`does-${row.id}`} className="sr-only">{row.does}</span>
+        {row.parts}
       </li>)}</ul>
     </section>)}
     <p className="shell-foot">{NAMES.catalogTab.missing}</p>

@@ -6,6 +6,8 @@ import { useEffect, useRef } from "react";
 import type { BrickKind } from "./bricks/contract";
 import { BRICKS, closeCatalog, KINDS, switchBrick, useBricksOn, useCatalogAt, useCatalogOpen, type Brick } from "./bricks-core";
 import "./bricks.css";
+import { AppParts, type AppPartsState } from "./AppParts";
+import type { MiniApp } from "./apps-core";
 
 /** Each kind's heading and what it means for a person. */
 const GROUPS: Record<BrickKind, [title: string, line: string]> = {
@@ -16,11 +18,11 @@ const GROUPS: Record<BrickKind, [title: string, line: string]> = {
 };
 
 /** Only while open: closed, the page has no sheet at all. */
-export function Catalog() {
-  return useCatalogOpen() ? <CatalogSheet /> : null;
+export function Catalog({ apps, state }: { apps: readonly MiniApp[]; state: AppPartsState }) {
+  return useCatalogOpen() ? <CatalogSheet apps={apps} state={state} /> : null;
 }
 
-function CatalogSheet() {
+function CatalogSheet({ apps, state }: { apps: readonly MiniApp[]; state: AppPartsState }) {
   const on = useBricksOn();
   const at = useCatalogAt();
   const sheet = useRef<HTMLDialogElement>(null);
@@ -63,6 +65,12 @@ function CatalogSheet() {
       </div>
       <button type="button" className="catalog-close" onClick={closeCatalog} aria-label="Close">×</button>
     </div>
+    {apps.length > 0 && <section className="catalog-apps" aria-label="Built apps">
+      <h3>Built apps · inspect their parts</h3>
+      {apps.map((app) => <article className="catalog-app" key={app.id}><strong>{app.name}</strong><p>{app.purpose}</p>
+        <AppParts app={app} apps={apps} state={state} />
+      </article>)}
+    </section>}
     <Groups bricks={ready} on={on} at={at?.id ?? null} />
     {more.length > 0 && <details className="catalog-more">
       <summary>Not for the demo · {more.length}</summary>
