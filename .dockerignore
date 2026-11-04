@@ -1,0 +1,26 @@
+# Only build inputs enter the context: no dotenv, maps, caches or Git metadata.
+**
+!Dockerfile
+!docker/
+!docker/entrypoint.sh
+!core/
+!core/Cargo.toml
+!core/Cargo.lock
+!core/src/
+!core/src/**
+!ui/
+!ui/package.json
+!ui/package-lock.json
+!ui/tsconfig.json
+!ui/vite.config.ts
+!ui/index.html
+!ui/bricks.html
+!ui/src/
+!ui/src/**
+!ui/public/
+!ui/public/**
+!samples/
+!samples/*.jsonl
+!samples/demo-jobs.json
+!samples/images/
+!samples/images/**
