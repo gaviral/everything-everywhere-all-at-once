@@ -301,6 +301,8 @@ fn handle(core: &Arc<Core>, speaker: &str, primer: &mut Primer, text: &str, wind
         tracing::debug!("voice event: {text}");
     }
     match event["type"].as_str() {
+        Some("speechStart") => crate::messages::speech_end(core, speaker, false),
+        Some("speechEnd") => crate::messages::speech_end(core, speaker, true),
         Some("transcript") => {
             core.touch();
             let words = event["transcript"].as_str().unwrap_or_default().to_string();
@@ -363,6 +365,37 @@ mod tests {
 
     mod session;
     mod speech;
+
+    #[tokio::test(start_paused = true)]
+    async fn email_speech_end_to_card_and_draft_stop_use_the_same_send_path() {
+        use crate::messages::{self, Channel, Preset, SendState, Settings};
+        let dir = std::env::temp_dir().join(format!("e2a2o-email-asr-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&dir).unwrap();
+        let (journal, _) = Journal::open(&dir.join("journal.jsonl")).unwrap();
+        let sender: messages::Sender = Arc::new(|_, _| Box::pin(async { panic!("ASR test must not send") }));
+        let core = Arc::new(Core {
+            messages: messages::Runtime::with(Settings { preset: Preset::Full,
+                email_contacts: messages::contacts("Mia=mia@example.com"), ..Settings::default() }, sender),
+            trace: crate::trace::Trace::to(&dir), ..Core::test(journal, World::default())
+        });
+        let _window = messages::window(&core, "you");
+        let mut primer = Primer::default();
+        let event = |kind: &str, transcript: &str| serde_json::json!({"type": kind, "turnId": 1,
+            "audioProcessedMs": PRIMER_MS + 2000, "transcript": transcript}).to_string();
+        handle(&core, "you", &mut primer, &event("speechStart", ""), None);
+        handle(&core, "you", &mut primer, &event("speechEnd", ""), None);
+        tokio::time::advance(std::time::Duration::from_millis(75)).await;
+        handle(&core, "you", &mut primer, &event("speechComplete", "email Mia that the cut is ready"), None);
+        assert!(matches!(messages::card_for(&core, "you"), Some(ServerMsg::SendCard {
+            channel: Channel::Email, state: SendState::Counting, subject, .. }) if subject == "the cut is ready"));
+        let trace = std::fs::read_to_string(dir.join("trace.jsonl")).unwrap();
+        let card = trace.lines().map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+            .find(|line| line["kind"] == "delivery" && line["event"] == "card").unwrap();
+        assert_eq!(card["speech_end_to_event_ms"], 75);
+        handle(&core, "you", &mut primer, &event("transcript", "Stop"), None);
+        assert!(matches!(messages::card_for(&core, "you"), Some(ServerMsg::SendCard { state: SendState::Stopped, .. })));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     /// A spoken "stop listening" pauses the window's mic and ends the stream (the caller stops reading it), so words
     /// the service still sends after it are never kept; a turn that only mentions it is a thought, and the stream goes on.

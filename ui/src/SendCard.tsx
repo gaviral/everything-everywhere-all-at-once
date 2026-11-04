@@ -72,6 +72,7 @@ export function SendCard({ card, onStop, onGone }: { card: Card | null; onStop: 
       onFocus={() => setFocused(true)} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocused(false); }}>
       <div className="sr-only" role="status">{announcement(card)}</div>
       <div className="send-card-head" aria-hidden="true">{words.heading}</div>
+      {card.channel === "email" && <div className="send-card-subject"><strong>Subject:</strong> {card.subject}</div>}
       <p className="send-card-text"><Markdown text={card.text} /></p>
       <div className="send-card-foot">
         <span className="send-card-status" aria-hidden="true">{words.status}</span>

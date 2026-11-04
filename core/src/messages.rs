@@ -1,7 +1,7 @@
 //! Presets, and the Messages connector the Full preset turns on.
 //!
 //! A preset picks which connectors a run has: Demo (the default) is the core alone, the map and its Reminders and
-//! Calendar beat; Full is every connector, today Messages, GitHub (github.rs) and Notes (notes.rs). `PRESET=full` in
+//! Calendar beat; Full is every connector, today Messages, Email, GitHub (github.rs) and Notes (notes.rs). `PRESET=full` in
 //! the environment or `.env` switches it.
 //!
 //! Messages: a whole turn like "ask Mia to confirm what to bring" puts a ready-to-send card up, with the message, who
@@ -18,7 +18,7 @@ use crate::catalog::{Act, Done};
 use crate::protocol::ServerMsg;
 use crate::Core;
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -31,7 +31,7 @@ pub enum Preset {
     /// The core alone: nothing reaches outside the app but the Reminders and Calendar beat.
     #[default]
     Demo,
-    /// Every connector: Messages, GitHub and Notes too.
+    /// Every connector: Messages, Email, GitHub and Notes too.
     Full,
 }
 
@@ -42,7 +42,22 @@ impl Preset {
     }
 }
 
-/// What a run may do with Messages.
+/// A delivery channel shares one countdown, Stop and reconnect path.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Channel {
+    #[default]
+    Messages,
+    Email,
+}
+
+impl Channel {
+    pub fn is_messages(&self) -> bool { *self == Self::Messages }
+    fn app(self) -> &'static str { if self == Self::Email { "Mail" } else { "Messages" } }
+    fn setting(self) -> &'static str { if self == Self::Email { "EMAIL_SEND" } else { "MESSAGES_SEND" } }
+}
+
+/// What a run may do with Messages and email.
 #[derive(Clone, Debug, Default)]
 pub struct Settings {
     pub preset: Preset,
@@ -51,6 +66,9 @@ pub struct Settings {
     pub contacts: Vec<(String, String)>,
     /// `MESSAGES_SEND=on`: a countdown that ends really sends. Off, it's a dry run.
     pub live: bool,
+    pub email_contacts: Vec<(String, String)>,
+    pub email_live: bool,
+    pub hosted: bool,
 }
 
 impl Settings {
@@ -60,13 +78,18 @@ impl Settings {
             preset: Preset::parse(var("PRESET").as_deref()),
             contacts: contacts(var("MESSAGES_TO").as_deref().unwrap_or("")),
             live: var("MESSAGES_SEND").is_some_and(|v| crate::trace::on(&v)),
+            email_contacts: contacts(var("EMAIL_TO").as_deref().unwrap_or("")).into_iter()
+                .filter(|(name, address)| !name.contains('@') && valid_address(address)).collect(),
+            email_live: var("EMAIL_SEND").is_some_and(|v| crate::trace::on(&v)),
+            hosted: crate::hosted(),
         }
     }
 
     /// The contact `words` (said, lowercased) start with, longest name first ("Mia Chen" before "Mia"), with how many
     /// words its name took.
-    fn contact(&self, words: &[String]) -> Option<(&str, &str, usize)> {
-        self.contacts
+    fn channel_contact(&self, channel: Channel, words: &[String]) -> Option<(&str, &str, usize)> {
+        let contacts = if channel == Channel::Email { &self.email_contacts } else { &self.contacts };
+        contacts
             .iter()
             .filter_map(|(name, handle)| {
                 let name_words = crate::words(name);
@@ -85,6 +108,13 @@ pub fn contacts(list: &str) -> Vec<(String, String)> {
             (!crate::words(name).is_empty() && !handle.is_empty()).then(|| (name.to_string(), handle.to_string()))
         })
         .collect()
+}
+
+/// Only one mailbox, never a recipient list or an AppleScript expression.
+fn valid_address(address: &str) -> bool {
+    let Some((local, domain)) = address.split_once('@') else { return false };
+    !local.is_empty() && !domain.is_empty() && !domain.contains('@')
+        && !address.chars().any(|c| c.is_whitespace() || matches!(c, ',' | ';' | '<' | '>'))
 }
 
 /// The shortest countdown: it sends in 5 seconds unless you say something. It is what the demo's message
@@ -142,6 +172,34 @@ fn messages_app() -> Sender {
     })
 }
 
+/// Email's subject is a rule: the first eight body words, preserving their spelling. No model call.
+fn subject(body: &str) -> String {
+    body.split_whitespace().take(8).collect::<Vec<_>>().join(" ").trim_end_matches(['.', '!', '?']).to_string()
+}
+
+type EmailSender = Arc<dyn Fn(String, String, String) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> + Send + Sync>;
+
+const MAIL_SCRIPT: [&str; 9] = [
+    "on run argv",
+    "tell application \"Mail\"",
+    "set outgoing to make new outgoing message with properties {subject:item 2 of argv, content:item 3 of argv, visible:false}",
+    "tell outgoing",
+    "make new to recipient at end of to recipients with properties {address:item 1 of argv}",
+    "end tell",
+    "if not (send outgoing) then error \"Mail refused\"",
+    "end tell",
+    "end run",
+];
+
+fn mail_app() -> EmailSender {
+    Arc::new(|address, subject, body| Box::pin(async move {
+        let mut command = tokio::process::Command::new("osascript");
+        for line in MAIL_SCRIPT { command.arg("-e").arg(line); }
+        let output = command.arg("--").arg(address).arg(subject).arg(body).output().await.map_err(|e| e.to_string())?;
+        if output.status.success() { Ok(()) } else { Err(String::from_utf8_lossy(&output.stderr).trim().to_string()) }
+    }))
+}
+
 /// A message on its card, as the window shows it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -162,12 +220,15 @@ pub enum SendState {
 pub struct Runtime {
     pub settings: Settings,
     sender: Sender,
+    email_sender: EmailSender,
     state: Mutex<State>,
 }
 
 #[derive(Default)]
 struct State {
     next: u64,
+    email_off: HashSet<String>,
+    speech_ends: HashMap<String, (u64, tokio::time::Instant)>,
     counting: Option<Counting>,
     /// A message Messages has but hasn't answered for yet, and whose: one at a time holds until it does, and a window
     /// of theirs that reconnects meanwhile gets its card, "Sending…", so the answer that follows has a card to end.
@@ -183,6 +244,9 @@ struct State {
 }
 
 struct Counting {
+    channel: Channel,
+    subject: String,
+    speech_end: Option<(u64, tokio::time::Instant)>,
     id: u64,
     speaker: String,
     to: String,
@@ -207,25 +271,30 @@ impl Runtime {
     }
 
     pub fn with(settings: Settings, sender: Sender) -> Self {
-        Runtime { settings, sender, state: Mutex::default() }
+        Runtime { settings, sender, email_sender: if cfg!(test) {
+            Arc::new(|_, _, _| Box::pin(async { Err("no email sending in tests".into()) }))
+        } else { mail_app() }, state: Mutex::default() }
     }
 
     /// Whether a countdown that ends sends for real: the setting is on, and this is a Mac running the core for its
     /// own person (apple.rs `reachable`).
-    fn live(&self) -> bool {
-        self.settings.live && crate::apple::reachable()
+    fn live(&self, channel: Channel) -> bool {
+        let on = if channel == Channel::Email { self.settings.email_live } else { self.settings.live };
+        on && !self.settings.hosted && crate::apple::reachable()
     }
 }
 
 /// A message asked for: who, in the allow-list's spelling, their handle, and the words to send.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Ask {
+    pub channel: Channel,
+    pub subject: String,
     pub to: String,
     pub handle: String,
     pub text: String,
 }
 
-const VERBS: [&str; 4] = ["ask", "tell", "text", "message"];
+const VERBS: [&str; 5] = ["ask", "tell", "text", "message", "email"];
 /// A request to someone ("could you …?") after these; a statement after the others.
 const ASKING: [&str; 1] = ["to"];
 const SAYING: [&str; 3] = ["that", "saying", "say"];
@@ -260,7 +329,9 @@ pub fn read(text: &str, settings: &Settings) -> Option<Ask> {
     if !VERBS.contains(&verb.as_str()) {
         return None;
     }
-    let (to, handle, n) = settings.contact(&words[1..])?;
+    let channel = if verb == "email" { Channel::Email } else { Channel::Messages };
+    let (to, handle, n) = settings.channel_contact(channel, &words[1..])?;
+    if channel == Channel::Email && (to.contains('@') || !valid_address(handle)) { return None; }
     let link = words.get(1 + n)?;
     let asking = ASKING.contains(&link.as_str());
     // "Ask Mia what to bring" asks nothing this can write as a message to her; only "ask Mia to …".
@@ -272,7 +343,8 @@ pub fn read(text: &str, settings: &Settings) -> Option<Ask> {
         return None;
     }
     let text = if asking { format!("Hi {to}, could you {rest}?") } else { format!("Hi {to}, {rest}.") };
-    Some(Ask { to: to.to_string(), handle: handle.to_string(), text })
+    let subject = if channel == Channel::Email { subject(rest) } else { String::new() };
+    Some(Ask { channel, subject, to: to.to_string(), handle: handle.to_string(), text })
 }
 
 /// Whether the turn's last clause stops it ("…, no, stop."): the request was taken back as it was said, so those words
@@ -320,6 +392,8 @@ pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> Option<Done> {
     if settings.preset != Preset::Full {
         return None;
     }
+    let email = crate::words(crate::spoken::plain(text)).first().is_some_and(|w| w == "email");
+    if email && (settings.hosted || core.messages.state.lock().unwrap().email_off.contains(speaker)) { return None; }
     // "Ask Mia to bring chips, no, stop": taken back in the same breath, so nothing counts down, and it's no thought.
     if kind(text).is_some() && withdrawn(text) {
         core.send_to(speaker, ServerMsg::Notice { message: "Not sent: you said “stop” at the end.".into() });
@@ -328,9 +402,10 @@ pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> Option<Done> {
     let Some(ask) = read(text, settings) else {
         if kind(text).is_some() {
             let words = crate::words(crate::spoken::plain(text));
-            let message = match settings.contact(&words[1..]) {
+            let message = match settings.channel_contact(if email { Channel::Email } else { Channel::Messages }, &words[1..]) {
                 // On the list, but not said as a message this can write.
                 Some((name, _, _)) => format!("Not sent: say it as “ask {name} to …” or “tell {name} that …”. Kept as a thought."),
+                None if email => "Not sent: no one by that name is on your email list (EMAIL_TO). Kept as a thought.".into(),
                 None => "Not sent: no one by that name is on your Messages list (MESSAGES_TO). Kept as a thought.".into(),
             };
             core.send_to(speaker, ServerMsg::Notice { message });
@@ -339,12 +414,14 @@ pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> Option<Done> {
     };
     // As the Add button: Messages is the host's, on the laptop running the core.
     if !core.is_host(speaker) {
-        core.send_to(speaker, ServerMsg::Notice { message: "Only the host can send messages: they go from their Mac.".into() });
+        core.send_to(speaker, ServerMsg::Notice { message: if email {
+            "Only the host can send email: it goes from their Mac.".into()
+        } else { "Only the host can send messages: they go from their Mac.".into() } });
         return Some(Done::missed(Act::Message));
     }
-    let in_ms = countdown_ms(&ask.text);
-    let live = core.messages.live();
-    let id = {
+    let in_ms = countdown_ms(&format!("{} {}", ask.subject, ask.text));
+    let live = core.messages.live(ask.channel);
+    let (id, message) = {
         let mut state = core.messages.state.lock().unwrap();
         if state.counting.is_some() || state.sending.is_some() {
             drop(state);
@@ -354,10 +431,12 @@ pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> Option<Done> {
         state.next += 1;
         let id = state.next;
         let shown_end = tokio::time::Instant::now() + Duration::from_millis(in_ms);
-        state.counting = Some(Counting { id, speaker: speaker.into(), to: ask.to.clone(), handle: ask.handle, text: ask.text.clone(), live, shown_end });
-        id
+        state.counting = Some(Counting { channel: ask.channel, subject: ask.subject.clone(), speech_end: state.speech_ends.remove(speaker), id, speaker: speaker.into(), to: ask.to.clone(), handle: ask.handle, text: ask.text.clone(), live, shown_end });
+        let c = state.counting.as_ref().unwrap();
+        trace_delivery(core, c, "card");
+        (id, card(c, SendState::Counting, in_ms, live, ""))
     };
-    core.send_to(speaker, card(id, &ask.to, &ask.text, SendState::Counting, in_ms, live, ""));
+    core.send_to(speaker, message);
     let core = core.clone();
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_millis(in_ms + LATE_STOP_MS)).await;
@@ -378,7 +457,7 @@ pub fn card_for(core: &Core, speaker: &str) -> Option<ServerMsg> {
         return sending.or_else(|| state.ended.get(speaker)).cloned();
     };
     let left = c.shown_end.saturating_duration_since(tokio::time::Instant::now()).as_millis() as u64;
-    Some(card(c.id, &c.to, &c.text, SendState::Counting, left, c.live, ""))
+    Some(card(c, SendState::Counting, left, c.live, ""))
 }
 
 /// One of the speaker's windows, open while this lives (main.rs `session`).
@@ -416,8 +495,32 @@ pub fn is_counting(core: &Core, id: u64) -> bool {
     core.messages.state.lock().unwrap().counting.as_ref().is_some_and(|c| c.id == id)
 }
 
-fn card(id: u64, to: &str, text: &str, state: SendState, in_ms: u64, live: bool, message: &str) -> ServerMsg {
-    ServerMsg::SendCard { id, to: to.into(), text: text.into(), state, in_ms, live, message: message.into() }
+fn card(c: &Counting, state: SendState, in_ms: u64, live: bool, message: &str) -> ServerMsg {
+    ServerMsg::SendCard { id: c.id, to: c.to.clone(), text: c.text.clone(), channel: c.channel, subject: c.subject.clone(), state, in_ms, live, message: message.into() }
+}
+
+fn trace_delivery(core: &Core, c: &Counting, event: &str) {
+    core.trace.write(|| serde_json::json!({"kind": "delivery", "channel": c.channel, "id": c.id,
+        "event": event, "speech_end_ms": c.speech_end.map(|s| s.0),
+        "speech_end_to_event_ms": c.speech_end.map(|s| s.1.elapsed().as_millis() as u64)}));
+}
+
+/// ASR's speechEnd arrival, kept only for this speaker's next completed turn; no words or address in the trace.
+pub fn speech_end(core: &Core, speaker: &str, ended: bool) {
+    let mut state = core.messages.state.lock().unwrap();
+    state.speech_ends.remove(speaker);
+    if ended { state.speech_ends.insert(speaker.into(), (crate::now_ms(), tokio::time::Instant::now())); }
+}
+
+/// Features can disable email immediately, including a pending countdown.
+pub fn email_switch(core: &Core, speaker: &str, on: bool) {
+    let mut state = core.messages.state.lock().unwrap();
+    if on { state.email_off.remove(speaker); } else { state.email_off.insert(speaker.into()); }
+    let taken = if !on && state.counting.as_ref().is_some_and(|c| c.channel == Channel::Email && c.speaker == speaker) {
+        state.counting.take()
+    } else { None };
+    drop(state);
+    if let Some(c) = taken { stopped(core, c); }
 }
 
 /// The countdown ended: the message goes, unless it was stopped (then it's no longer counting, and nothing happens),
@@ -430,28 +533,34 @@ async fn finish(core: &Arc<Core>, id: u64) {
         let Some(counting) = state.counting.take_if(|c| c.id == id) else { return };
         if !state.windows.contains_key(&counting.speaker) {
             drop(state);
-            let Counting { speaker, to, text, live, .. } = counting;
-            end(core, &speaker, card(id, &to, &text, SendState::Stopped, 0, live, OFFLINE));
+            end(core, &counting.speaker, card(&counting, SendState::Stopped, 0, counting.live, OFFLINE));
             return;
         }
         // Live, Messages has it until it answers: one at a time holds till then.
         let c = &counting;
-        state.sending = core.messages.live().then(|| (c.speaker.clone(), card(id, &c.to, &c.text, SendState::Counting, 0, true, "")));
+        state.sending = core.messages.live(c.channel).then(|| (c.speaker.clone(), card(c, SendState::Counting, 0, true, "")));
         counting
     };
-    let Counting { speaker, to, handle, text, .. } = counting;
-    if !core.messages.live() {
-        end(core, &speaker, card(id, &to, &text, SendState::DryRun, 0, false, &dry_run(&to, core.messages.settings.live)));
+    let c = &counting;
+    if !core.messages.live(c.channel) {
+        trace_delivery(core, c, "dry_run");
+        let setting_on = if c.channel == Channel::Email { core.messages.settings.email_live } else { core.messages.settings.live };
+        end(core, &c.speaker, card(c, SendState::DryRun, 0, false, &dry_run(&c.to, setting_on, c.channel)));
         return;
     }
-    let result = (core.messages.sender)(handle, text.clone()).await;
+    let result = if c.channel == Channel::Email {
+        (core.messages.email_sender)(c.handle.clone(), c.subject.clone(), c.text.clone()).await
+    } else { (core.messages.sender)(c.handle.clone(), c.text.clone()).await };
     core.messages.state.lock().unwrap().sending = None;
     match result {
-        Ok(()) => end(core, &speaker, card(id, &to, &text, SendState::Sent, 0, true, &format!("Sent to {to}"))),
+        Ok(()) => {
+            trace_delivery(core, c, "sent");
+            end(core, &c.speaker, card(c, SendState::Sent, 0, true, &format!("Sent to {}", c.to)));
+        }
         Err(error) => {
-            // Only the error's number: Messages' own words can carry the handle, which never goes to the log.
-            tracing::warn!("Messages didn't send it (error {})", error_number(&error));
-            end(core, &speaker, card(id, &to, &text, SendState::Failed, 0, true, &failure(&error)));
+            tracing::warn!("{} didn't send it (error {})", c.channel.app(), error_number(&error));
+            let message = if c.channel == Channel::Email { failure(&error).replace("Messages", "Mail").replace("signed in to iMessage", "set up to send email") } else { failure(&error) };
+            end(core, &c.speaker, card(c, SendState::Failed, 0, true, &message));
         }
     }
 }
@@ -461,11 +570,11 @@ const OFFLINE: &str = "Not sent: your window was offline, so you couldn't stop i
 
 /// A dry run's end, saying what would have made it send: the setting, or, with it on, a Mac running the core for its
 /// own person (not Linux, not a hosted core).
-fn dry_run(to: &str, setting_on: bool) -> String {
+fn dry_run(to: &str, setting_on: bool, channel: Channel) -> String {
     if setting_on {
-        format!("Dry run: nothing sent. Messages sends only from a Mac running E2A2O for its own person; it would have gone to {to}.")
+        format!("Dry run: nothing sent. {} sends only from a Mac running E2A2O for its own person; it would have gone to {to}.", channel.app())
     } else {
-        format!("Dry run: nothing sent. With MESSAGES_SEND=on it would have gone to {to}.")
+        format!("Dry run: nothing sent. With {}=on it would have gone to {to}.", channel.setting())
     }
 }
 
@@ -499,7 +608,7 @@ pub fn stop(core: &Core, id: u64) -> bool {
 }
 
 fn stopped(core: &Core, c: Counting) {
-    end(core, &c.speaker, card(c.id, &c.to, &c.text, SendState::Stopped, 0, c.live, "Stopped: not sent"));
+    end(core, &c.speaker, card(&c, SendState::Stopped, 0, c.live, "Stopped: not sent"));
 }
 
 /// Words that stop a message while it counts down, said or typed as the whole turn. Read as said, then without a
@@ -512,7 +621,7 @@ const STOPS: [&str; 17] = [
     "stop", "cancel", "don t send", "dont send", "do not send", "wait", "hold on", "no", "nope", "no no", "no stop",
     "no don t", "scratch that", "undo that", "undo", "never mind", "abort",
 ];
-const STOP_TAILS: [&str; 10] = ["it", "that", "this", "the message", "the text", "sending", "sending it", "now", "wait", "stop"];
+const STOP_TAILS: [&str; 12] = ["it", "that", "this", "the message", "the text", "the email", "email", "sending", "sending it", "now", "wait", "stop"];
 
 /// The speaker's draft words as they talk: "stop" stops their message now, without waiting for the turn to end.
 pub fn heard(core: &Core, speaker: &str, draft: &str) {
