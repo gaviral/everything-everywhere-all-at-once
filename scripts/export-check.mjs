@@ -144,7 +144,12 @@ let browser;
 try {
   browser = await openPage(`http://127.0.0.1:${fixture.port}/`);
   const { evaluate, until } = browser;
-  assert.ok(await until(`!!document.querySelector('.shell-welcome')`, 10000), 'empty snapshot is rendered');
+  assert.ok(await until(`(() => {
+    const input = document.querySelector('textarea[aria-label="Type a thought"]');
+    const composer = document.querySelector('[data-guide="composer"]');
+    return input?.checkVisibility() && !input.disabled && input.placeholder === 'Type a thought, or tap the mic'
+      && composer?.innerText.includes('Enter adds');
+  })()`, 10000), 'empty map offers a visible thought input and its Enter action');
   await evaluate(`document.querySelector('[data-guide="catalog"]').click()`);
   assert.ok(await until(`!!document.querySelector('[data-row="export"] [role="switch"]')`), 'Export is available through Features');
   assert.equal(await evaluate(`document.querySelector('[data-row="export"] [role="switch"]').getAttribute('aria-checked')`), 'false', 'Export starts off');
