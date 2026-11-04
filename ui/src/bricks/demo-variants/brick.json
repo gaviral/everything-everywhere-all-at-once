@@ -1,0 +1,8 @@
+{
+  "id": "demo-variants",
+  "name": "Demo choices",
+  "does": "Compare two example presentations and try a choice.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": true
+}

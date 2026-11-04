@@ -15,6 +15,7 @@ mod conversation;
 mod catalog;
 mod chunks;
 mod code_canvas;
+mod system_view;
 mod clock;
 mod data_lock;
 mod storage;
@@ -97,6 +98,7 @@ pub struct Core {
     /// Last save-failure notice, shared by all write paths without taking their locks.
     journal_save_notice_at: Mutex<Option<tokio::time::Instant>>,
     updates: broadcast::Sender<Outgoing>,
+    system_view: system_view::Runtime,
     placer_queue: mpsc::UnboundedSender<placer::Job>,
     /// Who said "new thread", and the thought that starts each one.
     new_threads: placer::NewThreads,
@@ -386,6 +388,7 @@ impl Core {
                 self.journal_save_failed(&error);
                 return Err(error);
             }
+            self.system_view.saved(changes.len());
             for change in &changes {
                 let state = Arc::make_mut(&mut world);
                 state.apply(change);
@@ -424,6 +427,8 @@ impl Core {
     pub fn record(&self, change: Change) {
         if let Err(e) = self.journal.lock().unwrap().append(&change) {
             self.journal_save_failed(&e);
+        } else {
+            self.system_view.saved(1);
         }
     }
 
@@ -449,11 +454,13 @@ impl Core {
     }
 
     pub fn send_speaking(&self, message: ServerMsg, speak: bool) {
+        self.system_view.observe(&message);
         let _ = self.updates.send(Outgoing { to: None, message, speak });
     }
 
     /// Only to one speaker's windows.
     pub fn send_to(&self, speaker: &str, message: ServerMsg) {
+        self.system_view.observe(&message);
         let _ = self.updates.send(Outgoing { to: Some(speaker.into()), message, speak: false });
     }
 
@@ -1521,6 +1528,7 @@ async fn main() -> anyhow::Result<()> {
         journal: Mutex::new(journal),
         journal_save_notice_at: Mutex::new(None),
         updates,
+        system_view: Default::default(),
         placer_queue,
         new_threads: placer::NewThreads::default(),
         hosts: Default::default(),
@@ -1582,6 +1590,7 @@ async fn main() -> anyhow::Result<()> {
     let ui = std::env::var("E2A2O_UI").unwrap_or_else(|_| "../ui/dist".into());
     let app = Router::new()
         .route("/code-canvas/snapshot", get(code_canvas::read))
+        .route("/code-canvas/events", get(system_view::events))
         .route("/code-canvas/answer", post(code_canvas::answer))
         .route("/ws", get(connect))
         .route("/room", get(room_info))
@@ -2182,6 +2191,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 break;
             }
         };
+        core.system_view.frame(&message);
         match message {
             Message::Text(text) => match serde_json::from_str::<ClientMsg>(text.as_str()) {
                 Ok(ClientMsg::CancelEvidence { request_id }) => {
@@ -2643,6 +2653,7 @@ impl Core {
             journal: Mutex::new(journal),
             journal_save_notice_at: Mutex::new(None),
             updates: broadcast::channel(1024).0,
+            system_view: Default::default(),
             placer_queue: mpsc::unbounded_channel().0,
             new_threads: Default::default(),
             hosts: Default::default(),
