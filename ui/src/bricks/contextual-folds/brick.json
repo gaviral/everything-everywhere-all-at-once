@@ -1,0 +1,8 @@
+{
+  "id": "contextual-folds",
+  "name": "Quiet reader",
+  "does": "Read original words, fold context, ask beside a source and keep your place.",
+  "kind": "view",
+  "defaultOn": false,
+  "demoSafe": true
+}

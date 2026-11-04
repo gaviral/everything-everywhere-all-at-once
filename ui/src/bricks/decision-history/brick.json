@@ -1,0 +1,8 @@
+{
+  "id": "decision-history",
+  "name": "Decision history",
+  "does": "Keep choices, conditions, reasons and sources, with separate review and replaced history.",
+  "kind": "view",
+  "defaultOn": false,
+  "demoSafe": true
+}
