@@ -19,7 +19,10 @@ const inputAndCardUsable = `(() => {
   const field = input.getBoundingClientRect(), deadline = card.getBoundingClientRect(), form = region.getBoundingClientRect();
   const inside = r => r.width > 0 && r.height > 0 && r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight;
   const separate = deadline.right <= form.left || form.right <= deadline.left || deadline.bottom <= form.top || form.bottom <= deadline.top;
-  return input.checkVisibility() && card.checkVisibility() && inside(field) && inside(deadline) && separate
+  const clear = r => deadline.right <= r.left || r.right <= deadline.left || deadline.bottom <= r.top || r.bottom <= deadline.top;
+  const headerClear = [...document.querySelectorAll('[data-slot="top-left"],[data-slot="top-right"]')].every(e => clear(e.getBoundingClientRect()));
+  const triggerExposed = card.contains(document.elementFromPoint(deadline.x + deadline.width / 2, deadline.y + deadline.height / 2));
+  return input.checkVisibility() && card.checkVisibility() && inside(field) && inside(deadline) && separate && headerClear && triggerExposed
     && input.contains(document.elementFromPoint(field.x + field.width / 2, field.y + field.height / 2))
     && document.documentElement.scrollWidth <= innerWidth;
 })()`;

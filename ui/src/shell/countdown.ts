@@ -62,13 +62,17 @@ export function useShellCountdownPlacement(enabled: boolean) {
       const left = Math.max(x + edge, Math.min(cameraBox?.left ?? x + edge, x + width - edge - box.width));
       // A missing camera keeps a clear dock-relative position. Only horizontally intersecting controls lift it.
       let bottom = cameraBox?.top ?? stageBox?.top ?? y + height - edge;
-      for (const element of [stage, controls, captureBody]) {
+      for (const element of [stage, controls]) {
         if (!element) continue;
         const r = element.getBoundingClientRect();
-        if (element === captureBody && (r.bottom <= y || r.top >= y + height)) continue;
         if (r.width && r.height && r.left < left + box.width && r.right > left) bottom = Math.min(bottom, r.top);
       }
-      bottom = Math.max(y + edge + box.height, Math.min(bottom - gap, y + height - edge));
+      bottom = Math.min(bottom - gap, y + height - edge);
+      const captureBox = captureBody?.getBoundingClientRect();
+      // Capture is canvas content: a clear gap below it stays usable. Lift only on an actual collision.
+      if (captureBox?.width && captureBox.height && captureBox.left < left + box.width && captureBox.right > left
+          && bottom - box.height < captureBox.bottom && bottom > captureBox.top) bottom = captureBox.top - gap;
+      bottom = Math.max(y + edge + box.height, bottom);
       const room = Math.max(0, bottom - box.height - gap - y - edge);
       // Keep enough scrollable space for a control even when the stage leaves no room above the card.
       // In that case the editor starts at the viewport edge and extends down over the card.
