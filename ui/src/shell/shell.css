@@ -169,7 +169,8 @@ html.shell2 .shell-status > * { grid-column: 2; grid-row: 1; min-width: 0; overf
 html.shell2 .shell-status > .shell-status-state { grid-column: 1; display: inline-flex; align-items: center; gap: 8px; overflow: hidden; }
 html.shell2 .shell-status > .shell-status-right { grid-column: 3; }
 /* Input and mic share one row inside the bar; status and live words keep their own unobstructed line. */
-html.shell2 .shell-status > .shell-composer {
+html.shell2 .shell-status > .shell-composer,
+html.shell2 .shell-status > .shell-tool-slot .shell-composer {
   grid-column: 1 / -1; grid-row: 2; justify-self: center; width: min(600px, 100%); min-width: 0; overflow: visible;
   font-size: 15px; white-space: normal; box-shadow: none;
 }
@@ -383,3 +384,8 @@ html.shell2 .keyless-help { margin: 0; padding: 10px 12px; border: 1px solid var
 /* Phone reading comparison is contained above the measured stage; it never moves the composer. */
 html.shell2 .spine-phone-compare .phone-controls { top: 68px; }
 html.shell2 .spine-phone-compare .inline-phone { touch-action: pan-y; }
+/* Stable portal targets preserve the one mounted body when Canvas tools is switched. */
+.shell-tool-slot, .shell-tool-body { display: contents; }
+html.shell2 .canvas-tool .shell-composer { margin: 12px; width: auto; max-width: calc(100% - 24px); }
+html.shell2 .canvas-tool .shell-composer textarea { min-width: 0; width: 100%; }
+html.shell2 .canvas-tool .shell-composer-big { flex-wrap: wrap; }

@@ -133,6 +133,8 @@ export interface Entry {
 export interface Item {
   /** Conversation projection only. Its turns retain their original thought ids and topic destinations. */
   conversation?: boolean;
+  session?: boolean;
+  subtitle?: string;
   memberships?: { thread: string; title: string }[];
   members?: { key: string; text: string; speaker: string }[];
   parentTopic?: { thread: string; title: string };

@@ -41,9 +41,10 @@ export function useBrickHost(world: World, revision: number, me: string, connect
   const builtIns = useBuiltInsOn();
   const conversationSpine = builtIns.has("conversation-spine");
   const comparePhoneReading = builtIns.has("compare-phone-reading");
+  const terse = builtIns.has("terse");
   const snapshot = useMemo(() => snapshotOf(world, me, connected, rooms, partial, jobs, usage), [world, me, connected, rooms, partial, jobs, usage]);
   const reading = useReadPosition(snapshot);
-  const map = useMemo(() => ({ ...snapshot, readThrough: reading.mark, conversationSpine, comparePhoneReading, placingUnavailable, pauses: world.pauses ?? [] }), [snapshot, reading.mark, conversationSpine, comparePhoneReading, placingUnavailable, world.pauses]);
+  const map = useMemo(() => ({ ...snapshot, readThrough: reading.mark, conversationSpine, comparePhoneReading, terse, placingUnavailable, pauses: world.pauses ?? [] }), [snapshot, reading.mark, conversationSpine, comparePhoneReading, terse, placingUnavailable, world.pauses]);
   const read = useRef(reading.read);
   read.current = reading.read;
   const latest = useRef(act);
@@ -54,6 +55,12 @@ export function useBrickHost(world: World, revision: number, me: string, connect
   const actionsFor = useMemo(() => (info: BrickInfo): BrickActions => {
     let actions = made.current.get(info.id);
     if (!actions) made.current.set(info.id, actions = {
+      saveTextFile: (name, text, mime) => {
+        if (typeof name !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._ -]{0,79}$/.test(name) || name.includes("..")
+          || typeof text !== "string" || new TextEncoder().encode(text).length > 64 * 1024
+          || (mime !== "text/plain" && mime !== "text/markdown")) return false;
+        try { return latest.current.saveTextFile(name, text, mime); } catch { return false; }
+      },
       readThought: (id) => read.current(id),
       resume: (id, keyboard) => latest.current.resume?.(id, keyboard) ?? false,
       addThought: (text) => {
@@ -63,6 +70,7 @@ export function useBrickHost(world: World, revision: number, me: string, connect
       },
       openPoint: (thread, thought) => latest.current.openPoint(thread, thought),
       openThread: (id) => latest.current.openThread(id),
+      openThought: (id) => latest.current.openThought(id),
       select: (id) => latest.current.select(id),
       notify: (text) => latest.current.notify(text),
       position: (id, x, y) => latest.current.position(id, x, y),

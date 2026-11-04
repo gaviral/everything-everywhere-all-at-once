@@ -69,7 +69,7 @@ impl Drop for Fixture {
 }
 
 fn full(live: bool) -> Settings {
-    Settings { preset: Preset::Full, contacts: contacts("Mia=+15550100, Sam Lee=sam@example.com"), live }
+    Settings { preset: Preset::Full, contacts: contacts("Mia=+15550100, Sam Lee=sam@example.com"), live, ..Settings::default() }
 }
 
 /// Lets spawned work run after the clock moves.
@@ -553,7 +553,10 @@ fn only_the_error_number_reaches_the_log_and_a_dry_run_says_why() {
     assert_eq!(error_number("execution error: Messages got an error: Can’t get participant \"+15550100\". (-1728)"), "-1728");
     assert_eq!(error_number("Not authorized to send Apple events to Messages. (-1743)"), "-1743");
     assert_eq!(error_number("participant \"+15550100\" went wrong"), "unknown");
-    assert!(dry_run("Mia", false).contains("With MESSAGES_SEND=on"));
-    let on = dry_run("Mia", true);
+    assert!(dry_run("Mia", false, Channel::Messages).contains("With MESSAGES_SEND=on"));
+    let on = dry_run("Mia", true, Channel::Messages);
     assert!(!on.contains("MESSAGES_SEND") && on.contains("only from a Mac"), "{on}");
 }
+
+#[path = "email_tests.rs"]
+mod email;

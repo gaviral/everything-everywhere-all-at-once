@@ -1,0 +1,44 @@
+[
+  {
+    "source_file": "src/basic.rs",
+    "source_sha256": "b4a6755f951b255126892d6a10511a377e510343b009c1c86df36b9d530e63e2",
+    "line": 1,
+    "text": "// Copyright Mozilla Foundation\n//\n// Licensed under the Apache License (Version 2.0), or the MIT license,\n// (the \"Licenses\") at your option. You may not use this file except in\n// compliance with one of the Licenses. You may obtain copies of the\n// Licenses at:\n//\n//    https://www.apache.org/licenses/LICENSE-2.0\n//    https://opensource.org/licenses/MIT\n//\n// Unless required by applicable law or agreed to in writing, software\n// distributed under the Licenses is distributed on an \"AS IS\" BASIS,\n// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n// See the Licenses for the specific language governing permissions and\n// limitations under the Licenses.\n"
+  },
+  {
+    "source_file": "src/handler.rs",
+    "source_sha256": "038ad490dc52afa2dd57f6bff6d3b374fcd8156b4615efeef24b14ceba7ea7c4",
+    "line": 1,
+    "text": "// Copyright Mozilla Foundation\n//\n// Licensed under the Apache License (Version 2.0), or the MIT license,\n// (the \"Licenses\") at your option. You may not use this file except in\n// compliance with one of the Licenses. You may obtain copies of the\n// Licenses at:\n//\n//    https://www.apache.org/licenses/LICENSE-2.0\n//    https://opensource.org/licenses/MIT\n//\n// Unless required by applicable law or agreed to in writing, software\n// distributed under the Licenses is distributed on an \"AS IS\" BASIS,\n// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n// See the Licenses for the specific language governing permissions and\n// limitations under the Licenses.\n"
+  },
+  {
+    "source_file": "src/indices.rs",
+    "source_sha256": "80d354f207007420d90391a161c7bddec57f76db63a596ee0a4831db1c383216",
+    "line": 1,
+    "text": "// The code in this file was adapted from the CharIndices implementation of\n// the Rust standard library at revision ab32548539ec38a939c1b58599249f3b54130026\n// (https://github.com/rust-lang/rust/blob/ab32548539ec38a939c1b58599249f3b54130026/library/core/src/str/iter.rs).\n//\n// Excerpt from https://github.com/rust-lang/rust/blob/ab32548539ec38a939c1b58599249f3b54130026/COPYRIGHT ,\n// which refers to\n// https://github.com/rust-lang/rust/blob/ab32548539ec38a939c1b58599249f3b54130026/LICENSE-APACHE\n// and\n// https://github.com/rust-lang/rust/blob/ab32548539ec38a939c1b58599249f3b54130026/LICENSE-MIT\n// :\n//\n// For full authorship information, see the version control history or\n// https://thanks.rust-lang.org\n//\n// Except as otherwise noted (below and/or in individual files), Rust is\n// licensed under the Apache License, Version 2.0 <LICENSE-APACHE> or\n// <http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT> or <http://opensource.org/licenses/MIT>, at your option.\n"
+  },
+  {
+    "source_file": "src/lib.rs",
+    "source_sha256": "7bd14c86d9b1a0237f3777136afb6183de40df6a3d9f747131110faae8857488",
+    "line": 1,
+    "text": "// Copyright Mozilla Foundation\n//\n// Licensed under the Apache License (Version 2.0), or the MIT license,\n// (the \"Licenses\") at your option. You may not use this file except in\n// compliance with one of the Licenses. You may obtain copies of the\n// Licenses at:\n//\n//    https://www.apache.org/licenses/LICENSE-2.0\n//    https://opensource.org/licenses/MIT\n//\n// Unless required by applicable law or agreed to in writing, software\n// distributed under the Licenses is distributed on an \"AS IS\" BASIS,\n// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n// See the Licenses for the specific language governing permissions and\n// limitations under the Licenses.\n"
+  },
+  {
+    "source_file": "src/macros.rs",
+    "source_sha256": "85e15d9c31ba3588c60351f09bd868bc33b9f6d8a96153e25c71dec113471e45",
+    "line": 1,
+    "text": "// Copyright Mozilla Foundation\n//\n// Licensed under the Apache License (Version 2.0), or the MIT license,\n// (the \"Licenses\") at your option. You may not use this file except in\n// compliance with one of the Licenses. You may obtain copies of the\n// Licenses at:\n//\n//    https://www.apache.org/licenses/LICENSE-2.0\n//    https://opensource.org/licenses/MIT\n//\n// Unless required by applicable law or agreed to in writing, software\n// distributed under the Licenses is distributed on an \"AS IS\" BASIS,\n// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n// See the Licenses for the specific language governing permissions and\n// limitations under the Licenses.\n"
+  },
+  {
+    "source_file": "src/report.rs",
+    "source_sha256": "851158f370b7a8523c88dd58d545cc136e0b4c23623d2ccb1725e82bb1e1622e",
+    "line": 1,
+    "text": "// Copyright Mozilla Foundation\n//\n// Licensed under the Apache License (Version 2.0), or the MIT license,\n// (the \"Licenses\") at your option. You may not use this file except in\n// compliance with one of the Licenses. You may obtain copies of the\n// Licenses at:\n//\n//    https://www.apache.org/licenses/LICENSE-2.0\n//    https://opensource.org/licenses/MIT\n//\n// Unless required by applicable law or agreed to in writing, software\n// distributed under the Licenses is distributed on an \"AS IS\" BASIS,\n// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n// See the Licenses for the specific language governing permissions and\n// limitations under the Licenses.\n"
+  },
+  {
+    "source_file": "src/str.rs",
+    "source_sha256": "2a55aecac9997b93558daafae30e66109af866b760bdb5aaf3b027549107c21a",
+    "line": 1,
+    "text": "// Copyright Mozilla Foundation\n//\n// Licensed under the Apache License (Version 2.0), or the MIT license,\n// (the \"Licenses\") at your option. You may not use this file except in\n// compliance with one of the Licenses. You may obtain copies of the\n// Licenses at:\n//\n//    https://www.apache.org/licenses/LICENSE-2.0\n//    https://opensource.org/licenses/MIT\n//\n// Unless required by applicable law or agreed to in writing, software\n// distributed under the Licenses is distributed on an \"AS IS\" BASIS,\n// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n// See the Licenses for the specific language governing permissions and\n// limitations under the Licenses.\n"
+  }
+]

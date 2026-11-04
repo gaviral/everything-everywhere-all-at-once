@@ -2,7 +2,7 @@
 // shows; those not fit to switch on in front of people fold away under "Not for the demo". Opened from the Apps panel,
 // or by a brick (`openCatalog`, at a brick's row: shown, marked and its switch focused), a modal sheet as Recap is (Esc,
 // ×, or a click outside closes it). A switch acts at once, and only in this browser.
-import { BUILT_INS, switchBuiltIn, useBuiltInsOn } from "./shell/features";
+import { BUILT_INS, featureAvailable, switchBuiltIn, useBuiltInsOn } from "./shell/features";
 import { FEATURE_NAMES } from "./shell/names";
 import { useEffect, useRef } from "react";
 import type { BrickKind } from "./bricks/contract";
@@ -80,6 +80,10 @@ function CatalogSheet({ apps, state }: { apps: readonly MiniApp[]; state: AppPar
         <button type="button" className="apps-switch" role="switch" aria-label={FEATURE_NAMES[b.id].name} aria-checked={builtIns.has(b.id)} onClick={() => switchBuiltIn(b.id, !builtIns.has(b.id))}>{builtIns.has(b.id) ? "On" : "Off"}</button>
       </li>)}
     </ul></section>
+    {featureAvailable("helpers") && <section className="catalog-group" aria-label="Thinking helpers"><ul><li className="catalog-row">
+      <div><strong>Thinking helpers</strong><p>Say “put five helpers on the pitch”. Read their answers in Work spine.</p></div>
+      <button type="button" className={builtIns.has("helpers") ? "apps-switch on" : "apps-switch"} role="switch" aria-checked={builtIns.has("helpers")} aria-label="Thinking helpers" onClick={() => switchBuiltIn("helpers", !builtIns.has("helpers"))}>{builtIns.has("helpers") ? "On" : "Off"}</button>
+    </li></ul></section>}
     <Groups bricks={ready} on={on} at={at?.id ?? null} />
     {more.length > 0 && <details className="catalog-more">
       <summary>Not for the demo · {more.length}</summary>

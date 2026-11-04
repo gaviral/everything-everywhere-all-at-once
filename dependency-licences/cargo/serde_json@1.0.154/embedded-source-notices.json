@@ -1,0 +1,8 @@
+[
+  {
+    "source_file": "src/lexical/mod.rs",
+    "source_sha256": "ace2ccea2cd541f019a84b9eeb3b9ecd88daf6bccbe9edf0eac00b62704f47c4",
+    "line": 1,
+    "text": "// The code in this module is derived from the `lexical` crate by @Alexhuszagh\n// which the author condensed into this minimal subset for use in serde_json.\n// For the serde_json use case we care more about reliably round tripping all\n// possible floating point values than about parsing any arbitrarily long string\n// of digits with perfect accuracy, as the latter would take a high cost in\n// compile time and performance.\n//\n// Dual licensed as MIT and Apache 2.0 just like the rest of serde_json, but\n// copyright Alexander Huszagh.\n"
+  }
+]

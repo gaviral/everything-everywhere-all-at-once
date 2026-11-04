@@ -515,6 +515,15 @@ export function sentAnswer(state: GuideState, words: string, n: number): GuideSt
   return { ...unsaid(state), caption: { text: `sent “${words}” to ${ask.by}`, by: "You", n } };
 }
 
+/** A question answered from the held stack, before it was asked: it is done, and the line that says what went and to whom
+ *  takes the caption's place (a question being asked goes back to wait, as under any newer caption). */
+export function heldAnswered(state: GuideState, heldN: number, words: string, n: number): GuideState {
+  const item = state.held.find((h) => h.n === heldN && h.kind === "question");
+  if (!item) return state;
+  const before = unsaid(returned(state, "waiting"));
+  return { ...before, held: before.held.filter((h) => h.n !== heldN), caption: { text: `sent “${words}” to ${item.by}`, by: "You", n } };
+}
+
 /** Your words came while the caption was up: it steps back. A question you talked over before you could have read it
  *  (`early`) goes back to the stack, marked so; one you answered is done. What a caption hadn't shown yet (`rest`) waits
  *  in the stack, nothing asked. */
@@ -616,6 +625,17 @@ export function answerAsk(n: number, words: string, send: (to: string, words: st
   if (!said) return "empty";
   if (!send(ask.by, said)) return "failed";
   set(sentAnswer(state, said, ++count));
+  return "sent";
+}
+/** Answers the question held as `heldN`, from its card in the stack, with `words`: the same as `answerAsk`, for a question
+ *  that is not asked yet ("gone": it is no longer held; the other results are `answerAsk`'s). */
+export function answerHeld(heldN: number, words: string, send: (to: string, words: string) => boolean): Answered {
+  const item = state.held.find((h) => h.n === heldN && h.kind === "question");
+  if (!item) return "gone";
+  const said = words.trim().replace(/\s+/g, " ");
+  if (!said) return "empty";
+  if (!send(item.by, said)) return "failed";
+  set(heldAnswered(state, heldN, said, ++count));
   return "sent";
 }
 export function laterHeld(heldN: number) { set(heldLater(state, heldN)); }

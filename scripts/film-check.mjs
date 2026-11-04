@@ -24,6 +24,7 @@ let browser;
 try {
   browser = await openPage(`http://127.0.0.1:${core.port}/?film`);
   const { page, evaluate, until } = browser;
+  await page("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 2, mobile: false });
   const shot = async (name) => {
     const { data } = await page("Page.captureScreenshot", { format: "png" });
     writeFileSync(join(shots, `${name}.png`), Buffer.from(data, "base64"));
@@ -117,15 +118,79 @@ try {
   assert.equal(await evaluate("document.querySelector('.film-caption').textContent"), "Keep your place.");
   assert.equal(await evaluate("getComputedStyle(document.querySelector('.film-caption')).fontFamily === getComputedStyle(document.body).fontFamily"), true);
   await shot("caption");
+  await evaluate("e2a2oFilm.caption(''); window.filmRoot = document.getElementById('root'); window.stageDone = null; e2a2oFilm.stage({rotateX:12,rotateY:-18,rotateZ:-2,scale:.76,x:24,y:-16}).then(v => stageDone = v); true");
+  assert.equal(await evaluate("devicePixelRatio"), 2, "capture live type at device scale 2");
+  await step(800);
+  assert.equal(await evaluate("filmRoot.style.transform"), "translate3d(1.5px, -1px, 0px) rotateX(0.75deg) rotateY(-1.125deg) rotateZ(-0.125deg) scale(0.985)", "default camera uses slow cubic easing");
+  await step(800);
+  await shot("stage-midpoint");
+  await step(1600);
+  assert.equal(await evaluate("stageDone"), true);
+  assert.equal(await evaluate("filmRoot.style.transform"), "translate3d(24px, -16px, 0px) rotateX(12deg) rotateY(-18deg) rotateZ(-2deg) scale(0.76)");
+  assert.ok(await evaluate(`(() => {
+    const root = filmRoot, scene = root.parentElement, r = root.getBoundingClientRect();
+    return scene.className === 'film-stage' && getComputedStyle(scene).backgroundColor === 'rgb(242, 246, 247)'
+      && getComputedStyle(scene).perspective === '1800px' && getComputedStyle(root).borderRadius === '24px'
+      && getComputedStyle(root).filter === 'none' && r.left > 0 && r.right < innerWidth && r.top > 0 && r.bottom < innerHeight
+      && !!root.querySelector('.shell-composer');
+  })()`), "whole live app and composer share the floating window");
+  await shot("stage");
+  await evaluate("window.stageCancelled = null; e2a2oFilm.stage({rotateY:25,scale:.8},{duration:1000,ease:'linear'}).then(v => stageCancelled = v); true");
+  await step(500);
+  await evaluate("e2a2oFilm.stage(null); true");
+  assert.equal(await evaluate("stageCancelled"), false);
+  assert.ok(await evaluate("filmRoot === document.getElementById('root') && filmRoot.parentElement === document.body && filmRoot.style.transform === '' && !document.querySelector('.film-stage') && filmRoot.getBoundingClientRect().width === innerWidth"), "release restores the same app to full bleed");
+  await step(500);
+  await shot("stage-release");
+
+  await evaluate("window.cardDone = null; e2a2oFilm.card({words:'Meet the app',each:700,hold:1000}).then(v => cardDone = v); true");
+  const title = () => evaluate("document.querySelector('.film-title').textContent");
+  assert.equal(await title(), "Meet");
+  await step(699);
+  assert.equal(await title(), "Meet");
+  await step(1);
+  assert.equal(await title(), "the", "words change exactly on a cut");
+  await step(700);
+  assert.equal(await title(), "app");
+  assert.ok(await evaluate(`(() => {
+    const title = document.querySelector('.film-title'), style = getComputedStyle(title), r = title.getBoundingClientRect();
+    return style.backgroundColor === 'rgb(0, 0, 0)' && style.color === 'rgb(255, 255, 255)' && style.fontWeight === '800'
+      && style.fontFamily === getComputedStyle(document.body).fontFamily && style.transitionDuration === '0s'
+      && r.x === 0 && r.y === 0 && r.width === innerWidth && r.height === innerHeight;
+  })()`));
+  await shot("card");
+  await step(1699);
+  assert.equal(await title(), "app", "last word stays for each plus hold");
+  await step(1);
+  assert.equal(await evaluate("cardDone && document.querySelector('.film-title').hidden"), true);
+
+  await evaluate("window.cardCancelled = null; e2a2oFilm.card({words:['One phrase','Another phrase']}).then(v => cardCancelled = v); true");
+  assert.equal(await title(), "One phrase", "arrays preserve phrase labels");
+  await evaluate("window.listDone = null; e2a2oFilm.list({bg:'brand',items:['Quick Find','Notes','Reminders'],each:350}).then(v => listDone = v); true");
+  assert.equal(await evaluate("cardCancelled"), false, "new sequence cancels the previous card");
+  assert.equal(await title(), "Quick Find");
+  assert.ok(await evaluate(`(() => {
+    const sample = document.createElement('div'); sample.style.background = 'var(--accent)'; document.body.append(sample);
+    const matches = getComputedStyle(sample).backgroundColor === getComputedStyle(document.querySelector('.film-title')).backgroundColor;
+    sample.remove(); return matches;
+  })()`), "brand card uses the app accent");
+  await shot("list");
+  await step(350);
+  assert.equal(await title(), "Notes");
+  await step(350);
+  assert.equal(await title(), "Reminders");
+  await step(350);
+  assert.equal(await evaluate("listDone && document.querySelector('.film-title').hidden"), true);
   await evaluate("e2a2oFilm.camera({x:300,y:250,zoom:1.2},{duration:0}); true");
   await evaluate("e2a2oFilm.camera(null); true");
   await sleep(650);
   assert.notDeepEqual(await viewport(), { x: 300, y: 250, zoom: 1.2 }, "camera(null) resumes following");
   await shot("camera-release");
   // clear() cancels motion as well as overlays, then permits automatic following again.
-  await evaluate("e2a2oFilm.camera({x:-5000,y:-5000,zoom:1},{duration:0}); window.filmCancelled = null; e2a2oFilm.camera({x:0,y:0,zoom:2},{duration:1000}).then(v => filmCancelled = v); window.filmTime += 5000; e2a2oFilm.clear(); true");
+  await evaluate("e2a2oFilm.stage({scale:.8},{duration:1000}); e2a2oFilm.list({items:['Still playing']}); e2a2oFilm.camera({x:-5000,y:-5000,zoom:1},{duration:0}); window.filmCancelled = null; e2a2oFilm.camera({x:0,y:0,zoom:2},{duration:1000}).then(v => filmCancelled = v); window.filmTime += 5000; e2a2oFilm.clear(); true");
   assert.equal(await evaluate("[...document.querySelector('.film-layer').children].every(e=>e.hidden)"), true);
   assert.equal(await evaluate("filmCancelled"), false, "clear cancels the pending camera animation");
+  assert.equal(await evaluate("document.querySelector('.film-stage')"), null, "clear also releases the stage");
   await step(5000);
   await sleep(700);
   assert.notDeepEqual(await viewport(), { x: -5000, y: -5000, zoom: 1 }, "clear releases automatic camera");
@@ -136,6 +201,7 @@ try {
     assert.ok(await until("document.readyState === 'complete' && !!document.querySelector('.react-flow__viewport')"));
     assert.equal(await evaluate("typeof window.e2a2oFilm"), "undefined");
     assert.equal(await evaluate("document.querySelector('.film-layer')"), null);
+    assert.equal(await evaluate("document.querySelector('.film-stage, .film-window, .film-title')"), null);
     assert.equal(await evaluate("document.documentElement.classList.contains('film')"), false);
     assert.notEqual(await evaluate("getComputedStyle(document.body).cursor"), "none");
     assert.equal(await evaluate("document.documentElement.classList.contains('recording')"), query === "?recording");
@@ -143,7 +209,7 @@ try {
     await evaluate("[...document.querySelectorAll('button')].find(b => b.textContent === 'Skip tour')?.click()");
     await transcriptHint(false, query ? "recording-transcript-hint" : "normal-transcript-hint");
   }
-  console.log("PASS film: virtual-clock camera/hold/release, pointer/ripple, caption, clear, opt-in, live transcript hint isolation; 13 screenshots saved");
+  console.log("PASS film: virtual-clock stage/card/list, camera/hold/release, pointer/ripple, caption, clear, opt-in, live transcript hint isolation; 18 screenshots at device scale 2 saved");
 } finally {
   await browser?.close();
   core.close();

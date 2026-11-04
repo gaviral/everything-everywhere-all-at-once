@@ -1,0 +1,8 @@
+{
+  "id": "session-focus",
+  "name": "Session focus",
+  "does": "Keep one goal, why it matters and a next step visible in this tab.",
+  "kind": "card",
+  "defaultOn": false,
+  "demoSafe": false
+}

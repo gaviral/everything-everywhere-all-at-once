@@ -5,21 +5,32 @@ import { useSyncExternalStore } from "react";
 import { talkOn, watchTalk } from "../talk-preset";
 import type { BrickKind } from "../bricks/contract";
 
-export type BuiltIn = { id: "conversation-spine" | "partner" | "listening" | "recap" | "import" | "export" | "cards" | "pictures" | "semantic-zoom" | "compare-phone-reading"; kind: BrickKind; defaultOn: boolean };
+export type BuiltIn = { id: "full-content" | "canvas-tools" | "terse" | "helpers" | "conversation-spine" | "email" | "partner" | "listening" | "recap" | "import" | "export" | "cards" | "pictures" | "semantic-zoom" | "bring-here" | "rotate-canvas" | "compare-phone-reading"; kind: BrickKind; defaultOn: boolean };
 
 export const BUILT_INS: readonly BuiltIn[] = [
+  { id: "full-content", kind: "panel", defaultOn: false },
+  { id: "canvas-tools", kind: "panel", defaultOn: false },
+  { id: "terse", kind: "view", defaultOn: false },
+  { id: "bring-here", kind: "panel", defaultOn: false },
   { id: "conversation-spine", kind: "view", defaultOn: false },
+  { id: "email", kind: "input", defaultOn: true },
+  { id: "helpers", kind: "input", defaultOn: true },
   { id: "partner", kind: "input", defaultOn: false },
   // The views beside the Canvas: off until switched on; each then has its Show.
   { id: "cards", kind: "view", defaultOn: false },
   { id: "pictures", kind: "view", defaultOn: false },
   { id: "compare-phone-reading", kind: "panel", defaultOn: false },
   { id: "semantic-zoom", kind: "panel", defaultOn: false },
+  { id: "rotate-canvas", kind: "panel", defaultOn: false },
   { id: "listening", kind: "input", defaultOn: true },
   { id: "import", kind: "input", defaultOn: false },
   { id: "recap", kind: "panel", defaultOn: true },
   { id: "export", kind: "panel", defaultOn: false },
 ];
+
+let helpersAvailable = false;
+export const featureAvailable = (id: string) => id !== "helpers" || helpersAvailable;
+export function setHelpersAvailable(value: boolean) { if (helpersAvailable !== value) { helpersAvailable = value; changed(); } }
 
 const STORE = "e2a2o.features";
 type Switches = Partial<Record<BuiltIn["id"], boolean>>;
@@ -43,7 +54,7 @@ watchTalk(changed);
 
 function onOf(kept: Switches): ReadonlySet<BuiltIn["id"]> {
   if (talkOn()) return new Set(["listening"]);
-  return new Set(BUILT_INS.filter((b) => kept[b.id] ?? b.defaultOn).map((b) => b.id));
+  return new Set(BUILT_INS.filter((b) => featureAvailable(b.id) && (kept[b.id] ?? b.defaultOn)).map((b) => b.id));
 }
 
 /** The built-ins on now; a new set only when one is switched. */

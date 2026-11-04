@@ -1,0 +1,8 @@
+[
+  {
+    "source_file": "src/lib.rs",
+    "source_sha256": "b80b2f763904dcf818000bf3fd146da4188cd848e46f4981cc984e2f3990cf7c",
+    "line": 1,
+    "text": "// Copyright The rust-url developers.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  }
+]

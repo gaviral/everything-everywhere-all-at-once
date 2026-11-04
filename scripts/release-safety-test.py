@@ -206,6 +206,8 @@ esac
 
     def test_strict_precheck_rejects_skips_missing_dependencies_and_stale_status(self):
         self.write("scripts/precheck.sh", (ROOT / "scripts/precheck.sh").read_text())
+        # Boundary behavior has its own regressions; this fixture isolates UI selection.
+        self.write("scripts/tree-guard.py", "raise SystemExit(0)\n")
         self.write("scripts/browser-check.mjs", 'import "./headless.mjs";\n')
         self.write("bin/node", '#!/bin/sh\nexit "${FIXTURE_NODE_RC:-3}"\n', True)
         env = {"PATH": str(self.root / "bin") + os.pathsep + os.environ["PATH"],
