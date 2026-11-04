@@ -1,0 +1,21 @@
+.sketch-exchange { color:#192c3b; background:#fff; border:1px solid #b9c9d0; border-radius:16px; padding:20px; min-width:0; font:1rem/1.5 system-ui,sans-serif; overflow-wrap:anywhere; }
+.sketch-exchange * { box-sizing:border-box; }
+.sketch-exchange h2 { margin:0 0 12px; font-size:1.4em; }
+.sketch-exchange h3 { font-size:1em; }
+.sketch-exchange button,.sketch-exchange select { font:inherit; min-height:44px; max-width:100%; padding:8px 12px; border:1px solid #778e9a; border-radius:8px; background:#edf5f6; color:#163a47; }
+.sketch-exchange button:not(:disabled) { cursor:pointer; }
+.sketch-exchange button:disabled { opacity:.5; }
+.sketch-exchange :focus-visible { outline:3px solid #006b80; outline-offset:3px; }
+.sketch-switch { display:flex; align-items:center; gap:8px; min-height:44px; }
+.sketch-switch input { width:22px; height:22px; }
+.sketch-capture { padding:8px; margin:12px 0; min-width:0; border:1px solid #a8bcc8; border-radius:10px; }
+.sketch-image { width:100%; display:block; background:#f5f9fa; border:1px solid #b6c8cf; border-radius:6px; }
+.sketch-image polyline { fill:none; stroke:#164e63; stroke-width:7; stroke-linejoin:round; stroke-linecap:round; }
+.sketch-pad { touch-action:none; cursor:crosshair; }
+.sketch-actions { display:flex; flex-wrap:wrap; gap:6px; margin:8px 0; }
+.sketch-target { display:flex; flex-direction:column; gap:4px; margin:12px 0; }
+.sketch-exchange article { border-top:1px solid #b8cbd2; margin-top:24px; padding-top:10px; }
+.sketch-empty,.sketch-capability { color:#4c606b; }
+
+.sketch-visual { margin:12px 0; }
+.sketch-visual figcaption { margin:0 0 6px; font-weight:600; }
