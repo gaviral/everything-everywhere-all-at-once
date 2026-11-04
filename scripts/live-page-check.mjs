@@ -63,16 +63,16 @@ try {
   core.send(card(1, "stopped", { message: "Stopped: not sent" }));
   assert.ok(await until(`document.querySelector(".send-card-status")?.textContent === "Stopped: not sent"`));
 
-  await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 2, y: 2 });
-  // The stopped card now keeps its own reading turn before another request.
-  assert.ok(await until('!document.querySelector(".send-card")', 20000), "read the stopped card before starting a new count");
-
   // ---- And Import.
   await evaluate(`document.querySelector("button[aria-label='Import chats']").click()`);
   assert.ok(await until(`!!document.querySelector("dialog.import-dialog")?.open`), "Import opens as a modal sheet");
+  assert.equal(await status(), "Stopped: not sent", "the earlier completion is still unread when the new countdown arrives");
   core.send(card(2, "counting", { in_ms: 5000 }));
   assert.ok(await until(`!document.querySelector("dialog.import-dialog")?.open`), "the count closes Import");
   assert.ok(await until(`!!document.querySelector(".send-card.is-counting .send-card-stop")`));
+  await evaluate(`document.querySelector("button[aria-label='Import chats']").click()`);
+  assert.ok(await until(`!document.querySelector("dialog.import-dialog")?.open`), "Import cannot cover an already active countdown either");
+  assert.ok(await evaluate(`(() => { const b=document.querySelector('.send-card-stop'), r=b.getBoundingClientRect(); return b.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)); })()`), "the interrupting countdown's Stop is on top");
   const bar = () => evaluate(`document.querySelector(".send-card-bar span")?.style.animationDuration ?? null`);
   assert.equal(await bar(), "5000ms");
 
@@ -102,9 +102,6 @@ try {
   assert.equal(await connections(1), 1);
   assert.deepEqual(joins.slice(-1), [null], "once applied, the Stop isn't carried again");
   assert.ok(!core.heard.some((m) => m.type === "stop_send" && m.id === 2), "nor sent as a message");
-
-  await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 2, y: 2 });
-  assert.ok(await until('!document.querySelector(".send-card")', 20000), "read the offline Stop result before the next count");
 
   // ---- The core restarted mid-count: its catch-up says nothing about the card, which goes (never stuck on Sending…).
   core.send(card(3, "counting", { in_ms: 5000 }));
@@ -181,6 +178,17 @@ try {
   assert.ok(await until(`!document.querySelector(".status.capturing")`, 3000), "a second tap stops capture");
   await sleep(300);
   assert.equal(await evaluate(waitingShown), 2, "stopping the mic leaves the waiting list");
+
+  // Expiry is checked separately so it cannot erase the overlapping-countdown case above.
+  core.send(card(20, "counting", { in_ms: 15000 }));
+  assert.ok(await until('!!document.querySelector(".send-card.is-counting")'));
+  await clickStop();
+  for (let waited = 0; !stopsHeard().includes(20) && waited < 3000; waited += 50) await sleep(50);
+  assert.deepEqual(stopsHeard().filter(id => id === 20), [20], "the final Stop reached the core once");
+  core.send(card(20, "stopped", { message: "Stopped: not sent" }));
+  assert.ok(await until('document.querySelector(".send-card-status")?.textContent === "Stopped: not sent"'));
+  await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 2, y: 2 });
+  assert.ok(await until('!document.querySelector(".send-card")', 20000), "a completed card expires after focus and pointer leave");
 } catch (error) {
   failed = error;
 } finally {
