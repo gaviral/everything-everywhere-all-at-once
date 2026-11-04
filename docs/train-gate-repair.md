@@ -40,3 +40,11 @@ Verification of this train:
 - No application or guard change is justified by the supplied refusal. This commit records the merged base and local verification; it does not clear the integration host's staging prerequisite.
 - Local verification: the TypeScript build and both Vite outputs passed. `ux-fold-check.mjs` passed at 1440×900, 390×844, 320×844 and 3840×2160, covering labels, image defaults, routing, zoom, native full screen and saved typing. The wording and home-path checks passed.
 - The tree guard, names, links, dates, Meta-only model and call-count guards, and shell syntax checks for `run.sh` and `scripts/trial.sh` also passed. The full integration gate was not rerun here.
+
+## w11-c10-research staging refusal
+
+- `git merge hub-base` fast-forwarded `w11-c10-research` from `8735da90` to `687aa617` without conflicts. The base already includes the research commit as a merge parent, preserving the research changes and the other integrated work.
+- Both reported rounds of ten checks passed. The refusal concerns unfinished work in the integration host's `e2a2o-staging` checkout. That checkout is absent locally, including from the Git worktree list, so its unfinished work could not be inspected or resolved here. No staging work was discarded.
+- The integration host must preserve and resolve that checkout's unfinished work before retrying. This record does not clear that prerequisite; the refusal provides no application or guard failure to repair on this branch.
+- Local verification: the TypeScript build and both Vite outputs passed with the existing bundle-size warning. `c10-research-reopen-check.mjs` passed, covering explicit research and attachment, reopening the original quote and citation, draft preservation, reload, desktop and phone layouts, changed and missing sources, offline reading, removal and undo, cancellation, and no media or external requests. This uses a synthetic host and local preview persistence, without live model or core persistence evidence.
+- The tree guard, names, links, dates, Meta-only model and call-count guards, wording and home-path checks, and shell syntax checks for `run.sh` and `scripts/trial.sh` passed. The full integration gate was not rerun here.
