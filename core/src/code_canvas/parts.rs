@@ -19,8 +19,10 @@ pub struct Part {
 fn tags(file: &str, source: &str) -> Vec<String> {
     let mut tags = vec![if file.ends_with(".tsx") { "view" } else { "mechanism" }.into()];
     let name = file.to_lowercase();
-    if name.contains("prompt") || source.contains("system_prompt") { tags.push("prompt".into()); }
-    if source.contains("struct ") || source.contains("export type ") || name.contains("data") { tags.push("data".into()); }
+    let words = super::tokens(source, file.ends_with(".rs"));
+    let has = |word: &str| words.iter().any(|token| token.word == word);
+    if name.contains("prompt") || has("system_prompt") { tags.push("prompt".into()); }
+    if has("struct") || (has("export") && has("type")) || name.contains("data") { tags.push("data".into()); }
     tags
 }
 
