@@ -1,0 +1,9 @@
+{
+  "id": "catalog-canvas",
+  "name": "Feature map",
+  "does": "Explore every feature through six things you can do. Try one, then Esc back to your place.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": true,
+  "flag": "everything"
+}
