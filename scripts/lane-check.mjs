@@ -1,14 +1,7 @@
 // No extra dependencies: run with `node scripts/lane-check.mjs` (after the UI is built; precheck builds it first).
-// Full's cards up at once, in a real page: the built UI (ui/dist) in headless Chrome over a stand-in core
-// (scripts/headless.mjs). Ten pull requests (ui/src/PullsCard.tsx), a long note (NoteCard.tsx) and a message counting
-// down (SendCard.tsx) share the notice lane's room between the Apps pill and the dock: none runs under the composer or
-// off the screen, none covers another, and each card's ×, its title, the note's status and the message's Stop stay
-// on top where they're drawn. On a laptop at the page's top and scrolled, and on a phone, where the lane itself is the
-// stack, in the page's flow, at most half the room above the dock and scrolling past that (scripts/phone-check.mjs).
-// Before (connectors, 2026-11-02), the note card ran past a 900 px window and the GitHub card covered the composer; on
-// a phone the cards stuck on top of each other and the note card covered the message's Stop. And the cards' holds: with
-// focus in the note card, the pointer crossing it to the GitHub card doesn't let it go (it closed under the focus, as
-// the GitHub card once did); after either is closed by its ×, the next one goes on its own (it stayed up for good).
+// Long cards take one notice turn each; later cards wait. Each title, close control and Stop must remain reachable
+// at the page's top and after scrolling, on laptop and phone. A focused note stays up when the pointer leaves it;
+// closing it advances the queue, and the next cards each expire after their own reading time.
 // Exit 3 (skipped) when this machine has no Chrome or ui/dist.
 import assert from "node:assert/strict";
 import { ready, standInCore, openPage, sleep } from "./headless.mjs";
@@ -48,7 +41,7 @@ const send = { type: "send_card", id: 1, to: "Mia", text: "Hi Mia, could you con
 const MEASURE = `(() => {
   const q = (s) => document.querySelector(s);
   const box = (e) => { const b = e.getBoundingClientRect(); return { top: Math.round(b.top), bottom: Math.round(b.bottom), left: Math.round(b.left), right: Math.round(b.right) }; };
-  const onTop = (e) => { if (!e) return "missing"; const b = e.getBoundingClientRect(); const x = b.left + Math.min(b.width / 2, 24), y = b.top + b.height / 2;
+  const onTop = (e) => { if (!e) return null; const b = e.getBoundingClientRect(); const x = b.left + Math.min(b.width / 2, 24), y = b.top + b.height / 2;
     if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) return "off screen";
     const hit = document.elementFromPoint(x, y); return hit && (hit === e || e.contains(hit)) ? "ok" : "under " + (hit?.closest("[class]")?.className ?? hit?.tagName); };
   const cards = {};
@@ -78,7 +71,7 @@ function together(where, m, names, { underDock = false } = {}) {
   // The note keeps two points in view (the rest scroll inside it). Not where the lane itself is past its room: a phone's
   // lane takes at most half the room above the dock (phone-check.mjs), and with the message and GitHub cards up too the
   // note keeps its least, its title and status (asserted above; styles.css .notice-stack), its points a scroll away.
-  if (!underDock && !m.laneFull) assert.ok(m.noteBody >= 40, `${at}: the note shows ${m.noteBody} px of its points`);
+  if (names.includes("note") && !underDock && !m.laneFull) assert.ok(m.noteBody >= 40, `${at}: the note shows ${m.noteBody} px of its points`);
 }
 
 const core = await standInCore(() => [{ type: "snapshot", world }]);
@@ -97,63 +90,58 @@ try {
       // Scrolled far enough that the lane sticks under the header (a laptop's is 62 px lower at the page's top).
       const scrolled = async () => { const m = await look(phone ? 600 : 400); assert.ok(m.scrollY >= 100, `${where}: the page scrolls (${m.scrollY})`); return m; };
 
-      // The GitHub card and the note card.
+      // Cards now take one reading turn each. Every long card must still fit,
+      // scroll, and keep its own controls reachable at the top and down the map.
       core.send(pulls(1));
       core.send(note(1));
-      assert.ok(await until(`!!document.querySelector(".pulls-card.is-ready") && !!document.querySelector(".note-card")`), `${where}: both cards up`);
-      together(`${where}, GitHub and note, at the top`, await look(0), ["GitHub", "note"], { underDock: phone });
-      together(`${where}, GitHub and note, scrolled`, await scrolled(), ["GitHub", "note"]);
-
-      // And a message counting down, whose Stop must stay in reach above all.
       core.send(send);
       core.send(note(2));
-      assert.ok(await until(`!!document.querySelector(".send-card.is-counting") && !!document.querySelector(".note-card")`), `${where}: the message card up`);
-      together(`${where}, all three, at the top`, await look(0), ["message", "GitHub", "note"], { underDock: phone });
-      together(`${where}, all three, scrolled`, await scrolled(), ["message", "GitHub", "note"]);
-      // The Apps pill stays readable at the top (frames-check: the lane comes after it).
-      await look(0);
-      if (!phone) assert.equal(await evaluate(`(() => { const e = document.querySelector(".apps-title"); const b = e.getBoundingClientRect(); return e.contains(document.elementFromPoint(b.left + 20, b.top + b.height / 2)); })()`), true, `${where}: the Apps pill is on top`);
-      core.send({ ...send, state: "stopped", message: "Stopped: not sent" });
+      for (const [name, selector, close] of [["GitHub", ".pulls-card.is-ready", ".pulls-card-close"], ["note", ".note-card", ".note-card-close"], ["message", ".send-card.is-counting", null], ["note", ".note-card", ".note-card-close"]]) {
+        assert.ok(await until(`!!document.querySelector('${selector}')`), `${where}: ${name} reaches the head of the queue`);
+        together(`${where}, ${name}, at the top`, await look(0), [name], { underDock: phone });
+        together(`${where}, ${name}, scrolled`, await scrolled(), [name]);
+        await look(0);
+        if (!phone) assert.equal(await evaluate(`(() => { const e = document.querySelector(".apps-title"); const b = e.getBoundingClientRect(); return e.contains(document.elementFromPoint(b.left + 20, b.top + b.height / 2)); })()`), true, `${where}: the Apps pill is on top`);
+        if (close) await evaluate(`document.querySelector('${close}').click()`);
+        else {
+          core.send({ ...send, state: "stopped", message: "Stopped: not sent" });
+          assert.ok(await until('!!document.querySelector(".send-card.is-stopped")'), "the counting card receives its end in place");
+          assert.ok(await until('!document.querySelector(".send-card")', 20000), "the completed message gets its reading time, then the queue advances");
+        }
+      }
     } finally {
       await page.close();
     }
   }
 
-  // Focus holds a card apart from the pointer: Tab from the GitHub card into the note card, then the pointer crosses the
-  // note on its way to the GitHub card. A saved note's time up is about 5.5 s; held, it's still there well after.
+  // Focus holds the current note after the pointer leaves it, while later cards wait.
   const page = await openPage(`http://127.0.0.1:${core.port}/?cards`);
   try {
     const { evaluate, until, page: cdp } = page;
     assert.ok(await until(`!!document.querySelector("#thread-T1")`, 10000), "the map loads");
     core.send({ ...pulls(9), pulls: pulls(9).pulls.slice(0, 1), more: false });
     core.send({ type: "note_card", id: 9, title: "Bills", state: "saved", live: true, message: "Saved to Notes", sections: [section("", 1)] });
-    assert.ok(await until(`!!document.querySelector(".pulls-card.is-ready") && !!document.querySelector(".note-card")`), "both cards up");
-    await evaluate(`document.querySelector(".pulls-card-row").focus()`);
-    for (const type of ["keyDown", "keyUp"]) await cdp("Input.dispatchKeyEvent", { type, key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 });
-    assert.equal(await evaluate(`document.activeElement.getAttribute("aria-label")`), "Close the note card", "Tab goes from the GitHub card to the note card's ×");
+    assert.ok(await until('!!document.querySelector(".pulls-card.is-ready") && !document.querySelector(".note-card")'), "note waits behind the GitHub card");
+    await evaluate('document.querySelector(".pulls-card-close").click()');
+    assert.ok(await until('!!document.querySelector(".note-card") && !document.querySelector(".pulls-card")'), "the note takes its reading turn");
+    await evaluate('document.querySelector(".note-card-close").focus()');
+    core.send({ ...pulls(10), pulls: pulls(10).pulls.slice(0, 1), more: false });
+    core.send({ type: "note_card", id: 10, title: "Bills", state: "saved", live: true, message: "Saved to Notes", sections: [section("", 1)] });
     const corner = (selector) => evaluate(`(() => { const b = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return { x: b.left + 30, y: b.top + 10 }; })()`);
-    for (const selector of [".note-card-head", ".pulls-card-head"]) {
+    for (const selector of [".note-card-head", "#type-a-thought"]) {
       const { x, y } = await corner(selector);
       await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
       await sleep(150);
     }
     await sleep(7000);
-    assert.ok(await evaluate(`!!document.querySelector(".note-card")`), "the note card stays while focus is in it, after the pointer has left it");
-    assert.equal(await evaluate(`document.activeElement.getAttribute("aria-label")`), "Close the note card", "and focus stays where it was");
-
-    // Each closed by a click on its ×: a card that goes never says leave or blur, so the next ones must start unheld
-    // and go on their own (they stayed up for good).
-    for (const close of [".note-card-close", ".pulls-card-close"]) {
-      const { x, y } = await evaluate(`(() => { const b = document.querySelector(${JSON.stringify(close)}).getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; })()`);
-      for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) await cdp("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1 });
-      assert.ok(await until(`!document.querySelector(${JSON.stringify(close)})`, 2000), `${close} closes its card`);
-    }
+    assert.ok(await evaluate('!!document.querySelector(".note-card") && !document.querySelector(".pulls-card")'), "focus holds the current note while other cards wait");
+    assert.equal(await evaluate('document.activeElement.getAttribute("aria-label")'), "Close the note card", "focus stays where it was");
+    const { x, y } = await evaluate(`(() => { const r = document.querySelector(".note-card-close").getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+    for (const type of ["mousePressed", "mouseReleased"]) await cdp("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1 });
     await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 40, y: 700 });
-    core.send({ ...pulls(10), pulls: pulls(10).pulls.slice(0, 1), more: false });
-    core.send({ type: "note_card", id: 10, title: "Bills", state: "saved", live: true, message: "Saved to Notes", sections: [section("", 1)] });
-    assert.ok(await until(`!!document.querySelector(".pulls-card.is-ready") && !!document.querySelector(".note-card")`), "the next cards come");
-    assert.ok(await until(`!document.querySelector(".pulls-card") && !document.querySelector(".note-card")`, 12000),
-      `after a × each next card goes on its own (still up: ${await evaluate(`[".pulls-card", ".note-card"].filter((s) => document.querySelector(s)).join(", ")`)})`);
+    assert.ok(await until('!!document.querySelector(".pulls-card") && !document.querySelector(".note-card")'), "closing the focused note advances to GitHub");
+    assert.ok(await until('!document.querySelector(".pulls-card") && !!document.querySelector(".note-card")', 15000), "the next GitHub card starts unheld and expires");
+    assert.ok(await until('!document.querySelector(".note-card")', 15000), "the next note starts unheld and expires");
   } finally {
     await page.close();
   }

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { thoughtId, readWaiting, saveWaiting, receivedWaiting } from "./waiting";
 import { switchTalk, talkCommand } from "./talk-preset";
 import { receiveStep, resetSteps, stopListeningStep, type StepMsg } from "./model-line";
-import { caughtUp, comesFirst, received as cardReceived, type Card as SendCardShown, type SendCardMsg } from "./send-card";
+import { STOP_WAITS, caughtUp, comesFirst, received as cardReceived, type Card as SendCardShown, type SendCardMsg } from "./send-card";
 import { gone as pullsGone, NO_PULLS, received as pullsReceived, type Pulls, type PullsCardMsg } from "./pulls-card";
 import { comesFirst as noteFirst, received as noteReceived, type NoteCardMsg } from "./note-card";
 import { receiveRoute, resetRoute, routePlacing } from "./route";
@@ -117,7 +117,7 @@ export type UnfoldAsk = { thread_id: string | null; open: boolean; revision: num
 // when something newer stops the search.
 export const LOOKING = "Looking through your topics…";
 /** The message card's Stop pressed with the connection down (`stopSend`). */
-export const STOP_WAITS = "Not connected: your Stop goes as soon as this window reconnects.";
+export { STOP_WAITS } from "./send-card";
 
 export interface Suggestion {
   id: string;
@@ -738,7 +738,9 @@ export function useCore(speaker?: string) {
   useEffect(() => { noticeShown.current = notice; }, [notice]);
   // The notice's Undo: the id the core sent for the request it answers (catalog.rs), until a newer notice.
   const undoId = currentNotice?.kind === "notice" ? currentNotice.value.undo : null;
-  const setUndoId = (id: number | null) => noticeQueue.updateUndo(id);
+  // History follows the latest answered turn even when its notice is queued or only shown in the status line.
+  const [latestUndoId, setLatestUndoId] = useState<number | null>(null);
+  const setUndoId = (id: number | null) => { setLatestUndoId(id); noticeQueue.updateUndo(id); };
   // Every answer shown, counted, the same words again too: a repeat gets its reading time again (App.tsx), and an
   // answer the window makes for a view request stands down when the core has answered since (showNotice).
   const answers = useRef(0);
@@ -1073,7 +1075,10 @@ export function useCore(speaker?: string) {
   const stopSend = useCallback((id: number) => {
     if (send(JSON.stringify({ type: "stop_send", id }))) return true;
     stopWaiting.current = id;
-    sayNotice(STOP_WAITS);
+    if (sendSource.current?.id === id) {
+      setSendCard({ ...sendSource.current, stopPending: true });
+      notices.current.push({ text: STOP_WAITS, kind: "notice", time: Date.now() });
+    } else sayNotice(STOP_WAITS);
     answered();
     return false;
   }, [send]);
@@ -1148,6 +1153,7 @@ export function useCore(speaker?: string) {
     placing,
     clearNotice: useCallback(() => { const e = noticeQueue.snapshot(); if (e?.kind === "notice") noticeQueue.drop("notice", e.key); }, [noticeQueue]),
     undoId,
+    latestUndoId,
     revertAsk,
     correctable,
     // Where your attention is, as told to the core: the "this" mark on the map picks from it (Attention.tsx).

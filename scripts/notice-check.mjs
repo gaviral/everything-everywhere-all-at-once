@@ -133,6 +133,7 @@ try {
   await until(() => core.notice !== "");
   assert.equal(core.notice, "Moved to Garden");
   assert.equal(core.undoId, null, "a newer answer invalidates the old Undo even while queued");
+  assert.equal(core.latestUndoId, 2, "History knows the latest queued turn without lending its Undo to the visible one");
   core.clearNotice();
   await until(() => core.notice === "Moved to Kitchen");
   assert.equal(core.undoId, 2);

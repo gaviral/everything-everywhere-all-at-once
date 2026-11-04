@@ -434,10 +434,20 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
     const timer = window.setTimeout(() => setReady(true), 0);
     return () => window.clearTimeout(timer);
   }, [top, ready]);
-  // A resize can leave every topic outside the new window, even with no active thread or following held.
+  // Follow the active words on resize; a held view keeps its center and zoom.
+  // Fitting everything while held would dismiss unread edge cues without the person going there.
+  const previousSize = useRef<{ width: number; height: number } | null>(null);
   useEffect(() => {
-    if (!ready || !box) return;
-    const g = following ? goal() : null;
+    if (!box) return;
+    const previous = previousSize.current;
+    previousSize.current = { width, height: box.tall };
+    if (!ready) return;
+    if (!following && previous) {
+      const view = flow.getViewport();
+      void flow.setViewport({ ...view, x: view.x + (width - previous.width) / 2, y: view.y + (box.tall - previous.height) / 2 }, { duration: 0 });
+      return;
+    }
+    const g = goal();
     if (g) camera.aim(g.box, { instant: true }); else camera.fit(all(), 1, minZoom, { instant: true });
   }, [width, box?.tall]);
   // Following: where you are stays in view as you talk (the camera spaces and limits the moves).

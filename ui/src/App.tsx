@@ -443,6 +443,8 @@ export default function App() {
   useEffect(() => { if (!core.notice) setNoticeHeld(false); }, [core.notice]);
   // A new answer restarts the timeout even if its words are unchanged (a find result, "stop listening" said again).
   useEffect(() => {
+    // Key feedback is already visible in the shell's status line. A hidden card must not block later answers.
+    if (SHELL2 && aboutKey(core.notice)) { core.clearNotice(); return; }
     // "Looking through your threads…" stays until its answer, which can take longer than this (find.rs PATIENCE).
     if ((SHELL2 && railTab === "history") || !core.notice || noticeFocused || noticeHeld || core.notice === LOOKING || staysUp(core.notice)) return;
     // With Undo, long enough to act on it, not just read it (notice-rules.ts `undoUpFor`).
@@ -1073,7 +1075,7 @@ export default function App() {
   const catalogOpen = useCatalogOpen();
   const catalogAt = useCatalogAt();
   const heldQuestions = useHeld();
-  const history = useHistory(brickHost.on, world, core.mapChange, core.undoId);
+  const history = useHistory(brickHost.on, world, core.mapChange, core.latestUndoId);
   const call = useCall();
   const inCall = peopleHere(call) >= 2;
 
@@ -1613,7 +1615,7 @@ export default function App() {
       {!talk && railTab && <Rail tab={railTab} setTab={setRailTab} close={() => setRailTab(null)} tabs={tabs}>
         {/* Talk: lane L5's call (people, turns, the read line, the level meter) takes this line's place. */}
         {railTab === "talk" && <TalkTurns thoughts={world.thoughts} me={me} ai={aiNames} />}
-        {railTab === "history" && <HistoryTab entries={history.entries} undoId={core.undoId} now={now} onUndo={undoEntry} onShow={show}
+        {railTab === "history" && <HistoryTab entries={history.entries} undoId={core.latestUndoId} now={now} onUndo={undoEntry} onShow={show}
           recap={builtIns.has("recap") && world.thoughts.length ? () => core.requestRecap() : null} />}
         {railTab === "catalog" && <CatalogTab rows={rows} at={catalogAt?.id ?? null} />}
         {railTab === "settings" && <SettingsTab keys={keys} say={<ShellSay />} />}

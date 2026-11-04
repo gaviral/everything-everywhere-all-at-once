@@ -185,10 +185,10 @@ function landingAim(id: string, threadId: string, words: string): { aim: Aim; ri
   const r = mark.getBoundingClientRect();
   return { aim: { x: r.left + r.width / 2 - 40, y: r.top + r.height / 2, scale: 0.6 }, ring: null, into: true };
 }
-/** Where your words were: the composer's field (the stage's, in the revamp's shell). None, no flight: never a made-up
+/** Where your words were: the named input, wherever the shell places it. None, no flight: never a made-up
  *  origin (the playground has no composer). */
 function originOf(): { words: Point; top: number } | null {
-  const composer = document.querySelector(".composer") ?? document.querySelector('[data-slot="stage"]');
+  const composer = document.querySelector('[data-guide="composer"]') ?? document.querySelector(".composer") ?? document.querySelector('[data-slot="stage"]');
   const box = composer?.getBoundingClientRect();
   if (!composer || !box || !box.height) return null;
   const field = composer.querySelector("textarea, input:not([type=hidden])")?.getBoundingClientRect();

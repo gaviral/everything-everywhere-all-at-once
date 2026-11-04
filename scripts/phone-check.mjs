@@ -202,12 +202,18 @@ try {
   assert(await until(`!!document.querySelector(".dot.ok, .dot.warn")`, 15000), "it reconnects");
   await settled();
 
-  // Every notice at once: the key notice, a message card counting down, a map update; at the top and scrolled.
-  // A notice that stays up until dismissed (one that times out could be fading as it's measured).
+  // The queue exposes each card in arrival order. Check every card against
+  // the same phone sizes, scroll positions, controls and Room panel.
   core.send({ type: "notice", message: "The mic stopped. Tap it to keep talking." }); core.send(SEND_CARD); core.send(MAP_CHANGE);
-  assert(await until(`!!document.querySelector(".notice") && !!document.querySelector(".send-card") && !!document.querySelector(".map-change")`, 5000), "three notices are up");
+  for (const [kind, selector] of [["notice", ".notice"], ["message", ".send-card"], ["map update", ".map-change"]]) {
+    assert(await until(`!!document.querySelector('${selector}')`, 5000), `${kind} takes its queue turn`);
+    assert(await until('document.querySelectorAll(".notice, .send-card, .map-change").length === 1', 3000), `${kind}: only the current notice remains after the exit transition`);
+    await evaluate(`document.querySelector('${selector} button').focus()`);
   // With the Apps panel open (a map with no apps yet opens it, and holds the lane in view) and closed.
   for (const apps of ["Apps open", "Apps closed"]) {
+    if (apps === "Apps open" && !await evaluate('!!document.querySelector(".apps-panel.is-open")')) {
+      await evaluate('document.querySelector(".apps-title").click()');
+    }
     if (apps === "Apps closed") {
       await evaluate(`document.querySelector(".apps-panel.is-open .apps-title")?.click()`);
       assert(await until(`!document.querySelector(".apps-panel.is-open")`, 3000), "the Apps panel closes");
@@ -241,6 +247,16 @@ try {
     await evaluate(`document.querySelector(".room-menu summary").click()`);
     await frames();
   }
+
+    if (kind === "notice") await evaluate(`document.querySelector('[aria-label="Dismiss notice"]').click()`);
+    else if (kind === "message") {
+      await evaluate('document.querySelector("#type-a-thought").focus()');
+      core.send({ ...SEND_CARD, state: "stopped", message: "Stopped: not sent" });
+      assert(await until('!document.querySelector(".send-card")', 20000), "the ended message is read before the map update");
+    } else await evaluate(`document.querySelector('[aria-label="Dismiss map update"]').click()`);
+  }
+  core.send({ type: "notice", message: "The mic stopped. Tap it to keep talking." });
+  assert(await until('!!document.querySelector(".notice")'), "a notice remains during point and popover clearance checks");
 
   // A tapped point: Delete and Move show, beside or under its words, never over them, 8 px or more apart.
   for (const [width, height] of [[320, 844], [375, 844], [390, 844], [320, 568], [844, 390]]) {
@@ -297,6 +313,9 @@ try {
     await frames();
   }
 
+  await evaluate(`document.querySelector('[aria-label="Dismiss notice"]').click()`);
+  assert(await until('!document.querySelector(".notice")'), "read the notice before the message-size scenes");
+
   // A long message counting down: its words scroll in the card and its Stop shows, on top, wherever the page is.
   core.send({ ...SEND_CARD, id: 2, text: "Hi Mia, could you confirm what to bring on Saturday? ".repeat(12) });
   assert(await until(`document.querySelector(".send-card-text")?.textContent.length > 300`, 5000), "the long message shows");
@@ -313,7 +332,7 @@ try {
       })()`));
     }
   }
-  core.send({ ...SEND_CARD, id: 3 });
+  core.send({ ...SEND_CARD, id: 2 });
   assert(await until(`document.querySelector(".send-card-text")?.textContent.length < 100`, 5000), "the short message is back");
 
   // The tour on its side with every notice up: a step on the map's page (not the composer's, in the dock) brings its

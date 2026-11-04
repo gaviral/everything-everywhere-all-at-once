@@ -63,6 +63,10 @@ try {
   core.send(card(1, "stopped", { message: "Stopped: not sent" }));
   assert.ok(await until(`document.querySelector(".send-card-status")?.textContent === "Stopped: not sent"`));
 
+  await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 2, y: 2 });
+  // The stopped card now keeps its own reading turn before another request.
+  assert.ok(await until('!document.querySelector(".send-card")', 20000), "read the stopped card before starting a new count");
+
   // ---- And Import.
   await evaluate(`document.querySelector("button[aria-label='Import chats']").click()`);
   assert.ok(await until(`!!document.querySelector("dialog.import-dialog")?.open`), "Import opens as a modal sheet");
@@ -98,6 +102,9 @@ try {
   assert.equal(await connections(1), 1);
   assert.deepEqual(joins.slice(-1), [null], "once applied, the Stop isn't carried again");
   assert.ok(!core.heard.some((m) => m.type === "stop_send" && m.id === 2), "nor sent as a message");
+
+  await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 2, y: 2 });
+  assert.ok(await until('!document.querySelector(".send-card")', 20000), "read the offline Stop result before the next count");
 
   // ---- The core restarted mid-count: its catch-up says nothing about the card, which goes (never stuck on Sending…).
   core.send(card(3, "counting", { in_ms: 5000 }));
