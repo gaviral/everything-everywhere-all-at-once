@@ -150,7 +150,7 @@ fn apply(job: &Work, files: &HashMap<String, String>, answer: &Value) -> anyhow:
     Ok(())
 }
 
-pub(super) async fn work(core: &Core, run: &Run, job: &Work) -> anyhow::Result<()> {
+pub(super) async fn work(core: &Core, run: &Run, job: &Work, execution: &Execution<'_>) -> anyhow::Result<()> {
     let files = context(job).await?;
     let brief = std::fs::read_to_string(&job.brief)?;
     let body = request(&brief, &files);
@@ -159,6 +159,7 @@ pub(super) async fn work(core: &Core, run: &Run, job: &Work) -> anyhow::Result<(
         "provider":"meta", "model":body["model"], "endpoint":ENDPOINT,
         "evidence":"built-in-meta-client"})
     });
+    execution.start();
     let send = async {
         // Offline deterministic fixtures cannot be enabled in a production build.
         #[cfg(test)]

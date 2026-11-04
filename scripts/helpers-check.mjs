@@ -79,7 +79,9 @@ try {
       }
     };
     await showPhone();
-    await check('document.querySelectorAll("[data-job-id][data-status=running]").length >= 4', "parent and three child rows");
+    await check('document.querySelectorAll("[data-job-id][data-parent][data-status=queued]").length === 3', "three children queued before execution");
+    assert.equal(await evaluate('document.querySelectorAll("[data-job-id][data-parent][data-status=running]").length'), 0, "countdown and delayed split have zero running children");
+    await check('document.querySelector(".work-spine-counts")?.textContent.includes("3 queued")', "parent excluded from queued count");
     const swarm = await evaluate('[...document.querySelectorAll(".work-spine-list > [data-job-id]")].at(-1).dataset.jobId');
     const current = `[data-job-id=${JSON.stringify(swarm)}]`;
     await type("The phone needs a clear primary action");
@@ -88,7 +90,7 @@ try {
     // Typing closes the phone sheet; open it again to inspect running and finished work.
     if (width === 390) await evaluate('if (!document.querySelector(".work-spine-sheet")) document.querySelector(".work-spine-bar")?.click()');
     const screenshot = async (name) => { const { data } = await page("Page.captureScreenshot", { format: "png" }); writeFileSync(join(shots, `${name}-${width}.png`), Buffer.from(data, "base64")); };
-    await screenshot("running");
+    await screenshot("preparing");
     await check(`document.querySelector(${JSON.stringify(current)})?.dataset.status === "done" && document.querySelector(${JSON.stringify(current)}).querySelectorAll("[data-job-id][data-status=done]").length === 3`, "all current rows finish", 12000);
     await check('document.body.innerText.includes("Helpers:")', "one thought lands on the topic");
     await evaluate(`document.querySelector(${JSON.stringify(current)}).querySelector("details summary")?.focus()`);
@@ -134,6 +136,16 @@ try {
   assert.equal(rows.filter((l) => l.kind === "helpers_landed").length, 2);
   assert.equal(rows.filter((l) => l.kind === "helpers_stopped").length, 4);
   assert.ok(rows.filter((l) => l.kind === "call").every((l) => l.model === "muse-spark-1.3"));
+  const executions = rows.filter((l) => l.kind === "helpers_execution");
+  assert.equal(executions.filter((l) => l.phase === "start").length, 6);
+  for (const start of executions.filter((l) => l.phase === "start")) {
+    const end = executions.find((l) => l.phase === "end" && l.call_id === start.call_id);
+    assert.ok(end && end.at >= start.at && end.outcome === "done");
+    assert.equal(start.provider, "meta");
+    assert.equal(start.model, "muse-spark-1.3");
+    assert.ok(start.child_id.startsWith(start.swarm_id + ":"));
+  }
+  assert.equal(rows.filter((l) => l.kind === "helpers_speech_end").length, 6);
   console.log(`helpers-check: passed; real core at ${url}, desktop/phone, parallel rows, answers, landing, Stop, Features; screenshots ${shots}`);
 } finally {
   await browser?.close();

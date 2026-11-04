@@ -309,7 +309,7 @@ async fn stop_reaps_runner_and_descendants_by_pid() {
         .any(|job| job
             .result
             .as_deref()
-            .is_some_and(|v| v.contains("Editing README"))));
+            .is_some_and(|v| v == "Working on brief")));
     assert!(matches!(
         card_for(&core, "you"),
         Some(ServerMsg::SendCard {
@@ -660,4 +660,46 @@ async fn builtin_meta_stop_cancels_before_writing() {
         .unwrap()
         .values()
         .all(|r| r.exit == ExitStatus::Stopped));
+}
+
+#[tokio::test]
+async fn mixed_outcomes_and_private_progress_stay_truthful() {
+    let repo = repository().await;
+    let script = r#"import json, pathlib, sys, time
+print(json.dumps({'type': 'progress', 'text': 'PRIVATE_SENTINEL', 'path': '/hidden/worktree', 'prompt': 'PRIVATE_SENTINEL'}), flush=True)
+time.sleep(0.2)
+n = int(pathlib.Path.cwd().name.split('-')[-1])
+if n == 2: sys.exit(7)
+if n == 1:
+    with open('README.md', 'a') as f: f.write('\nA useful change.\n')
+"#;
+    let command = serde_json::to_string(&vec!["python3", "-c", script]).unwrap();
+    let core = core(&repo, command, true);
+    assert!(said(&core, "you", "put three helpers on the README"));
+    let mut updates = core.updates.subscribe();
+    finished(&core).await;
+    let rows = jobs(&core);
+    let parent = rows.iter().find(|j| j.parent.is_none()).unwrap();
+    assert_eq!(parent.status, "failed");
+    assert_eq!(parent.outcome.as_deref(), Some("partial"));
+    assert_eq!(rows.iter().filter(|j| j.parent.is_some() && j.status == "failed").count(), 1);
+    assert_eq!(rows.iter().filter(|j| j.outcome.as_deref() == Some("no_change")).count(), 1);
+    while let Ok(update) = updates.try_recv() {
+        if let ServerMsg::Job { job, .. } = update.message {
+            let wire = serde_json::to_string(&job).unwrap();
+            assert!(!wire.contains("PRIVATE_SENTINEL") && !wire.contains("/hidden/worktree"));
+        }
+    }
+}
+
+#[tokio::test]
+async fn failed_spawn_has_no_execution_time() {
+    let repo = repository().await;
+    let core = core(&repo, "does-not-exist".into(), true);
+    assert!(said(&core, "you", "put three helpers on the README"));
+    finished(&core).await;
+    for row in jobs(&core).iter().filter(|j| j.parent.is_some()) {
+        assert_eq!(row.status, "failed");
+        assert!(row.started_ms.is_none() && row.ended_ms.is_none());
+    }
 }

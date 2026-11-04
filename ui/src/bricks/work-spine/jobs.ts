@@ -1,5 +1,5 @@
 // What the jobs say, in words and as a tree: pure, so the lane and the card in the dock read the same answers.
-import type { Job } from "../contract";
+import type { Job, JobStatus } from "../contract";
 
 /** A job and the side jobs that hang from it, each of those with its own, in the order they came. */
 export interface Node {
@@ -50,18 +50,22 @@ export function questions(jobs: readonly Job[]): ReadonlySet<string> {
   return out;
 }
 
-export interface Tally { running: number; waiting: number; failed: number; done: number }
+export type Tally = Record<JobStatus, number>;
 
 /** How many jobs are in each state; with `asks` (`questions`), a waiting job that isn't one of them isn't counted. */
 export function tally(jobs: readonly Job[], asks?: ReadonlySet<string>): Tally {
-  const out: Tally = { running: 0, waiting: 0, failed: 0, done: 0 };
-  for (const job of jobs) if (job.status !== "waiting" || !asks || asks.has(job.id)) out[job.status]++;
+  const out: Tally = { preparing: 0, queued: 0, running: 0, waiting: 0, failed: 0, done: 0, stopped: 0 };
+  for (const job of jobs) {
+    // A swarm is a container, not one more executing helper (even if children were evicted).
+    if (job.helper_kind && !job.parent) continue;
+    if (job.status !== "waiting" || !asks || asks.has(job.id)) out[job.status]++;
+  }
   return out;
 }
 
 /** "2 running · 1 waiting": what isn't over yet or went wrong, as parts a view can color; none when all is done. */
-export function parts(count: Tally): { key: "running" | "waiting" | "failed"; text: string }[] {
-  return ([["running", "running"], ["waiting", "waiting"], ["failed", "failed"]] as const)
+export function parts(count: Tally): { key: Exclude<JobStatus, "done">; text: string }[] {
+  return ([["preparing", "preparing"], ["queued", "queued"], ["running", "running"], ["waiting", "waiting"], ["failed", "failed"], ["stopped", "stopped"]] as const)
     .filter(([key]) => count[key] > 0).map(([key, word]) => ({ key, text: `${count[key]} ${word}` }));
 }
 
@@ -99,9 +103,12 @@ export function justNow(jobs: readonly Job[], now: number): string | null {
 export function stateOf(job: Job, now: number): { mark: string; word: string; clock?: string } {
   const took = job.started_ms !== undefined && job.ended_ms !== undefined ? lengthOf(job.ended_ms - job.started_ms) : "";
   switch (job.status) {
+    case "preparing": return { mark: "○", word: "Preparing" };
+    case "queued": return { mark: "○", word: "Queued" };
+    case "stopped": return { mark: "■", word: took ? `Stopped after ${took}` : "Stopped" };
     case "running": return { mark: "", word: "Running", clock: job.started_ms !== undefined ? clock(now - job.started_ms) : undefined };
-    case "done": return { mark: "✓", word: took ? `Done in ${took}` : "Done" };
-    case "failed": return { mark: "✕", word: job.result?.startsWith("Stopped") ? (took ? `Stopped after ${took}` : "Stopped") : took ? `Failed after ${took}` : "Failed" };
+    case "done": return { mark: "✓", word: job.outcome === "dry_run" ? "Dry run · no execution" : job.outcome === "no_change" ? (took ? `No changes · ${took}` : "No changes") : took ? `Done in ${took}` : "Done" };
+    case "failed": return { mark: "✕", word: job.outcome === "partial" ? "Partially finished" : job.result?.startsWith("Stopped") ? (took ? `Stopped after ${took}` : "Stopped") : took ? `Failed after ${took}` : "Failed" };
     case "waiting": return { mark: "?", word: "Waiting for you" };
   }
 }

@@ -52,6 +52,34 @@ try {
   assert.strictEqual(readJobs(), before, "invalid messages preserve the store");
   resetJobs();
   assert.deepEqual(readJobs(), []);
+  const { tally, stateOf, forest } = await server.ssrLoadModule("/src/bricks/work-spine/jobs.ts");
+  const parent = { ...job("Helpers", "swarm", "preparing", 1000), helper_kind: "thinking", requested_count: 3 };
+  receiveJob(parent);
+  for (let i = 0; i < 3; i++) receiveJob({ ...parent, id: `child-${i}`, parent: "swarm", status: "queued" });
+  assert.equal(tally(readJobs()).running, 0, "preparing and queued are never running");
+  assert.equal(tally(readJobs()).queued, 3, "requested children exclude their parent");
+  assert.equal(forest(readJobs())[0].kids.length, 3);
+  const running = { ...parent, id: "child-0", parent: "swarm", status: "running", at_ms: 5000, started_ms: 5000 };
+  receiveJob(running);
+  receiveJob({ ...parent, status: "running", at_ms: 5000 });
+  assert.equal(tally(readJobs()).running, 1, "running parent adds no child");
+  const finished = { ...running, status: "done", at_ms: 9000, ended_ms: 6500, outcome: "no_change" };
+  receiveJob(finished);
+  assert.equal(readJobs()[1].ended_ms, 6500, "duration ends at completion, before postprocessing publication");
+  assert.match(stateOf(readJobs()[1], 20000).word, /No changes/);
+  const original = readJobs()[1];
+  resetJobs();
+  receiveJob(finished);
+  assert.deepEqual(readJobs()[0], original, "fresh replay retains both execution times and outcome");
+  receiveJob({ ...parent, id: "never-started", parent: "swarm", status: "stopped", at_ms: 10000, outcome: "stopped" });
+  assert.equal(readJobs()[1].started_ms, undefined);
+  assert.equal(readJobs()[1].ended_ms, undefined, "stopping queued work invents no execution time");
+  assert.equal(stateOf(readJobs()[1], 20000).word, "Stopped");
+  const valid = readJobs();
+  for (const extra of [{ helper_kind: "other" }, { requested_count: 0 }, { requested_count: 1.5 }, { ended_ms: 4000 }, { outcome: "invented" }]) {
+    receiveJob({ ...finished, ...extra });
+    assert.strictEqual(readJobs(), valid, "invalid lifecycle metadata is rejected");
+  }
   console.log("job-identity-check: ok");
 } finally {
   await server.close();

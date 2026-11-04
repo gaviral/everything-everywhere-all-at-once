@@ -115,6 +115,10 @@ pub struct Runtime {
     hosted: bool,
     url: String,
     coding: coding::Settings,
+    #[cfg(test)]
+    spawn_gate: Option<Arc<tokio::sync::Semaphore>>,
+    #[cfg(test)]
+    spawn_waiting: std::sync::atomic::AtomicUsize,
     state: Mutex<State>,
 }
 #[derive(Default)]
@@ -123,7 +127,7 @@ struct State {
     active: Option<Arc<Run>>,
     off: HashSet<String>,
     stopped_voice: HashSet<String>,
-    speech_end: HashMap<String, Instant>,
+    speech_end: HashMap<String, (Instant, u64)>,
 }
 struct Run {
     id: u64,
@@ -136,6 +140,9 @@ struct Run {
     coding: bool,
     stopped: AtomicBool,
     started: Mutex<HashMap<usize, u64>>,
+    ended: Mutex<HashMap<usize, u64>>,
+    finished: Mutex<HashSet<usize>>,
+    outcomes: Mutex<HashMap<usize, String>>,
     cancel: Notify,
 }
 impl Default for Runtime {
@@ -145,6 +152,10 @@ impl Default for Runtime {
             hosted: false,
             url: URL.into(),
             coding: coding::Settings::default(),
+            #[cfg(test)]
+            spawn_gate: None,
+            #[cfg(test)]
+            spawn_waiting: std::sync::atomic::AtomicUsize::new(0),
             state: Mutex::default(),
         }
     }
@@ -197,7 +208,7 @@ pub fn speech_end(core: &Core, speaker: &str) {
             .lock()
             .unwrap()
             .speech_end
-            .insert(speaker.into(), Instant::now());
+            .insert(speaker.into(), (Instant::now(), crate::now_ms()));
     }
 }
 fn parent(run: &Run) -> String {
@@ -211,7 +222,22 @@ fn row(
     status: &str,
     result: Option<String>,
 ) {
+    row_with_outcome(core, run, i, title, status, result, None);
+}
+fn row_with_outcome(core: &Core, run: &Run, i: Option<usize>, title: &str, status: &str, result: Option<String>, outcome: Option<&str>) {
     let id = parent(run);
+    let child_outcomes = run.outcomes.lock().unwrap().clone();
+    let outcome = if matches!(status, "done" | "failed" | "stopped") {
+        Some(outcome.unwrap_or_else(|| if i.is_none() && status == "done" && !child_outcomes.is_empty() && child_outcomes.values().all(|s| s == "no_change") { "no_change" }
+            else if i.is_none() && status == "failed" && child_outcomes.values().any(|s| matches!(s.as_str(), "done" | "no_change")) { "partial" }
+            else { status }).to_string())
+    } else { None };
+    if let Some(i) = i {
+        if let Some(outcome) = &outcome {
+            run.finished.lock().unwrap().insert(i);
+            run.outcomes.lock().unwrap().insert(i, outcome.clone());
+        }
+    }
     core.guide.publish_core(
         core,
         Job {
@@ -220,20 +246,85 @@ fn row(
             status: status.into(),
             result,
             parent: i.map(|_| id),
-            demo: false,
+            demo: run.coding && !core.helpers.coding.enabled,
+            helper_kind: Some(if run.coding { crate::guide::HelperKind::Coding } else { crate::guide::HelperKind::Thinking }),
+            requested_count: Some(run.ask.count),
+            outcome,
+            ended_ms: i.and_then(|i| run.ended.lock().unwrap().get(&i).copied()),
             started_ms: i.and_then(|i| run.started.lock().unwrap().get(&i).copied()),
         },
     );
 }
+fn helper_title(run: &Run, i: usize) -> String {
+    format!("{} helper {}", if run.coding { "Coding" } else { "Thinking" }, i + 1)
+}
+fn swarm_title(run: &Run) -> &'static str {
+    if run.coding { "Coding helpers" } else { "Thinking helpers" }
+}
+
+/// Private execution receipt. UI rows carry only safe state, identity and times.
+struct Execution<'a> {
+    core: &'a Core,
+    run: &'a Run,
+    i: usize,
+    provider: &'a str,
+    model: &'a str,
+    identity: Value,
+    active: AtomicBool,
+    ended: AtomicBool,
+}
+impl<'a> Execution<'a> {
+    fn new(core: &'a Core, run: &'a Run, i: usize, provider: &'a str, model: &'a str, identity: Value) -> Self {
+        Self { core, run, i, provider, model, identity, active: AtomicBool::new(false), ended: AtomicBool::new(false) }
+    }
+    fn receipt(&self, phase: &str, at: u64, outcome: Option<&str>) {
+        self.core.trace.write(|| {
+            let mut value = json!({"kind":"helpers_execution", "at":at, "swarm_id":parent(self.run),
+                "child_id":format!("{}:{}", parent(self.run), self.i),
+                "helper_kind":if self.run.coding { "coding" } else { "thinking" },
+                "phase":phase, "provider":self.provider, "model":self.model});
+            value.as_object_mut().unwrap().extend(self.identity.as_object().unwrap().clone());
+            if let Some(outcome) = outcome { value["outcome"] = json!(outcome); }
+            value
+        });
+    }
+    fn start(&self) {
+        if self.active.swap(true, Ordering::Relaxed) { return; }
+        let at = crate::now_ms();
+        self.run.started.lock().unwrap().insert(self.i, at);
+        self.receipt("start", at, None);
+        row(self.core, self.run, Some(self.i), &helper_title(self.run, self.i), "running", None);
+        row(self.core, self.run, None, swarm_title(self.run), "running", None);
+    }
+    fn end(&self, at: u64, outcome: &str) {
+        if !self.active.load(Ordering::Relaxed) || self.ended.swap(true, Ordering::Relaxed) { return; }
+        self.completed(at);
+        self.receipt("end", at, Some(outcome));
+        // Stop is published only after a model future ends or a process has been reaped.
+        if outcome == "stopped" {
+            row(self.core, self.run, Some(self.i), &helper_title(self.run, self.i), "stopped", Some("Stopped".into()));
+        }
+    }
+    fn completed(&self, at: u64) {
+        self.run.ended.lock().unwrap().insert(self.i, at);
+        let active = self.run.started.lock().unwrap().keys().any(|i| !self.run.ended.lock().unwrap().contains_key(i));
+        if !active && !self.run.stopped.load(Ordering::Relaxed) {
+            row(self.core, self.run, None, swarm_title(self.run), "preparing", Some("Finishing results".into()));
+        }
+    }
+}
+impl Drop for Execution<'_> {
+    fn drop(&mut self) {
+        let at = self.run.ended.lock().unwrap().get(&self.i).copied().unwrap_or_else(crate::now_ms);
+        self.end(at, if self.run.stopped.load(Ordering::Relaxed) { "stopped" } else { "failed" });
+    }
+}
+
 fn card(run: &Run, state: SendState, message: &str) -> ServerMsg {
     ServerMsg::SendCard {
         id: run.id,
         to: format!("{} helpers", run.ask.count),
-        text: format!(
-            "{} {}",
-            if run.coding { "Work on" } else { "Think about" },
-            run.ask.topic
-        ),
+        text: if run.coding { "Prepare coding helpers" } else { "Prepare thinking helpers" }.into(),
         state,
         in_ms: if state == SendState::Counting {
             run.end
@@ -267,7 +358,7 @@ pub fn card_for(core: &Core, speaker: &str) -> Option<ServerMsg> {
             if r.counting.load(Ordering::Relaxed) {
                 card(r, SendState::Counting, "")
             } else {
-                card(r, SendState::Running, "Coding helpers running")
+                card(r, SendState::Running, "Coding helpers · follow Work for each state")
             }
         })
 }
@@ -282,19 +373,14 @@ pub fn counting(core: &Core) -> bool {
 }
 pub fn stop(core: &Core, id: u64) -> bool {
     let run = {
-        let mut state = core.helpers.state.lock().unwrap();
+        let state = core.helpers.state.lock().unwrap();
         if !state.active.as_ref().is_some_and(|r| {
             r.id == id
                 && !r.stopped.load(Ordering::Relaxed)
-                && (r.coding || r.counting.load(Ordering::Relaxed))
         }) {
             return false;
         }
-        if state.active.as_ref().unwrap().coding {
-            state.active.as_ref().unwrap().clone()
-        } else {
-            state.active.take().unwrap()
-        }
+        state.active.as_ref().unwrap().clone()
     };
     run.counting.store(false, Ordering::Relaxed);
     run.stopped.store(true, Ordering::Relaxed);
@@ -310,10 +396,14 @@ pub fn stop(core: &Core, id: u64) -> bool {
         } else {
             "Thinking helpers"
         },
-        "failed",
+        "stopped",
         Some("Stopped".into()),
     );
     for i in 0..run.ask.count {
+        // A live process stays running until reaped; completed children keep their real outcome.
+        if run.finished.lock().unwrap().contains(&i) || (run.started.lock().unwrap().contains_key(&i) && !run.ended.lock().unwrap().contains_key(&i)) {
+            continue;
+        }
         row(
             core,
             &run,
@@ -327,7 +417,7 @@ pub fn stop(core: &Core, id: u64) -> bool {
                 },
                 i + 1
             ),
-            "failed",
+            "stopped",
             Some("Stopped".into()),
         );
     }
@@ -363,14 +453,14 @@ pub fn said(core: &Arc<Core>, speaker: &str, text: &str) -> bool {
     if core.messages.settings.preset != Preset::Full {
         return false;
     }
-    let speech_end = core
+    let (speech_end, speech_end_at) = core
         .helpers
         .state
         .lock()
         .unwrap()
         .speech_end
         .remove(speaker)
-        .unwrap_or_else(Instant::now);
+        .unwrap_or_else(|| (Instant::now(), crate::now_ms()));
     if crate::messages::is_stop(text) {
         heard(core, speaker, text);
         return core
@@ -459,6 +549,9 @@ pub fn said(core: &Arc<Core>, speaker: &str, text: &str) -> bool {
         end: Instant::now() + Duration::from_millis(delay),
         counting: AtomicBool::new(true),
         started: Mutex::default(),
+        ended: Mutex::default(),
+        finished: Mutex::default(),
+        outcomes: Mutex::default(),
         cancel: Notify::new(),
     });
     state.active = Some(run.clone());
@@ -473,7 +566,7 @@ pub fn said(core: &Arc<Core>, speaker: &str, text: &str) -> bool {
         } else {
             "Thinking helpers"
         },
-        "running",
+        "preparing",
         Some(format!(
             "{} helpers · starts after the countdown",
             run.ask.count
@@ -493,11 +586,12 @@ pub fn said(core: &Arc<Core>, speaker: &str, text: &str) -> bool {
                 },
                 i + 1
             ),
-            "running",
+            "queued",
             None,
         );
     }
-    core.trace.write(|| json!({"kind":"helpers_first_row", "swarm":run.id, "speech_end_to_first_row_ms":speech_end.elapsed().as_millis() as u64, "count":run.ask.count}));
+    core.trace.write(|| json!({"kind":"helpers_speech_end", "at":speech_end_at, "swarm_id":parent(&run)}));
+    core.trace.write(|| json!({"kind":"helpers_first_row", "at":crate::now_ms(), "swarm_id":parent(&run), "swarm":run.id, "speech_end_to_first_row_ms":speech_end.elapsed().as_millis() as u64, "count":run.ask.count}));
     let core = core.clone();
     tokio::spawn(async move {
         if run.coding {
@@ -536,12 +630,23 @@ async fn ask(
     instruction: &str,
     input: Value,
 ) -> anyhow::Result<String> {
-    let value = core.ask_model(&MODEL.into(), &core.helpers.url, Duration::from_secs(90), |model| json!({
+    let call_id = uuid::Uuid::new_v4().to_string();
+    let execution = helper.map(|i| Execution::new(core, run, i, "meta", MODEL, json!({"call_id":call_id})));
+    let value = core.ask_model(&MODEL.into(), &core.helpers.url, Duration::from_secs(90), |model| {
+        if let Some(execution) = &execution { execution.start(); }
+        json!({
         "model":model, "messages":[{"role":"system", "content":instruction}, {"role":"user", "content":input.to_string()}],
         "max_tokens": if phase == "split" { run.ask.count * 256 + 1000 } else { 2000 },
         "reasoning_effort":"minimal",
         "temperature":0.5,
-    }), json!({"feature":format!("helpers_{phase}"), "swarm":run.id, "helper":helper})).await?;
+    })}, json!({"feature":format!("helpers_{phase}"), "swarm":run.id, "helper":helper, "call_id":call_id})).await;
+    let completed_at = crate::now_ms();
+    let value = value.and_then(|value| {
+        anyhow::ensure!(value["choices"][0]["message"]["content"].as_str().is_some_and(|s| !s.trim().is_empty()), "empty helper answer");
+        Ok(value)
+    });
+    if let Some(execution) = &execution { execution.end(completed_at, if value.is_ok() { "done" } else { "failed" }); }
+    let value = value?;
     let text = value["choices"][0]["message"]["content"]
         .as_str()
         .unwrap_or_default()
@@ -600,8 +705,8 @@ async fn execute(core: &Arc<Core>, run: &Arc<Run>) {
             return;
         }
     };
-    for (i, b) in briefs.iter().enumerate() {
-        row(core, run, Some(i), &limit(&b.title, 6), "running", None);
+    for i in 0..briefs.len() {
+        row(core, run, Some(i), &helper_title(run, i), "queued", None);
     }
     tokio::time::sleep_until(run.end + Duration::from_millis(crate::messages::LATE_STOP_MS)).await;
     run.counting.store(false, Ordering::Relaxed);
@@ -612,13 +717,12 @@ async fn execute(core: &Arc<Core>, run: &Arc<Run>) {
         "Helpers started · follow their work in Work spine",
     );
     let answers = futures_util::future::join_all(briefs.iter().enumerate().map(|(i, b)| async move {
-        run.started.lock().unwrap().insert(i, crate::now_ms());
-        row(core, run, Some(i), &limit(&b.title, 6), "running", None);
         let answer = ask(core, run, "think", Some(i), "Answer this thinking brief in at most 120 words. Use the topic thoughts as context. Give concrete, useful points. Take no external actions.", json!({"ask":run.ask.topic,"title":b.title,"brief":b.brief,"thoughts":run.context})).await;
         let answer = answer.map(|s| limit(&s, 120));
-        row(core, run, Some(i), &limit(&b.title, 6), if answer.is_ok() { "done" } else { "failed" }, Some(answer.as_ref().cloned().unwrap_or_else(|_| "Couldn't finish this brief. Try another swarm.".into())));
+        row(core, run, Some(i), &helper_title(run, i), if answer.is_ok() { "done" } else { "failed" }, Some(answer.as_ref().cloned().unwrap_or_else(|_| "Couldn't finish this brief. Try another swarm.".into())));
         answer.ok()
     })).await.into_iter().flatten().collect::<Vec<_>>();
+    row(core, run, None, "Thinking helpers", "preparing", Some("Combining completed answers".into()));
     let summary = if answers.is_empty() {
         "The helpers couldn't finish their briefs. Try again.".into()
     } else {
@@ -678,8 +782,8 @@ async fn execute(core: &Arc<Core>, run: &Arc<Run>) {
         run,
         None,
         "Thinking helpers",
-        if answers.is_empty() { "failed" } else { "done" },
-        Some(summary),
+        if answers.len() == run.ask.count { "done" } else { "failed" },
+        Some(format!("{}/{} helpers done · {summary}", answers.len(), run.ask.count)),
     );
     core.trace.write(|| json!({"kind":"helpers_landed", "swarm":run.id, "topic":topic, "done":answers.len(), "failed":run.ask.count - answers.len()}));
 }

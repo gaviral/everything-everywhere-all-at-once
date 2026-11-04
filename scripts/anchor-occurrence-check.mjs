@@ -1,7 +1,9 @@
 // Exact quote anchors: public action/protocol mirror and the built page. No model or personal data.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { uiServer } from './ui-server.mjs';
 import { ready, standInCore, openPage, sleep } from './headless.mjs';
@@ -37,7 +39,7 @@ const core = await standInCore(() => { joins++; return [{type:'snapshot', world}
   for(const change of changes) {world=apply(world,change);core.send({type:'change',change});}
 }});
 const scene=await openPage('about:blank',{width:1440,height:1000});
-const out=process.env.ANCHOR_EVIDENCE || 'docs/anchor-occurrence-evidence';
+const out=process.env.ANCHOR_EVIDENCE || mkdtempSync(join(tmpdir(), 'e2a2o-anchor-evidence-'));
 mkdirSync(out,{recursive:true});
 try {
   const {page,evaluate,until}=scene;

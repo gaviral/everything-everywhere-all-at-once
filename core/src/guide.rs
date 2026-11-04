@@ -52,11 +52,24 @@ pub fn window() -> u64 {
 }
 
 /// A live job update; identity and time are added by the server when relaying it.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum HelperKind { Thinking, Coding }
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Job {
     /// In-core jobs retain their actual execution start across reconnects.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub started_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ended_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub helper_kind: Option<HelperKind>,
+    /// Requested children, carried by the parent and each child; never includes the parent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requested_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<String>,
     pub id: String,
     pub title: String,
     pub status: String,
@@ -291,8 +304,13 @@ pub fn job(core: &Core, speaker: &str, window: u64, pace: &mut Pace, mut job: Jo
             }
         })
         .or_else(|| job.result.as_deref().and_then(|result| too_long(result, 160, "A job's result")))
-        .or_else(|| (!matches!(job.status.as_str(), "running" | "done" | "failed" | "waiting"))
-            .then(|| "A job's status must be running, done, failed or waiting.".into()));
+        .or_else(|| (!matches!(job.status.as_str(), "preparing" | "queued" | "running" | "done" | "failed" | "stopped" | "waiting"))
+            .then(|| "A job's status must be preparing, queued, running, done, failed, stopped or waiting.".into()));
+    let refused = refused
+        .or_else(|| job.requested_count.filter(|n| *n == 0).map(|_| "A requested count must be positive.".into()))
+        .or_else(|| (job.parent.as_ref() == Some(&job.id)).then(|| "A job cannot parent itself.".into()))
+        .or_else(|| job.outcome.as_deref().filter(|s| !matches!(*s, "done" | "failed" | "stopped" | "partial" | "no_change" | "dry_run")).map(|_| "Unknown job outcome.".into()))
+        .or_else(|| matches!((job.started_ms, job.ended_ms), (Some(start), Some(end)) if end < start).then(|| "A job cannot end before it starts.".into()));
     core.guide.publish(core, job, speaker, window, pace, refused);
 }
 
@@ -612,7 +630,7 @@ mod tests {
     fn job_row(id: &str, revision: usize) -> super::Job {
         super::Job {
             id: id.into(), title: format!("Revision {revision}"), status: "running".into(),
-            result: Some(revision.to_string()), parent: None, demo: false, started_ms: None,
+            result: Some(revision.to_string()), parent: None, demo: false, ..Default::default()
         }
     }
 
@@ -1202,6 +1220,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn helper_lifecycle_metadata_replays_verbatim() {
+        use crate::protocol::ServerMsg;
+        let (core, _, _, mut queue) = served().await;
+        let mut updates = core.updates.subscribe();
+        for status in ["preparing", "queued", "running", "done", "failed", "stopped"] {
+            let active = matches!(status, "running" | "done" | "failed" | "stopped");
+            let terminal = matches!(status, "done" | "failed" | "stopped");
+            let payload = serde_json::json!({"id":"swarm:child", "parent":"swarm", "title":"Helper", "status":status,
+                "helper_kind":"coding", "requested_count":3, "started_ms":active.then_some(1000),
+                "ended_ms":terminal.then_some(1250), "outcome":terminal.then_some(status)});
+            let job: super::Job = serde_json::from_value(payload).unwrap();
+            super::job(&core, "Helper", 0, &mut Pace::default(), job);
+            let sent = updates.try_recv().unwrap().message;
+            let replay = core.guide.subscribe(&core).1;
+            assert_eq!(serde_json::to_value(&sent).unwrap(), serde_json::to_value(&replay[0]).unwrap());
+            assert!(matches!(sent, ServerMsg::Job { job, .. } if job.status == status && job.requested_count == Some(3)));
+        }
+        assert!(queue.try_recv().is_err(), "replay never starts work");
+        assert!(serde_json::from_value::<super::Job>(serde_json::json!({"id":"bad", "title":"Helper", "status":"queued", "helper_kind":"other"})).is_err());
+    }
+
+    #[tokio::test]
     async fn invalid_jobs_are_refused() {
         use crate::protocol::{ClientMsg, ServerMsg};
         let (core, address, path, mut queue) = served().await;
@@ -1220,7 +1260,7 @@ mod tests {
             ("result", "界".repeat(161), "A job's result is 160 characters at most.".into()),
         ]);
         for status in ["", "Running", "DONE", " running", "done ", "cancelled", "unknown"] {
-            cases.push(("status", status.into(), "A job's status must be running, done, failed or waiting.".into()));
+            cases.push(("status", status.into(), "A job's status must be preparing, queued, running, done, failed, stopped or waiting.".into()));
         }
         for (field, value, why) in cases {
             let mut payload = serde_json::json!({"type": "job", "id": "work:1", "title": "Work", "status": "running"});
