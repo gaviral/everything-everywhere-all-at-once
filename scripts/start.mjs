@@ -14,6 +14,11 @@ import { fileURLToPath } from "node:url";
 
 const DEFAULT_PORT = 4321;
 
+/** The sample query labels the preloaded fixture; it does not request live model work. */
+export function launchUrl(port, mode = "") {
+  return `http://localhost:${port}/${mode === "sample" ? "?sample" : ""}`;
+}
+
 /** An optional executable supplied beside run.sh, named with Node's platform and architecture. */
 export function bundledCore(root, platform = process.platform, arch = process.arch) {
   const path = resolve(root, `e2a2o-core-${platform}-${arch}`);
@@ -273,6 +278,11 @@ export function toolchainProblem({ floor, platform = process.platform, run = run
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const root = join(dirname(fileURLToPath(import.meta.url)), "..");
   const args = process.argv.slice(2);
+  // Internal formatter: no environment, toolchain or network checks.
+  if (args[0] === "--open-url") {
+    console.log(launchUrl(args[1], args[2]));
+    process.exit(0);
+  }
   // Internal selector: no credentials, toolchain or network checks, and only a path on stdout.
   if (args[0] === "--bundled-core") {
     const path = bundledCore(root);

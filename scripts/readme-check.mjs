@@ -16,6 +16,15 @@ const MARKER = "<!-- end of the first screen -->";
 assert.ok(readme.includes(MARKER), `README.md has no "${MARKER}"`);
 const first = readme.slice(0, readme.indexOf(MARKER));
 
+// A pending hosted route must not displace the runnable no-key fallback or read as verified entry.
+assert.match(first, /\.\/run\.sh sample[^\n]*\/\?sample[^\n]*no key or mic/);
+assert.ok(first.indexOf("./run.sh sample") < first.indexOf("https://e2a2o.aviralgarg.com"));
+assert.match(first, /Hosted preview, verification pending/);
+assert.doesNotMatch(first, /Create an account/);
+assert.match(readme, /http:\/\/localhost:4400\/\?sample/);
+assert.match(readme, /labelled SAMPLE/);
+assert.match(readme, /deadlines are examples/);
+
 // A ratchet, not a target: the first screen's count when it was set (2026-11-01: 270 words, 95 of them the pitch)
 // rounded up to the next 20, so a line added there means one cut. The judge's 10 seconds go to the pitch and the
 // table's first two columns; the rest is there for the next minute (238 words a minute, legible.ts).
@@ -87,6 +96,7 @@ const ROLES = [
 ];
 assert.ok(/\(docs\/trace\.md(#[a-z0-9-]+)?\)/.test(first), "the first screen doesn't link to docs/trace.md");
 const trace = read("docs/trace.md");
+assert.match(trace, /Historical synthetic evidence, not final-build validation/);
 const slug = (h) => h.toLowerCase().replace(/[^a-z0-9 -]/g, "").replace(/ /g, "-");
 const sections = new Map(trace.split(/^(?=## )/m).map((part) => [slug(part.split("\n")[0].replace(/^## /, "")), part]));
 const rows = first.split("\n").filter((l) => /^\|.*\(docs\/trace\.md#[a-z0-9-]+\)/.test(l));
