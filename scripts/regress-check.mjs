@@ -4,12 +4,33 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { uiServer } from "./ui-server.mjs";
 
+const noop = () => {};
+const element = () => ({ nodeType: 1, tagName: "DIV", nodeName: "DIV", namespaceURI: "http://www.w3.org/1999/xhtml",
+  style: {}, setAttribute: noop, getAttribute: () => null, addEventListener: noop, removeEventListener: noop,
+  appendChild: noop, removeChild: noop, ownerDocument: globalThis.document });
+globalThis.window = globalThis;
+globalThis.document = { nodeType: 9, addEventListener: noop, removeEventListener: noop, createElement: element,
+  body: { style: {} }, activeElement: null, getSelection: () => null, querySelector: () => null, getElementById: () => null, defaultView: globalThis };
+globalThis.document.documentElement = element();
+globalThis.HTMLIFrameElement = class {};
+globalThis.dispatchEvent = () => true;
+globalThis.addEventListener ??= noop;
+globalThis.removeEventListener ??= noop;
+
 globalThis.location = new URL("http://localhost:4321/");
+const stored = new Map();
+globalThis.localStorage = { get length() { return stored.size; }, key: index => [...stored.keys()][index] ?? null, getItem: key => stored.get(key) ?? null, setItem: (key, value) => stored.set(key, value), removeItem: key => stored.delete(key) };
+globalThis.matchMedia = () => ({ matches: true, addListener: noop, removeListener: noop, addEventListener: noop, removeEventListener: noop });
+const uiRoot = new URL("../ui/", import.meta.url);
+const React = (await import(new URL("node_modules/react/index.js", uiRoot))).default;
+const { createRoot } = (await import(new URL("node_modules/react-dom/client.js", uiRoot))).default;
+
+let mounted;
 const ui = (path) => readFileSync(new URL(`../ui/src/${path}`, import.meta.url), "utf8");
 const server = await uiServer();
 try {
   const { deletesPoint } = await server.ssrLoadModule("/src/Moves.tsx");
-  const { typingIn } = await server.ssrLoadModule("/src/find.ts");
+  const { typingIn, useFindJump } = await server.ssrLoadModule("/src/find.ts");
   const { landedNow } = await server.ssrLoadModule("/src/landed.ts");
   const { whysAfter } = await server.ssrLoadModule("/src/whyhere.tsx");
   const { mapMarkdown } = await server.ssrLoadModule("/src/export-md.ts");
@@ -27,7 +48,40 @@ try {
   assert.equal(typingIn({ tagName: "DIV", isContentEditable: true }), true);
   assert.equal(typingIn({ tagName: "BODY", isContentEditable: false }), false);
   assert.equal(typingIn(null), false);
-  assert.match(ui("find.ts"), /if \(!found\.preserveFocus && !typingIn\(document\.activeElement\) && !target\.contains\(document\.activeElement\)\) target\.focus/, "the jump respects preserved focus and asks before taking focus from a field");
+  // Mount the real jump hook: scrolling to a result must not steal a field or an already-focused child.
+  const frames = new Map(); let frameId = 0, scrolled = 0;
+  globalThis.requestAnimationFrame = callback => { frames.set(++frameId, callback); return frameId; };
+  globalThis.cancelAnimationFrame = id => frames.delete(id);
+  const child = { tagName: "BUTTON" };
+  const target = { id: "thread-T1", dataset: {}, hasAttribute: () => false, setAttribute: noop, removeAttribute: noop,
+    addEventListener: noop, querySelector: () => null, contains: active => active === child || active === target,
+    scrollIntoView: () => { scrolled++; }, focus: () => { document.activeElement = target; },
+    getBoundingClientRect: () => ({ top: 20 }) };
+  document.getElementById = id => id === target.id ? target : null;
+  const jumpWorld = { threads: [{ id: "T1", title: "Picnic", parent_id: null }], merged: {} };
+  const reveal = { setView: noop, setQuery: noop, setFocusMode: noop, setExpanded: noop };
+  const Jump = ({ found }) => { useFindJump(found, jumpWorld, reveal); return null; };
+  mounted = createRoot(element());
+  let revision = 0;
+  for (const [active, preserveFocus, expected, label] of [
+    [{ tagName: "BODY" }, false, target, "ordinary jump focuses the result"],
+    [{ tagName: "INPUT" }, false, null, "typing retains the field"],
+    [child, false, child, "an exact result child keeps focus"],
+    [{ tagName: "BODY" }, true, null, "an explicit preserve request keeps focus"],
+  ]) {
+    document.activeElement = active;
+    const before = scrolled;
+    mounted.render(React.createElement(Jump, { found: { thread_id: "T1", thought_id: null, revision: ++revision, preserveFocus } }));
+    const deadline = Date.now() + 3000;
+    while (scrolled === before && Date.now() < deadline) {
+      const ready = [...frames.values()]; frames.clear();
+      for (const callback of ready) callback(performance.now());
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.equal(scrolled, before + 1, "the result is revealed");
+    assert.equal(document.activeElement, expected ?? active, label);
+  }
+  mounted.unmount(); mounted = null;
 
   // Undo of a Delete brings the point back as a fresh thought: no landing, so the map doesn't follow it and it
   // doesn't take the "latest" mark; a thought placed for the first time is one.
@@ -76,5 +130,6 @@ try {
 
   console.log("regress-check: OK");
 } finally {
+  mounted?.unmount();
   await server.close();
 }

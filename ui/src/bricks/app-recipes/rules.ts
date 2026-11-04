@@ -67,5 +67,5 @@ export function previewRecipe(r: AppRecipe): string[] {
   const watch = w.kind === "phrase" ? `Watch for the phrase “${w.phrase}”.` : w.kind === "topic" ? `Watch for the topic “${w.topic}”.`
     : w.kind === "volume" ? `Watch for volume above ${w.level} for ${w.seconds} seconds.` : `Watch each new thought after ${w.min_points ?? 0} points.`;
   return [`${r.name}: ${r.purpose}`, watch, r.prompt ? `When enabled, ask the model using the quoted prompt “${r.prompt.system}” and template “${r.prompt.template}”.` : "Use no model prompt.",
-    ...r.publishers.map(p => p.kind === "card" ? `Show a card: “${p.text}”.` : p.kind === "sound" ? "Play a short local tune." : `Propose a reminder for approval: “${p.title}”, when “${p.when ?? ""}”.`), `Wait at least ${r.cooldown_secs} seconds between runs.`];
+    ...r.publishers.map(p => p.kind === "card" ? `Show a card: “${p.text}”.` : p.kind === "sound" ? "Play a short local tune." : p.kind === "app_block" ? "Connection blocks are not portable yet." : `Propose a reminder for approval: “${p.title}”, when “${p.when ?? ""}”.`), `Wait at least ${r.cooldown_secs} seconds between runs.`];
 }

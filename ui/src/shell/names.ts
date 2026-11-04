@@ -22,7 +22,7 @@ export const NAMES = {
   show: "Show",
   inspectHere: "Inspect here",
   openOriginal: "Open original",
-  tabs: { talk: "Talk", history: "History", catalog: "Features", settings: "Settings" },
+  tabs: { plugins: "Plugins", talk: "Talk", history: "History", catalog: "Features", settings: "Settings" },
   composer: { idle: "Type a thought · Enter adds it", firstTap: "Tap to talk", firstType: "or type a thought", call: "Type to the call" },
   held: { label: "Held for a pause", asks: "asks when you stop", answer: "Answer", later: "Later" },
   history: {
@@ -62,11 +62,15 @@ export type FeatureName = { name: string; aka?: string; does?: string; lives?: s
 /** The app's features by id (a feature's folder name, or a built-in's own id): what the shell calls each. A feature
  *  missing here shows its brick.json name and line. */
 export const FEATURE_NAMES: Record<string, FeatureName> = {
+  "discussion-status": { name: "Discussion status", does: "Resolve or reopen an anchored exchange. Replies and quoted words stay together.", lives: "Comments and Talk" },
   "reply-format": { name: "Reply format", does: "Check new Conversation partner replies against word, line and preamble rules; repair once if needed.", lives: "Features · for this conversation" },
+  "saved-answers": { name: "Saved answers", does: "Deliberately keep an Explain answer. Reopen its exact words and historical source without asking again.", lives: "Features · Show" },
+  "explicit-agreement": { name: "Explicit agreement", does: "Agree to exact words as yourself, or withdraw only your agreement. Viewing never agrees.", lives: "Thought controls on the Canvas and Cards" },
   terse: { name: "Terse", does: "Read short nested lines; tap any line for its complete original.", lives: "The Canvas" },
   "bring-here": { name: "Bring here", does: "Inspect a live topic beside Find or History without moving the Canvas. Open original goes to its place.", lives: "Find and History" },
   "full-content": { name: "Full content", does: "Inspect complete topic titles, recognized words and displayed points on a separate canvas, with optional wrapping.", lives: "Canvas actions" },
   "compare-return-controls": { name: "Compare return controls", does: "Compare Card and Compact for the same unfinished words. Card starts each visit; choose the feeling yourself.", lives: "Above the input box" },
+  plugins: { name: "Plugins", does: "Load, unload and add local plugins." },
   // Built in: switched here, as the features are.
   email: { name: "Email", does: "Email an allowed contact from this laptop after a countdown you can stop. Say ‘Email Mia that the cut is ready’.", lives: "Above your words" },
   helpers: { name: "Thinking helpers", does: "Say ‘put five helpers on the pitch’. Stop during the countdown; read their answers in Work spine.", lives: "Work spine and the topic" },

@@ -1,3 +1,4 @@
+import { usePluginState } from "../contract";
 // Tiny transcript (docs/bricks.md, a panel): your words as you say them, very small, in the place you'd type them, so
 // you stay in the thought rather than the reading. Where: the status line, once the page has one flush at its very
 // bottom (`data-slot="status"`, the revamp's shell); else inside the composer's box, where its "Or type a thought"
@@ -10,7 +11,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import type { BrickProps } from "../contract";
-import "./tiny-transcript.css";
+import pluginStyle0 from "./tiny-transcript.css?inline";
 
 const HINTED = "e2a2o.brick.tiny-transcript.hinted";
 const SIZE = "e2a2o.brick.tiny-transcript.size";
@@ -93,11 +94,11 @@ function Words({ text, live, size, style }: { text: string; live: boolean; size:
 }
 
 export default function TinyTranscript({ map }: BrickProps) {
-  const [size, setSize] = useState(() => {
+  const [size, setSize] = usePluginState('tiny-transcript/index.tsx:size', () => {
     const saved = Number(readSetting(SIZE));
     return Number.isInteger(saved) && saved >= 9 && saved <= 16 ? saved : 11;
   });
-  const [hinted, setHinted] = useState(() => readSetting(HINTED) !== null);
+  const [hinted, setHinted] = usePluginState('tiny-transcript/index.tsx:hinted', () => readSetting(HINTED) !== null);
   // The words the hint first showed with: they stay up with it once the turn ends and its words go, so there's time
   // to try the slider; the hint goes only when dismissed.
   const [held, setHeld] = useState("");
@@ -211,3 +212,6 @@ export default function TinyTranscript({ map }: BrickProps) {
     <Words text={shown} live={!!text} size={size} />
   </div>;
 }
+
+/** Host attaches these styles only for this mount. */
+export const styles = pluginStyle0;

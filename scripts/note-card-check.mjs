@@ -9,7 +9,36 @@ import { uiServer } from "./ui-server.mjs";
 
 const src = (name) => readFileSync(new URL(`../ui/src/${name}`, import.meta.url), "utf8");
 
-globalThis.location = new URL("http://localhost:4321/");
+const noop = () => {};
+const element = () => ({ nodeType: 1, tagName: "DIV", nodeName: "DIV", namespaceURI: "http://www.w3.org/1999/xhtml",
+  style: {}, setAttribute: noop, getAttribute: () => null, addEventListener: noop, removeEventListener: noop,
+  appendChild: noop, removeChild: noop, ownerDocument: globalThis.document });
+globalThis.window = globalThis;
+globalThis.document = { nodeType: 9, addEventListener: noop, removeEventListener: noop, createElement: element,
+  body: { style: {} }, activeElement: null, getSelection: () => null, querySelector: () => null, getElementById: () => null, defaultView: globalThis };
+globalThis.document.documentElement = element();
+globalThis.HTMLIFrameElement = class {};
+globalThis.dispatchEvent = () => true;
+globalThis.addEventListener ??= noop;
+globalThis.removeEventListener ??= noop;
+const saved = new Map();
+globalThis.localStorage = { get length() { return saved.size; }, key: (i) => [...saved.keys()][i] ?? null, getItem: (key) => saved.get(key) ?? null, setItem: (key, value) => saved.set(key, value), removeItem: (key) => saved.delete(key) };
+Object.defineProperty(globalThis, "location", { value: { protocol: "http:", host: "check", hostname: "localhost", search: "", pathname: "/" }, configurable: true });
+const sockets = [];
+globalThis.WebSocket = class { static OPEN = 1; readyState = 1; sent = [];
+  constructor() { sockets.push(this); queueMicrotask(() => { this.onopen?.(); this.onmessage?.({ data: JSON.stringify({ type: "map_identity", id: "socket-check-map" }) }); }); }
+  send(data) { if (this.readyState !== 1) throw new Error("sent on a closed socket"); this.sent.push(data); const m = JSON.parse(data); if (m.type === "heartbeat") queueMicrotask(() => this.onmessage?.({ data: JSON.stringify(m) })); if (m.type === "text" && m.id) queueMicrotask(() => this.onmessage?.({ data: JSON.stringify({ type: "text_received", id: m.id }) })); }
+  close() {} addEventListener() {} removeEventListener() {} };
+const ui = new URL("../ui/", import.meta.url);
+const React = (await import(new URL("node_modules/react/index.js", ui))).default;
+const { createRoot } = (await import(new URL("node_modules/react-dom/client.js", ui))).default;
+
+let mounted;
+const until = async (done, what) => {
+  const deadline = Date.now() + 3000;
+  while (!done() && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10));
+  assert.ok(done(), what);
+};
 const server = await uiServer();
 try {
   const { received, comesFirst, cardWords, pointCount, pointWords, announcement, lingerMs, STATE_CLASS } = await server.ssrLoadModule("/src/note-card.ts");
@@ -59,7 +88,25 @@ try {
   assert.match(src("core.ts"), /noticeQueue\.find\("note", String\(msg\.id\)\)/, "updates find their own queued note");
   assert.match(src("core.ts"), /noticeQueue\.push\("note", String\(msg\.id\), note\)/, "each note has one queue entry");
   assert.match(src("core.ts"), /if \(noteFirst\(msg\)\) closeRecap\(\);/, "new notes make way in Recap");
-  assert.match(src("core.ts"), /ws\.onopen = \(\) => \{[^]*?noticeQueue\.reset\("note"\)/, "a restarted core can reuse note ids");
+  // Reopen the real socket handler after reading a completion. A new core may reuse id 1.
+  const { useCore } = await server.ssrLoadModule("/src/core.ts");
+  let core;
+  mounted = createRoot(element());
+  mounted.render(React.createElement(function Window() { core = useCore("me"); return null; }));
+  await until(() => core?.connected, "the window connects");
+  const say = message => sockets.at(-1).onmessage({ data: JSON.stringify(message) });
+  say(msg("saved"));
+  await until(() => core.noteCard?.id === 1, "saved note is visible");
+  core.noteCardGone(1);
+  await until(() => core.noteCard === null, "read completion closes");
+  const closedSocket = sockets.at(-1);
+  closedSocket.readyState = 3;
+  closedSocket.onclose();
+  await until(() => sockets.at(-1) !== closedSocket && core.connected, "the window reconnects to a new socket");
+  say(msg("saving", { title: "A new picnic note" }));
+  await until(() => core.noteCard?.title === "A new picnic note", "a restarted core can reuse a read note id");
+  say(msg("saved", { title: "A new picnic note", message: "Saved to Notes" }));
+  await until(() => core.noteCard?.state === "saved", "the reused note receives its own completion");
 
   // Who said a point shows only in a room (the core sends it then).
   assert.equal(pointWords({ text: "Bring chips", who: "Ana", decided: false, unfinished: false }), "Ana: Bring chips");
@@ -75,5 +122,6 @@ try {
   assert.match(src("App.tsx"), /<NoteCard card=\{core\.noteCard\} onOpen=\{core\.openNote\} onGone=\{core\.noteCardGone\} \/>/);
   console.log("note-card-check: ok");
 } finally {
+  mounted?.unmount();
   await server.close();
 }

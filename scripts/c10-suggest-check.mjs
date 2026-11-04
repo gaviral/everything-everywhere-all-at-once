@@ -33,7 +33,10 @@ let core, browser;
 let logs = "";
 const sockets = [];
 const journal = () => readFileSync(join(data, "journal.jsonl"), "utf8");
-const edits = () => journal().trim().split("\n").map(JSON.parse).filter(c => c.type === "point_edited");
+// Storage keeps committed changes inside versioned batches; old flat rows remain readable.
+const edits = () => journal().trim().split("\n").map(JSON.parse)
+  .flatMap(row => row.type === "journal_batch" && row.version === 1 ? row.changes : [row])
+  .filter(change => change.type === "point_edited");
 const stop = async () => {
   if (core && core.exitCode === null) { const exit = once(core, "exit"); core.kill("SIGTERM"); await exit; }
 };

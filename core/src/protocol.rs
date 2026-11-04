@@ -46,12 +46,17 @@ pub enum RemoteSelection {
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMsg {
+    EvidenceResult { request_id: String, ok: bool, message: String, data: serde_json::Value, #[serde(skip)] window: u64, #[serde(skip)] epoch: u64 },
+    ChoiceResult { request_id: String, ok: bool, message: String, #[serde(skip)] window: u64 },
+    ResearchResult { request_id: String, ok: bool, message: String, answer: Option<crate::research::ResearchKept>, #[serde(skip)] epoch: u64 },
+    DiscussionResult { request_id: String, ok: bool, message: String, discussion: Option<crate::discussion::DiscussionStatus> },
     ActionEstimateResult { request_id: String, ok: bool, message: String, estimate: Option<crate::world::ActionEstimate>, #[serde(skip)] window: u64 },
     QuestionResult { id: String, revision: u64, ok: bool, #[serde(skip_serializing_if = "Option::is_none")] error: Option<String> },
     PointProposal { request_id: String, thought_id: String, text: String, failed: bool },
     PointEditResult { request_id: String, thought_id: String, ok: bool, message: String },
     AliasResult { window: u64, request_id: String, ok: bool, message: String },
     RemoteSelection { message: RemoteSelection },
+    AgreementResult { request_id: String, thought_id: String, ok: bool, message: String },
     Returned { request_id: Option<String>, anchor: Option<crate::world::ReturnAnchor>, message: String },
     CaptureSaved { capture: crate::world::CaptureReceipt, replay: bool },
     MapIdentity { id: String },
@@ -66,6 +71,7 @@ pub enum ServerMsg {
     NoticeControl { show: bool },
     TextReceived { id: String },
     RecapState { period: crate::recap::Period, loading: bool, message: String, recap: Option<crate::recap::Recap> },
+    AppConnectionResult { #[serde(flatten)] reply: crate::app_blocks::Reply },
     RecipeResult { request_id: String, app_id: Option<String>, message: String },
     AppsBuild { build: crate::apps::Build },
     /// An app's tune: `playful` for loud voices, else the calm one; `why` is what set it off ("voices stayed loud
@@ -247,6 +253,19 @@ pub struct Outgoing {
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMsg {
+    ImageEvidence { on: bool },
+    CancelEvidence { request_id: String },
+    EvidenceChunk { request_id: String, target: String, title: String, index: usize, data: String },
+    ExtractEvidence { request_id: String },
+    KeepEvidence { request_id: String, extraction_id: String, points: Vec<crate::world::EvidencePoint> },
+    UndoEvidence { request_id: String, keep_id: String },
+    ChoiceMaps { on: bool },
+    SaveChoice { request: crate::world::ChoiceRequest },
+    ResearchFeature { on: bool },
+    CancelResearch,
+    ResearchAction { #[serde(flatten)] request: crate::research::Command },
+    DiscussionFeature { on: bool },
+    SetDiscussion { request_id: String, thread_id: String, status: String, observed_revision: u64 },
     ActionEstimates { on: bool },
     SetActionEstimate { #[serde(flatten)] request: crate::world::EstimateRequest },
     SaveQuestion { id: String, text: String, thought_id: Option<String>, answer: String, status: String, expected_revision: u64 },
@@ -256,6 +275,8 @@ pub enum ClientMsg {
     VoiceShortcuts { on: bool },
     AliasOperation { request_id: String, operation: String, id: String, revision: u64, phrase: String, target: crate::world::AliasTarget, enabled: bool },
     RemoteSelection { message: RemoteSelection },
+    AgreementSwitch { on: bool },
+    AgreeThought(AgreementRequest),
     Resume { pause_id: String, request_id: String },
     PauseChoice { pause_id: String, later: bool },
     RetryPlacement { id: String },
@@ -267,6 +288,8 @@ pub enum ClientMsg {
     Email { on: bool },
     PartnerCancel,
     Recap { #[serde(default)] period: crate::recap::Period },
+    ConnectionsSwitch { on: bool },
+    AppConnection { request_id: String, #[serde(flatten)] request: crate::app_blocks::Request },
     RecipesSwitch { on: bool },
     SaveRecipe { save: crate::apps::RecipeSave },
     ComposeApp { request: String },
@@ -283,7 +306,11 @@ pub enum ClientMsg {
     Focus { thread_id: String },
     /// Pin this map's new thoughts to one topic; null releases it, for every speaker.
     Stay { thread_id: Option<String> },
-    /// Explain a selected phrase in the context it appears in, within its thread when it has one.
+    /// Enable deliberate saving only for this connection.
+    SavedAnswers { on: bool },
+    KeepAnswer { id: String, #[serde(flatten)] extra: std::collections::HashMap<String, serde_json::Value> },
+    KeptAnswerVisibility { id: String, revision: u64, removed: bool },
+    /// Explain a selected phrase; optional source metadata binds a later deliberate Keep.
     Explain {
         /// Exact answer reuse is opt-in; older clients keep the counted model path.
         #[serde(default)]
@@ -291,6 +318,8 @@ pub enum ClientMsg {
         id: String,
         text: String,
         context: String,
+        #[serde(default)]
+        source: Option<crate::world::AnswerSource>,
         #[serde(default)]
         thread_id: Option<String>,
     },
@@ -420,4 +449,14 @@ mod c10_estimates_protocol_tests {
             assert!(serde_json::from_str::<ClientMsg>(&text.replace("\"minutes\":15", &format!("\"minutes\":{invalid}"))).is_err());
         }
     }
+}
+
+/// No caller-selected identity: only the session's server-derived speaker may consent.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AgreementRequest {
+    pub thought_id: String,
+    pub revision: String,
+    pub request_id: String,
+    pub agree: bool,
 }

@@ -112,7 +112,7 @@ try {
   // Undated, it has no button, yet its × stays (App.tsx `ActionRow`): only a waiting item has one.
   assert.ok(dismissable({ ...action, when: "" }));
   for (const status of ["kept", "done", "dismissed"]) assert.ok(!dismissable({ ...action, status }), status);
-  assert.match(readFileSync(`${root}/src/App.tsx`, "utf8"), /\{dismissable\(action\) && \(/, "the row's × follows `dismissable`, not the button");
+  assert.match(readFileSync(`${root}/src/MapCards.tsx`, "utf8"), /\{dismissable\(action\) && \(/, "the row's × follows `dismissable`, not the button");
   assert.deepEqual(actionLine({ ...action, status: "done" }, "Calendar", true), { status: "Saved as .ics" });
   assert.deepEqual(actionLine({ ...action, status: "dismissed" }, "Calendar", true), {});
   assert.deepEqual(actionLine(action, "Calendar"), { button: "Add to Calendar", label: "Add Demo day to Calendar" }, "on a Mac, as before");

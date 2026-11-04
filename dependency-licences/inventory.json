@@ -2,7 +2,7 @@
   "schema": 1,
   "locks": {
     "ui/package-lock.json": "a8da8c538c028f7128dd63d4c70e7943d05eda0cb4aa56f2af7a2bfbb131bf59",
-    "core/Cargo.lock": "1a36e0a614e29dc3596285963c34d7948e04c820db8e2670e72a0f582803e9ba"
+    "core/Cargo.lock": "dea32a133b145f81dac72138135ed02b969e5edab3f6257e0fcdf57ee4ff1767"
   },
   "packages": [
     {

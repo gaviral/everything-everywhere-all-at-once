@@ -62,6 +62,8 @@ let browser;
 try {
   browser = await openPage(`http://127.0.0.1:${demo.port}/`);
   assert.ok(await browser.until(`!!document.querySelector('.shell-composer')`));
+  // Shell shortcuts apply outside a field; a fresh empty map focuses its composer.
+  await browser.evaluate(`document.activeElement?.blur()`);
   await browser.page("Input.dispatchKeyEvent", { type: "keyDown", key: "c", code: "KeyC", windowsVirtualKeyCode: 67 });
   await browser.page("Input.dispatchKeyEvent", { type: "keyUp", key: "c", code: "KeyC", windowsVirtualKeyCode: 67 });
   assert.ok(await browser.until(`!!document.querySelector('.shell-catalog')`));

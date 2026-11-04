@@ -1,0 +1,9 @@
+.discussion-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 12px; line-height: 1.4; max-width: 100%; }
+.discussion-controls > span:first-child { flex-basis: 100%; }
+.discussion-controls button, .discussion-dialog button, .discussion-dialog summary, .discussion-shelf button { font: inherit; min-height: 44px; white-space: normal; overflow-wrap: anywhere; }
+.discussion-count { display: block; font-size: 12px; }
+.discussion-dialog { color: var(--ink, CanvasText); background: var(--card, Canvas); border: 1px solid currentColor; border-radius: 12px; width: min(520px, calc(100vw - 32px)); max-height: min(70dvh, 720px); overflow: auto; padding: 20px; overflow-wrap: anywhere; }
+.discussion-dialog::backdrop { background: #0007; }
+.discussion-dialog blockquote { margin: 12px 0; padding-left: 12px; border-left: 2px solid currentColor; }
+.discussion-shelf { position: fixed; z-index: 50; right: 12px; top: 64px; max-width: min(280px, calc(100vw - 24px)); color: var(--ink, CanvasText); background: var(--card, Canvas); border-radius: 8px; }
+.discussion-list { max-height: 45dvh; overflow: auto; padding: 8px; border: 1px solid currentColor; }

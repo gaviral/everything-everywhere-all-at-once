@@ -1,7 +1,8 @@
+import { usePluginState } from "../contract";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useBrickEvent, type BrickProps } from "../contract";
 import { layoutOutline, QUIET_MS, trimFillers, type OutlineActivity } from "./outline";
-import "./live-outline.css";
+import pluginStyle0 from "./live-outline.css?inline";
 
 export { layoutOutline, trimFillers } from "./outline";
 
@@ -13,7 +14,7 @@ const preview = (text: string) => {
 export default function LiveOutline({ map, actions, on }: BrickProps) {
   // A visit begins here, never by replaying thoughts already on the map. Word markers let the pure layout distinguish
   // a long spoken turn from silence between landings. The whole stream goes when its talk does.
-  const [activity, setActivity] = useState<OutlineActivity[]>(() => {
+  const [activity, setActivity] = usePluginState<OutlineActivity[]>('live-outline/index.tsx:activity', () => {
     const at = Date.now();
     return [{ kind: "opened", at }, ...(map.partial.trim() ? [{ kind: "words" as const, at }] : [])];
   });
@@ -21,8 +22,8 @@ export default function LiveOutline({ map, actions, on }: BrickProps) {
   const lastActivity = useRef(now);
   const [quiet, setQuiet] = useState(false);
   const [held, setHeld] = useState(map.partial.trim());
-  const [originalWords, setOriginalWords] = useState(false);
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+  const [originalWords, setOriginalWords] = usePluginState('live-outline/index.tsx:originalWords', false);
+  const [expanded, setExpanded] = usePluginState<ReadonlySet<string>>('live-outline/index.tsx:expanded', () => new Set());
   const helpId = useId();
 
   const record = (next: OutlineActivity) => {
@@ -157,3 +158,6 @@ export default function LiveOutline({ map, actions, on }: BrickProps) {
     {liveText && <p className="live-outline-live" aria-label="Your words in progress">{liveText}</p>}
   </section>;
 }
+
+/** Host attaches these styles only for this mount. */
+export const styles = pluginStyle0;

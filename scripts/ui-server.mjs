@@ -3,6 +3,8 @@
 // `config` adds plugins; an explicit port also serves browser module checks on loopback.
 // The root and shared no-watcher/no-HMR settings remain the same in both modes.
 import { createServer } from "../ui/node_modules/vite/dist/node/index.js";
+// Packaging also uses this UI toolchain, but builds a library without creating a server.
+export { build as buildUi } from "../ui/node_modules/vite/dist/node/index.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

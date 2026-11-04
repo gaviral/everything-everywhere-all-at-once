@@ -44,10 +44,11 @@ export function useCamera(flow: Flow, area: () => Area, reduced: boolean, pane: 
   const fade = useRef<Animation | null>(null);
   const [cut, setCut] = useState<string | null>(null);
   const cutTimer = useRef(0);
+  const crossTimer = useRef(0);
   const findNode = useRef(node);
   findNode.current = node;
   const followTarget = useRef<(() => { box: Box; ring?: string } | null) | null>(null);
-  useEffect(() => () => { window.clearTimeout(waiting.current); window.clearTimeout(cutTimer.current); fade.current?.cancel(); }, []);
+  useEffect(() => () => { window.clearTimeout(waiting.current); window.clearTimeout(cutTimer.current); window.clearTimeout(crossTimer.current); fade.current?.cancel(); }, []);
 
   /** Past a screen: out, cut, in. */
   const crossFade = useCallback((next: Viewport) => {
@@ -67,7 +68,8 @@ export function useCamera(flow: Flow, area: () => Area, reduced: boolean, pane: 
     };
     out.onfinish = cutHere;
     // A hidden tab runs no animation: the cut happens all the same.
-    window.setTimeout(cutHere, FADE_MS / 2 + 40);
+    window.clearTimeout(crossTimer.current);
+    crossTimer.current = window.setTimeout(cutHere, FADE_MS / 2 + 40);
   }, [flow, pane]);
 
   /** A ring that stays a second on `key`: where the camera cut to, or what landed, in place of motion. */

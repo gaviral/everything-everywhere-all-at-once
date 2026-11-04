@@ -13,7 +13,7 @@ import { uiServer } from "./ui-server.mjs";
 
 const dir = mkdtempSync(join(tmpdir(), "e2a2o-mirror-"));
 execFileSync("cargo", ["test", "--quiet", "mirror_fixture"], {
-  cwd: new URL("../core", import.meta.url).pathname, env: { ...process.env, E2A2O_FIXTURE_DIR: dir }, stdio: ["ignore", "ignore", "inherit"],
+  cwd: new URL("../core", import.meta.url).pathname, env: { ...process.env, E2A2O_FIXTURE_DIR: dir, E2A2O_AGREEMENT_FIXTURE_DIR: dir }, stdio: ["ignore", "ignore", "inherit"],
 });
 globalThis.location = new URL("http://localhost:4321/");
 const server = await uiServer();
@@ -23,13 +23,17 @@ try {
   const plain = (x) => JSON.parse(JSON.stringify(x));
   const sorted = (o) => (Array.isArray(o) ? o.map(sorted) : o && typeof o === "object" ? Object.fromEntries(Object.keys(o).sort().map((k) => [k, sorted(o[k])])) : o);
   const same = (a, b) => JSON.stringify(sorted(plain(a))) === JSON.stringify(sorted(plain(b)));
-  for (const name of ["every", "session"]) {
-    const { changes, world, worlds } = JSON.parse(readFileSync(join(dir, `${name}.json`), "utf8"));
+  for (const name of ["every", "session", "agreement"]) {
+    const { initial, changes, world, worlds } = JSON.parse(readFileSync(join(dir, `${name}.json`), "utf8"));
+    if(name==="every")assert.ok(changes.some(c=>c.type==="evidence_kept"),"evidence change in every_change");
+    if (name === "every") assert.ok(changes.some(c => c.type === "choice_map_saved"), "choice change is in every_change");
     if (name === "every") assert.ok(changes.some(c => c.type === "action_estimate_set"), "estimate change is in every_change");
-    let mirror = EMPTY;
+    if (name === "every") assert.ok(changes.some(c => c.type === "discussion_status"));
+    if (name === "every") assert.ok(changes.some(c => c.type === "research_kept"));
+    let mirror = initial ?? EMPTY;
     // Every field the core sends, as the window holds it (a window without notes, places, margin notes or AI
     // participants yet holds none).
-    const none = { action_estimates: [], aliases: [], recipe_saves: {}, captions: [], notes: {}, positions: {}, anchors: {}, ai: [] };
+    const none = { agreements: {}, kept_answers: [], research: [], discussions: [], evidence_kept: [], choice_maps: [], action_estimates: [], aliases: [], recipe_saves: {}, captions: [], notes: {}, positions: {}, anchors: {}, ai: [] };
     const agree = (core, at) => {
       for (const key of Object.keys(core)) {
         assert.deepEqual(sorted(plain(mirror[key] ?? none[key] ?? null)), sorted(plain(core[key] ?? null)), `${name}: the window's ${key} differs from the core's ${at}`);
@@ -44,7 +48,7 @@ try {
     });
     agree(world, "at the end");
     // A window that connects mid-session may get the last batch or two again, on top of a snapshot that has them.
-    let at = EMPTY;
+    let at = initial ?? EMPTY;
     changes.forEach((change, k) => {
       at = apply(at, change);
       let again = at;

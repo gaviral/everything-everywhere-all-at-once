@@ -222,7 +222,7 @@ async function contractRules(server) {
 }
 
 // 2. Imports. 3. CSS. Per checked brick.
-const PACKAGES = ["react", "react-dom", "react/jsx-runtime", "motion/react", "@xyflow/react", "@xyflow/react/dist/base.css"];
+const PACKAGES = ["react", "react-dom", "react/jsx-runtime", "motion/react", "@xyflow/react", "@xyflow/react/dist/base.css", "@xyflow/react/dist/base.css?inline"];
 const code = (text) => text.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:\w"'`\\])\/\/.*$/gm, "$1");
 
 /** What's wrong with one source file of the brick in `dir` (`file`, relative to it; `text`, comments out). */
@@ -1772,7 +1772,7 @@ try {
   await until(`!!document.querySelector(".apps-catalog button")`, 3000);
   await evaluate(`document.querySelector(".apps-catalog button").click()`);
   if (!await until(`!!document.querySelector("dialog.catalog[open]")`, 3000)) fail("Catalog", "doesn't open from the Apps panel");
-  const listed = await evaluate(`[...document.querySelectorAll(".catalog-group:not([aria-label^=Built]) .catalog-row:not([data-built-in]) strong")].map((s) => s.textContent)`);
+  const listed = await evaluate(`[...document.querySelectorAll("[data-brick-row] strong")].map((s) => s.textContent)`);
   for (const name of brickNames) if (!listed.includes(name)) fail("Catalog", `doesn't list ${name}`);
   if (listed.length !== brickNames.length) fail("Catalog", `lists ${listed.length} bricks, the folders hold ${brickNames.length}`);
   const switchFor = (name) => `[...document.querySelectorAll(".catalog-row")].find((r) => r.querySelector("strong").textContent === ${JSON.stringify(name)}).querySelector("[role=switch]")`;

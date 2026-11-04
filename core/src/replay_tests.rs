@@ -23,6 +23,13 @@ fn fresh() -> (Arc<Core>, std::path::PathBuf) {
     (Arc::new(Core::test(journal, world)), path)
 }
 
+/// Synthetic journals written by this test suite; flatten envelopes without changing wire Changes.
+fn kept_changes(path: &std::path::Path) -> Vec<Change> {
+    std::fs::read(path).unwrap().split_inclusive(|b| *b == b'\n')
+        .flat_map(|line| crate::world::journal_record(line, line.ends_with(b"\n")).unwrap())
+        .map(|(change, _)| change).collect()
+}
+
 const SAVE_FAILURE_NOTICE: &str = "Couldn't save. Keep this window open; recent changes may be lost when you restart.";
 
 struct SaveFailureFixture {
@@ -76,6 +83,65 @@ fn save_failure_notice() -> serde_json::Value {
 }
 
 #[test]
+fn asks_journal_replay_core_accepts_complete_batch_with_source_receipts() {
+    journal_save_failure_without_deadlock(async {
+        let (core, path) = fresh();
+        let mut updates = core.updates.subscribe();
+        let id = "00000000-0000-4000-8000-000000000002";
+        let changes = vec![
+            Change::ThreadAdded { thread: crate::world::fixtures::thread("T1", "Synthetic", 1) },
+            Change::ThoughtAdded { thought: crate::world::fixtures::thought("synthetic", "T1", "Synthetic input", 2) },
+        ];
+        let (accepted, status) = crate::world::with_source("tester", id, "Synthetic input", || core.commit_if(|_| true, changes.clone()));
+        assert!(accepted && status.accepted && !status.failed);
+        let mut accepted_changes = changes.clone();
+        accepted_changes.push(Change::AgreementSource {
+            thought_id: "synthetic".into(), revision: core.snapshot().agreements["synthetic"].revision.clone(),
+        });
+        let wanted: Vec<_> = accepted_changes.iter().map(|change| serde_json::json!({ "to": null, "message": { "type": "change", "change": change } })).collect();
+        assert_eq!(save_failure_updates(&mut updates), wanted);
+        assert_eq!(std::fs::read_to_string(&path).unwrap().lines().count(), 1);
+        let (_, replayed) = Journal::open(&path).unwrap();
+        assert_eq!(full(&replayed), full(&core.snapshot()));
+        assert!(replayed.received_text.contains(&("tester".into(), id.into())));
+        let receipt = &replayed.captures[&("tester".into(), id.into())];
+        assert_eq!(receipt.text, "Synthetic input");
+        assert_eq!(receipt.thought_ids, ["synthetic"]);
+    });
+}
+
+#[test]
+fn asks_journal_replay_core_partial_append_never_accepts_applies_or_broadcasts_batch() {
+    journal_save_failure_without_deadlock(async {
+        let f = SaveFailureFixture::new(false);
+        let before = full(&f.core.snapshot());
+        let mut updates = f.core.updates.subscribe();
+        f.core.journal.lock().unwrap().fail_append_after(100);
+        let changes = vec![
+            Change::ThreadAdded { thread: crate::world::fixtures::thread("T2", "Synthetic batch", 2) },
+            Change::ActiveChanged { thread_id: "T2".into(), speaker: "tester".into() },
+        ];
+        let (_, status) = crate::world::with_source("tester", "00000000-0000-4000-8000-000000000001", "Synthetic input", || {
+            assert!(!f.core.commit_if(|_| true, changes.clone()));
+        });
+        assert!(!status.accepted && status.failed);
+        assert_eq!(save_failure_updates(&mut updates), vec![save_failure_notice()]);
+        assert_eq!(full(&f.core.snapshot()), before);
+        let partial = std::fs::read(&f.path).unwrap();
+        assert!(!partial.ends_with(b"\n"));
+        // The injected error is one-shot: only the poisoned journal prevents this later commit.
+        assert!(!f.core.commit_if(|_| true, changes));
+        assert!(save_failure_updates(&mut updates).is_empty());
+        assert_eq!(full(&f.core.snapshot()), before);
+        assert_eq!(std::fs::read(&f.path).unwrap(), partial);
+        let (_, replayed) = Journal::open(&f.path).unwrap();
+        assert_eq!(full(&replayed), before);
+        assert!(replayed.captures.is_empty() && replayed.received_text.is_empty());
+        assert!(f.core.snapshot().captures.is_empty() && f.core.snapshot().received_text.is_empty());
+    });
+}
+
+#[test]
 fn journal_save_failure_commit_batch_reports_once_and_rejects_unsaved_changes() {
     journal_save_failure_without_deadlock(async {
         for failing in [false, true] {
@@ -117,7 +183,7 @@ fn journal_save_failure_commit_batch_reports_once_and_rejects_unsaved_changes() 
                 assert_eq!(std::fs::read_to_string(&f.path).unwrap(), before);
             } else {
                 assert_eq!(full(&Journal::open(&f.path).unwrap().1), full(&expected));
-                assert_eq!(std::fs::read_to_string(&f.path).unwrap().lines().count(), 4);
+                assert_eq!(std::fs::read_to_string(&f.path).unwrap().lines().count(), 2);
             }
         }
     });
@@ -159,7 +225,7 @@ fn journal_save_failure_record_throttles_notices_to_every_window() {
             if failing {
                 assert_eq!(kept, before);
             } else {
-                let marks: Vec<serde_json::Value> = kept.lines().skip(1).map(|line| serde_json::from_str(line).unwrap()).collect();
+                let marks: Vec<serde_json::Value> = kept_changes(&f.path).iter().skip(1).map(|change| serde_json::to_value(change).unwrap()).collect();
                 assert_eq!(marks.len(), 2);
                 assert_eq!((marks[0]["off"].as_bool(), marks[1]["off"].as_bool()), (Some(true), Some(false)));
                 assert_eq!(full(&Journal::open(&f.path).unwrap().1), world);
@@ -201,7 +267,7 @@ fn journal_save_failure_positions_report_immediate_and_held_writes_without_chang
             if failing {
                 assert_eq!(std::fs::read_to_string(&f.path).unwrap(), before);
             } else {
-                let kept: Vec<serde_json::Value> = std::fs::read_to_string(&f.path).unwrap().lines().skip(1).map(|line| serde_json::from_str(line).unwrap()).collect();
+                let kept: Vec<serde_json::Value> = kept_changes(&f.path).iter().skip(1).map(|change| serde_json::to_value(change).unwrap()).collect();
                 assert_eq!(kept.iter().map(|line| line["x"].as_f64().unwrap()).collect::<Vec<_>>(), [1.0, 3.0]);
                 assert_eq!(full(&Journal::open(&f.path).unwrap().1), full(&f.core.snapshot()));
             }
@@ -543,8 +609,8 @@ fn concurrent_commits_reach_windows_in_journal_order() {
                 told.push(speaker);
             }
         }
-        let kept: Vec<String> = std::fs::read_to_string(&path).unwrap().lines()
-            .map(|l| serde_json::from_str::<serde_json::Value>(l).unwrap()["speaker"].as_str().unwrap().to_string())
+        let kept: Vec<String> = kept_changes(&path).iter()
+            .map(|change| serde_json::to_value(change).unwrap()["speaker"].as_str().unwrap().to_string())
             .collect();
         let _ = std::fs::remove_file(&path);
         assert_eq!(told.len(), kept.len(), "round {round}: every change reaches the window");
@@ -654,7 +720,7 @@ async fn a_restart_replays_every_field_of_a_session_with_every_kind_of_undo() {
 async fn session_mirror_fixture() {
     let (core, path) = fresh();
     let sent = session(&core).await;
-    let journal: Vec<Change> = std::fs::read_to_string(&path).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+    let journal: Vec<Change> = kept_changes(&path);
     let _ = std::fs::remove_file(&path);
     let kept: Vec<String> = journal.iter().filter(|c| !matches!(c, Change::ExplainAnswered { .. } | Change::AnswerMarked { .. })).map(|c| serde_json::to_string(c).unwrap()).collect();
     let told: Vec<String> = sent.iter().map(|c| serde_json::to_string(c).unwrap()).collect();
@@ -815,10 +881,9 @@ async fn any_walk_of_fixes_and_undos_keeps_the_map_whole_and_replayable() {
     }
 }
 
-/// A crash can stop the journal between any two lines of a batch (`commit` writes them one at a time): every prefix of
-/// a session's journal opens to a whole map.
+/// Every complete transaction boundary in the session journal opens to a whole map.
 #[tokio::test]
-async fn a_crash_between_any_two_lines_opens_a_whole_map() {
+async fn replay_crash_between_transactions_opens_a_whole_map() {
     let (core, path) = fresh();
     session(&core).await;
     let last_on = |id: &str| core.snapshot().thoughts.iter().filter(|t| t.thread_id.as_deref() == Some(id)).map(|t| t.id.clone()).last();
@@ -836,7 +901,7 @@ async fn a_crash_between_any_two_lines_opens_a_whole_map() {
     let mut world = World::default();
     let mut bad = Vec::new();
     for (n, line) in text.lines().enumerate() {
-        world.apply(&serde_json::from_str(line).unwrap());
+        for (change, _) in crate::world::journal_record(line.as_bytes(), true).unwrap() { world.apply(&change); }
         let found = invariants(&world);
         if !found.is_empty() {
             bad.push(format!("after line {} ({}): {found:?}", n + 1, &line[..line.len().min(60)]));

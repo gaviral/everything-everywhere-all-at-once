@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { uiServer } from "./ui-server.mjs";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
-const app = read("ui/src/App.tsx"), styles = read("ui/src/styles.css"), tour = read("ui/src/Tour.tsx"), readme = read("README.md") + read("docs/FEATURES.md");
+const app = read("ui/src/App.tsx") + "\n" + read("ui/src/MapCards.tsx"), styles = read("ui/src/styles.css"), tour = read("ui/src/Tour.tsx"), readme = read("README.md") + read("docs/FEATURES.md");
 const server = await uiServer();
 try {
   const keys = await server.ssrLoadModule("/src/keys.ts");

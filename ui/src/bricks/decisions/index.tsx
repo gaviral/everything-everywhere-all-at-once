@@ -5,15 +5,24 @@ import "./decisions.css";
 
 type Filter = { topic: string | null; title: string } | null;
 // Keep the selected snapshot across an explicit jump and return in this window. Nothing is saved on the map.
-// Host actions identify the window; a new page starts at All. Weak keys need no teardown or storage listener.
-const filters = new WeakMap<BrickActions, Filter>();
+// Actions are scoped to a brick mount; the visit identifies the map and participant across those mounts.
+// A different visit or a new page starts at All. Retain only this window's current visit.
+type Selection = { visit: string | BrickActions; filter: Filter };
+let saved: Selection | null = null;
 
 export default function Decisions({ map, actions }: BrickProps) {
-  const [filter, setFilter] = useState<Filter>(() => filters.get(actions) ?? null);
+  const visit = map.visitKey ?? actions;
+  const [selection, setSelection] = useState<Selection>(() => saved?.visit === visit ? saved : { visit, filter: null });
+  const filter = selection.visit === visit ? selection.filter : null;
+  useLayoutEffect(() => {
+    const next = selection.visit === visit ? selection : { visit, filter: null };
+    saved = next;
+    if (next !== selection) setSelection(next);
+  }, [visit, selection]);
   const heading = useRef<HTMLHeadingElement>(null);
   useLayoutEffect(() => { heading.current?.focus({ preventScroll: true }); }, []);
   const rows = decisionsOf(map.thoughts, map.threads, filter ? filter.topic : undefined);
-  const choose = (next: Filter) => { filters.set(actions, next); setFilter(next); };
+  const choose = (filter: Filter) => setSelection({ visit, filter });
   return <section className="decisions" data-guide="decisions" aria-labelledby="decisions-heading">
     <h1 id="decisions-heading" ref={heading} tabIndex={-1}>Decisions</h1>
     <p className="decisions-intro">Recorded on your map · newest first</p>

@@ -7,6 +7,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openPage, ready, sleep } from "./headless.mjs";
+import { decodeJournal } from "./journal-fixture.mjs";
 
 if (ready()) { console.log(`SKIP i-turns-check: ${ready()}`); process.exit(3); }
 const root = new URL("../", import.meta.url).pathname;
@@ -41,7 +42,7 @@ async function helper(name) {
   return ws;
 }
 const send = (ws, msg) => ws.send(JSON.stringify(msg));
-const journal = () => readFileSync(join(data, "journal.jsonl"), "utf8").trim().split("\n").map(JSON.parse);
+const journal = () => decodeJournal(readFileSync(join(data, "journal.jsonl"), "utf8"));
 const saved = () => journal().filter(c => c.type === "caption_added").map(c => c.caption);
 try {
   await start();

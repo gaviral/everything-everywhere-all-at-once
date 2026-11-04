@@ -71,7 +71,7 @@ try {
   assert.match(CHUNK_TIPS.joined, /apart/);
   assert.match(CHUNK_TIPS.assumed, /Move it/, "the reading has no undo, but a wrong place is fixed by Move (moves.rs)");
   for (const tip of Object.values(CHUNK_TIPS)) assert.ok(tip.length > 10 && tip.length <= 120, tip);
-  const app = readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8");
+  const app = readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8") + "\n" + readFileSync(new URL("../ui/src/MapCards.tsx", import.meta.url), "utf8");
   assert.match(app, /<PointNote thought=\{thought\} heads=\{heads\} unlink=\{on\.unlink\} \/>/);
   assert.match(app, /\{points\.length\} \{points\.length === 1 \? "thought" : "thoughts"\}/);
   assert.match(app, /return ideaCounts\(world, start, Date\.now\(\)\);/, "the header counts ideas too (recap-check runs ideaCounts)");

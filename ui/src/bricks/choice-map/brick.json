@@ -1,0 +1,8 @@
+{
+  "id": "choice-map",
+  "name": "Choice map",
+  "does": "Arrange a question, options and reasons; keep each person’s own choice.",
+  "kind": "view",
+  "defaultOn": false,
+  "demoSafe": false
+}

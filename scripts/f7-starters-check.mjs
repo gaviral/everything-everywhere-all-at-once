@@ -38,6 +38,7 @@ async function fill(browser, index, text) {
 }
 async function values(browser) { return browser.evaluate(`Array.from(document.querySelectorAll('${css} textarea'),t=>t.value)`); }
 async function open(browser) {
+  assert.ok(await browser.until(`!![...document.querySelectorAll('${css} button')].find(b=>b.textContent==='Thinking starters' && !b.disabled)`), 'enabled Thinking starters opener is mounted');
   await click(browser, 'Thinking starters');
   assert.ok(await browser.until(`!!document.querySelector('#thinking-starters-select')`));
 }

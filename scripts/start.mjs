@@ -208,8 +208,9 @@ export async function check(args, env, root, lan = lanIp) {
   const err = [...notes];
   const mode = args[0] ?? "";
   if ((mode === "demo" || mode === "room") && !(core.MODEL_API_KEY ?? "").trim()) {
-    const copy = existsSync(join(root, ".env")) ? "" : "cp .env.example .env, then ";
-    err.push(`./run.sh ${mode} needs a Meta Model API key: ${copy}paste the key after MODEL_API_KEY= in .env.`);
+    const copy = existsSync(join(root, ".env")) ? "" : "Copy the intentionally blank template: cp .env.example .env. ";
+    err.push(`./run.sh ${mode} needs a Meta Model API key. ${copy}Open .env and add the full MODEL_API_KEY= line with your key immediately after = on the same line. Save .env, then restart ./run.sh ${mode}.`);
+    err.push("On macOS, the login Keychain is an optional alternative when .env is absent; see docs/FEATURES.md.");
     err.push("No key? ./run.sh sample opens a ready-made map without one.");
     return { code: 1, out: "", err: err.join("\n") };
   }

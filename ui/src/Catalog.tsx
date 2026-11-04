@@ -7,7 +7,7 @@ import { FEATURE_NAMES } from "./shell/names";
 import { ReplyFormat } from "./ReplyFormat";
 import { useEffect, useRef } from "react";
 import type { BrickKind } from "./bricks/contract";
-import { BRICKS, closeCatalog, KINDS, switchBrick, useBricksOn, useCatalogAt, useCatalogOpen, type Brick } from "./bricks-core";
+import { useBrickRegistry, closeCatalog, KINDS, switchBrick, useBricksOn, useCatalogAt, useCatalogOpen, type Brick } from "./bricks-core";
 import "./bricks.css";
 import { AppParts, type AppPartsState } from "./AppParts";
 import type { MiniApp } from "./apps-core";
@@ -26,6 +26,7 @@ export function Catalog({ apps, state }: { apps: readonly MiniApp[]; state: AppP
 }
 
 function CatalogSheet({ apps, state }: { apps: readonly MiniApp[]; state: AppPartsState }) {
+  const BRICKS = useBrickRegistry();
   const on = useBricksOn();
   const builtIns = useBuiltInsOn();
   const comparison = FEATURE_NAMES["compare-return-controls"];
@@ -71,6 +72,11 @@ function CatalogSheet({ apps, state }: { apps: readonly MiniApp[]; state: AppPar
       </div>
       <button type="button" className="catalog-close" onClick={closeCatalog} aria-label="Close">×</button>
     </div>
+    <section className="catalog-group" aria-label="Plugins"><ul><li className="catalog-row" data-row="plugins" data-built-in="plugins">
+      <div><strong>{FEATURE_NAMES.plugins.name}</strong><p>{FEATURE_NAMES.plugins.does}</p></div>
+      <button type="button" className="apps-switch" role="switch" aria-label="Plugins" aria-checked={builtIns.has("plugins")}
+        onClick={() => switchBuiltIn("plugins", !builtIns.has("plugins"))}>{builtIns.has("plugins") ? "On" : "Off"}</button>
+    </li></ul></section>
     <section className="catalog-group" aria-label="Voice comparison"><ul><li className="catalog-row" data-row="voice-policy-comparison" data-built-in="voice-policy-comparison">
       <div><strong>{FEATURE_NAMES["voice-policy-comparison"].name}</strong><p>{FEATURE_NAMES["voice-policy-comparison"].does}</p></div>
       <button type="button" role="switch" className="apps-switch" aria-label="Compare voice turns" aria-checked={builtInOn("voice-policy-comparison")}
@@ -99,7 +105,7 @@ function CatalogSheet({ apps, state }: { apps: readonly MiniApp[]; state: AppPar
           aria-label={comparison.name} onClick={() => switchBuiltIn("compare-return-controls", !compareOn)}>{compareOn ? "On" : "Off"}</button>
       </li>
     </ul></section>
-    <section className="catalog-group" aria-label="Built in"><h3>Built in</h3><ul>{BUILT_INS.filter(b => b.id === "review-text-edits").map(b => <li key={b.id} className="catalog-row" data-row={b.id}>
+    <section className="catalog-group" aria-label="Built in"><h3>Built in</h3><ul>{BUILT_INS.filter(b => b.id === "review-text-edits" || b.id === "discussion-status").map(b => <li key={b.id} className="catalog-row" data-row={b.id}>
       <div><strong>{FEATURE_NAMES[b.id].name}</strong><p>{FEATURE_NAMES[b.id].does}</p></div>
       <button type="button" role="switch" aria-label={FEATURE_NAMES[b.id].name} aria-checked={builtIns.has(b.id)} onClick={() => switchBuiltIn(b.id, !builtIns.has(b.id))}>{builtIns.has(b.id) ? "On" : "Off"}</button>
     </li>)}</ul></section>
@@ -123,7 +129,7 @@ function Groups({ bricks, on, at }: { bricks: readonly Brick[]; on: ReadonlySet<
       <ul>
         {bricks.filter((brick) => brick.info.kind === kind).map(({ info }) => {
           const shown = on.has(info.id);
-          return <li key={info.id} className={info.id === at ? "catalog-row catalog-at" : "catalog-row"} data-row={info.id} aria-current={info.id === at || undefined}>
+          return <li key={info.id} className={info.id === at ? "catalog-row catalog-at" : "catalog-row"} data-brick-row data-row={info.id} aria-current={info.id === at || undefined}>
             <div><strong>{info.name}</strong><p>{info.does}</p></div>
             <button type="button" className={shown ? "apps-switch on" : "apps-switch"} role="switch" aria-checked={shown} aria-label={info.name}
               onClick={() => switchBrick(info.id, !shown)}>{shown ? "On" : "Off"}</button>

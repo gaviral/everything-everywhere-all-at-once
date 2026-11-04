@@ -5,6 +5,7 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync, copyFileSync } from
 import { resolve, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { openPage, sleep } from './headless.mjs';
+import { decodeJournal } from './journal-fixture.mjs';
 const root = resolve(new URL('..', import.meta.url).pathname);
 const before = process.argv.includes('--before');
 const output = resolve(process.env.SHOTS || join(tmpdir(), `voice-identity-${before?'before':'after'}-${Date.now()}`));
@@ -84,7 +85,7 @@ try {
   assert.ok(await until(`events.some(e=>e.type==='status' && !e.listening)`),'mic stop completed');
   await sleep(300);
   await shot('stopped');
-  const journal=readFileSync(join(output,'journal.jsonl'),'utf8').trim().split('\n').map(JSON.parse);
+  const journal=decodeJournal(readFileSync(join(output,'journal.jsonl'),'utf8'));
   const additions=journal.filter(e=>e.type==='thought_added');
   assert.equal(additions.length,1);assert.equal(additions[0].thought.text,words);
   assert.equal(journal.filter(e=>e.type==='thought_placed').length,1);

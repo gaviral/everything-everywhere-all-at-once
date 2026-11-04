@@ -120,7 +120,7 @@ try {
   // A kept suggestion has no Keep or × left, so its tip names neither; the map picks the tip by status.
   assert.doesNotMatch(TIPS.kept, /Keep saves|×/);
   assert.match(TIPS.kept, /no undo/);
-  assert.match(readFileSync(new URL("App.tsx", src), "utf8"), /s\.status === "kept" \? TIPS\.kept : TIPS\.suggestion/);
+  assert.match(readFileSync(new URL("MapCards.tsx", src), "utf8"), /s\.status === "kept" \? TIPS\.kept : TIPS\.suggestion/);
 
   // An open tip follows its mark: new words replace the old (the mic just stopped), and a mark that loses its words
   // (a kept tag) or leaves the page takes the tip with it.

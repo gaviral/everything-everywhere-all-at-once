@@ -55,15 +55,19 @@ async function record(browser,name){
   };
 }
 for(const [width,height] of [[1440,900],[390,844]])for(const scheme of ['light','dark'])for(const reduced of [false,true]){
-  const core=await captureCore({delay:1800});let browser;
+  const core=await captureCore({delay:1800,manualPlacement:true});let browser;
   try{
     browser=await capturePage(core,{width,height,scheme,reduced});const {evaluate,until,page}=browser;
     const finish=await record(browser,`${width}-${scheme}-${reduced?'reduced':'normal'}`);
-    await typeCapture(browser,'A: book the cooking class');await typeCapture(browser,'B: bring the notebook');
-    assert.ok(await until('document.querySelectorAll(".capture-item").length===2',1000),'A and B retained immediately');
+    // Hold fixture placement until both durable receipts are visible; CDP work has no fixed completion time.
+    await typeCapture(browser,'A: book the cooking class');
+    assert.ok(await until('document.querySelectorAll(".capture-item[data-saved=true]").length===1 && document.querySelector("#type-a-thought").value===""'),'A retained before the next capture');
+    await typeCapture(browser,'B: bring the notebook');
+    assert.ok(await until('document.querySelectorAll(".capture-item[data-saved=true]").length===2 && document.querySelector("#type-a-thought").value===""'),'A and B retained before placement');
     const ids=[...core.state.accepted.keys()];assert.equal(ids.length,2);
     if(reduced)assert.equal(await evaluate('document.querySelectorAll("[data-flight]").length'),0,'reduced motion defaults to no flight');
     else assert.ok(await until('!!document.querySelector("[data-flight]")',1000),'ordinary capture lifts');
+    for(const id of ids)core.place(id);
     assert.ok(await until('document.querySelectorAll(".spine-point[data-thought]").length===2',6000),`${width} ${scheme} reduced=${reduced}: both captures visibly land`);
     assert.ok(await until('!document.querySelector("[data-flight]")',3500),'visuals release');
     assert.ok(await until('!!document.querySelector(".spine-landing")'),'late-mounted Canvas gets landing note');

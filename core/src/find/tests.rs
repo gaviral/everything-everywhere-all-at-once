@@ -305,7 +305,7 @@ fn requests_focus_only_the_asker_and_send_a_private_jump_without_adding_a_though
     }
     assert_eq!(jumps, 1);
     let journal = std::fs::read_to_string(&fixture.path).unwrap();
-    assert!(journal.lines().all(|line| serde_json::from_str::<Change>(line).is_ok()), "only existing journal changes");
+    assert!(journal.lines().all(|line| crate::world::journal_record(line.as_bytes(), true).is_ok()), "only existing journal changes");
     fixture.core.add_thought("Ana", "I need to find the rent receipt");
     assert_eq!(fixture.core.snapshot().thoughts.len(), 2, "ordinary thoughts still reach placement");
 }

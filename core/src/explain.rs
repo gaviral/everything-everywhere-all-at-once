@@ -1,7 +1,7 @@
 //! Explain: select a word or phrase and get one plain sentence on what it means in its thread,
 //! from the fastest Muse setting, so it reads like a tooltip rather than a chat.
 
-use crate::world::{Change, World};
+use crate::world::{AnswerSource, Change, KeptAnswer, Thought, World};
 use crate::{protocol::ServerMsg, Core};
 use anyhow::bail;
 use serde_json::json;
@@ -143,6 +143,106 @@ impl Runtime {
     }
 }
 
+/// Per connection, separate from Explain's transient cache (when present).
+#[derive(Default)]
+pub struct SavedSession {
+    on: bool,
+    generation: u64,
+    pending: std::collections::HashSet<String>,
+    served: Vec<KeptAnswer>,
+}
+
+impl SavedSession {
+    pub fn switch(&mut self, on: bool) {
+        if self.on == on { return; }
+        self.on = on;
+        self.generation += 1;
+        self.pending.clear();
+        self.served.clear();
+    }
+}
+
+/// A content revision of both original words and displayed point, portable to the UI.
+/// The full exact excerpt is checked too; identity is always the thought ID, never a text search.
+pub fn source_revision(thought: &Thought) -> String {
+    let words = serde_json::to_string(&(&thought.text, &thought.point)).unwrap();
+    let mut hash = 0xcbf29ce484222325u64;
+    for byte in words.bytes() { hash = (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3); }
+    format!("{hash:016x}")
+}
+
+pub fn source_current(world: &World, source: &AnswerSource) -> bool {
+    world.thoughts.iter().find(|t| t.id == source.thought_id).is_some_and(|t| {
+        let text = match source.field.as_str() { "text" => &t.text, "point" => &t.point, _ => return false };
+        text == &source.excerpt && source_revision(t) == source.revision
+    })
+}
+
+fn refuse(core: &Core, owner: &str, message: &str) {
+    core.send_to(owner, ServerMsg::Notice { message: message.into() });
+}
+
+pub fn keep(core: &Core, owner: &str, session: &Arc<Mutex<SavedSession>>, id: &str) {
+    let session = session.lock().unwrap();
+    let answer = session.served.iter().find(|a| a.id == id && a.owner == owner);
+    let Some(answer) = answer.filter(|_| session.on) else {
+        return refuse(core, owner, "Keep refused: enable Saved answers and explain this source again in this window.");
+    };
+    if answer.answer.len() > 2048 {
+        return refuse(core, owner, "Keep refused: this answer exceeds 2 KiB.");
+    }
+    let result = core.try_commit_if(|w| {
+        source_current(w, &answer.source) && w.kept_answers.iter().filter(|a| !a.removed).count() < 30
+            && !w.kept_answers.iter().any(|a| a.id == id)
+    }, vec![Change::AnswerKept { answer: answer.clone() }]);
+    if !matches!(result, Ok(true)) {
+        refuse(core, owner, "Keep refused: source changed, answer already kept, map has 30 saved answers, or save failed.");
+    }
+}
+
+pub fn visibility(core: &Core, owner: &str, session: &Arc<Mutex<SavedSession>>, id: &str, revision: u64, removed: bool) {
+    let session = session.lock().unwrap();
+    if !session.on { return refuse(core, owner, "Enable Saved answers before changing a saved answer."); }
+    let result = core.try_commit_if(|w| w.kept_answers.iter().any(|a| a.id == id && a.owner == owner && a.revision == revision && a.removed != removed)
+        && (removed || w.kept_answers.iter().filter(|a| !a.removed).count() < 30),
+        vec![Change::KeptAnswerVisibility { id: id.into(), revision: revision.saturating_add(1), removed }]);
+    if !matches!(result, Ok(true)) { refuse(core, owner, "Saved answer changed or is no longer available. Reopen the list and try again."); }
+}
+
+type Receipt = (Arc<Mutex<SavedSession>>, u64, KeptAnswer);
+
+#[allow(clippy::too_many_arguments)]
+pub fn request(core: Arc<Core>, owner: String, session: Arc<Mutex<SavedSession>>, id: String, phrase: String, context: String,
+    thread_id: Option<String>, reuse: bool, source: Option<AnswerSource>) {
+    let receipt = {
+        let mut state = session.lock().unwrap();
+        if state.on && (state.pending.contains(&id) || state.served.iter().any(|a| a.id == id)) {
+            return refuse(&core, &owner, "Explain request already served or pending. Select Explain again for a new request.");
+        }
+        if state.on && id.len() <= 128 && !state.pending.contains(&id) && !state.served.iter().any(|a| a.id == id)
+            && state.pending.len() < 30 {
+            source.filter(|source| source.excerpt.len() <= 24_000 && source_current(&core.snapshot(), source)
+                && !phrase.is_empty() && phrase.len() <= 640 && source.excerpt.contains(&phrase)).map(|source| {
+                state.pending.insert(id.clone());
+                (session.clone(), state.generation, KeptAnswer { id: id.clone(), source, phrase: phrase.clone(),
+                    answer: String::new(), model: String::new(), owner: owner.clone(), at_ms: 0, revision: 1, removed: false })
+            })
+        } else { None }
+    };
+    tokio::spawn(run_answer(core, id, phrase, context, thread_id, owner, reuse, true, receipt));
+}
+
+fn served(receipt: Receipt, text: &str, model: &str, at_ms: u64) {
+    let (session, generation, mut answer) = receipt;
+    let mut state = session.lock().unwrap();
+    if !state.on || state.generation != generation || !state.pending.remove(&answer.id) { return; }
+    answer.answer = text.into();
+    answer.model = model.chars().take(160).collect();
+    answer.at_ms = at_ms;
+    if state.served.len() == 30 { state.served.remove(0); }
+    state.served.push(answer);
+}
+
 pub async fn run(
     core: Arc<Core>,
     id: String,
@@ -152,10 +252,15 @@ pub async fn run(
     speaker: String,
     reuse: bool,
 ) {
+    run_answer(core, id, phrase, context, thread_id, speaker, reuse, false, None).await;
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_answer(core: Arc<Core>, id: String, phrase: String, context: String, thread_id: Option<String>, speaker: String, reuse: bool, targeted: bool, receipt: Option<Receipt>) {
     let started = crate::now_ms();
     let notes = notes(&core.snapshot(), thread_id.as_deref(), &context, &phrase);
     let mut key = Key {
-        speaker,
+        speaker: speaker.clone(),
         phrase: phrase.clone(),
         notes: notes.clone(),
         model: core.placer_model.name().into(),
@@ -174,7 +279,11 @@ pub async fn run(
     let answer = if let Some(text) = cached {
         Ok((text, key.model.clone()))
     } else {
-        let answer = ask(&core, &phrase, &notes).await;
+        #[cfg(test)]
+        let fixture = tests::fixture_answer(&id);
+        #[cfg(not(test))]
+        let fixture: Option<(String, String)> = None;
+        let answer = match fixture { Some(answer) => Ok(answer), None => ask(&core, &phrase, &notes).await };
         if let Ok((text, model)) = &answer {
             if reuse {
                 key.model = model.clone();
@@ -196,11 +305,12 @@ pub async fn run(
                 phrase: phrase.chars().take(200).collect(),
                 context: context.chars().take(600).collect(),
                 thread_id,
-                model,
+                model: model.clone(),
                 ms: crate::now_ms().saturating_sub(started),
                 text: text.clone(),
                 at_ms: started,
             });
+            if let Some(receipt) = receipt { served(receipt, &text, &model, crate::now_ms()); }
             ServerMsg::Explanation {
                 id,
                 text,
@@ -208,6 +318,10 @@ pub async fn run(
             }
         }
         Err(e) => {
+            if let Some((session, generation, answer)) = receipt {
+                let mut state = session.lock().unwrap();
+                if state.generation == generation { state.pending.remove(&answer.id); }
+            }
             tracing::warn!("explain failed: {e:#}");
             let text: String = if core.key.is_none() {
                 "Explaining needs the AI key: add MODEL_API_KEY to .env, then restart.".into()
@@ -225,7 +339,7 @@ pub async fn run(
             }
         }
     };
-    core.send(message);
+    if targeted { core.send_to(&speaker, message); } else { core.send(message); }
 }
 
 /// What the model reads before the phrase: the other threads' titles, the phrase's thread
@@ -352,7 +466,7 @@ async fn ask(core: &Core, phrase: &str, notes: &str) -> anyhow::Result<(String, 
                 .unwrap_or("no reason given")
         );
     }
-    Ok((text.to_string(), selected.into_inner().unwrap()))
+    Ok((text.to_string(), value["model"].as_str().map(String::from).unwrap_or_else(|| selected.into_inner().unwrap())))
 }
 
 #[cfg(test)]
@@ -423,6 +537,31 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn asks_kept_answers_cache_hit_has_own_receipt_and_survives_eviction() {
+        let (core, calls, _) = fixture();
+        let session = Arc::new(Mutex::new(SavedSession::default()));
+        session.lock().unwrap().switch(true);
+        let thought_id = core.snapshot().thoughts[0].id.clone();
+        let exact = source(&core.snapshot(), &thought_id);
+        let mut updates = core.updates.subscribe();
+        for id in ["kept-miss", "kept-hit"] {
+            super::request(core.clone(), "you".into(), session.clone(), id.into(), "Mulch".into(), "soil".into(), Some("T1".into()), true, Some(exact.clone()));
+            tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    if matches!(updates.recv().await.unwrap().message, ServerMsg::Explanation { id: got, failed: false, .. } if got == id) { break; }
+                }
+            }).await.unwrap();
+        }
+        assert_eq!(calls.load(Ordering::SeqCst), 1, "second deliberate Explain uses the existing exact cache");
+        keep(&core, "you", &session, "kept-hit");
+        let kept = core.snapshot().kept_answers[0].clone();
+        assert_eq!(kept.id, "kept-hit", "cache reuse still binds Keep to the new served request");
+        core.explain.cache.lock().unwrap().prune(Instant::now() + TTL);
+        session.lock().unwrap().switch(false);
+        assert_eq!(core.snapshot().kept_answers, vec![kept], "cache expiry and feature off preserve retained answers");
+    }
+
     #[tokio::test(start_paused = true)]
     async fn f7_explain_exact_reuse_and_current_receipts() {
         let (core, calls, path) = fixture();
@@ -435,8 +574,9 @@ mod tests {
         assert_eq!(calls.load(Ordering::SeqCst), 1);
         let lines: Vec<serde_json::Value> = std::fs::read_to_string(path)
             .unwrap()
-            .lines()
-            .map(|l| serde_json::from_str(l).unwrap())
+            .split_inclusive('\n')
+            .flat_map(|line| crate::world::journal_record(line.as_bytes(), line.ends_with('\n')).unwrap())
+            .map(|(_, value)| value)
             .collect();
         assert_eq!(lines.len(), 2);
         assert_eq!(lines[0]["id"], "first");
@@ -610,6 +750,154 @@ mod tests {
         )
         .await
         .unwrap();
+    }
+
+    // Only test builds can serve synthetic answers; production always uses the existing Explain path.
+    fn fixture_answers() -> &'static std::sync::Mutex<std::collections::HashMap<String, (String, String)>> {
+        static ANSWERS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, (String, String)>>> = std::sync::OnceLock::new();
+        ANSWERS.get_or_init(Default::default)
+    }
+    pub(super) fn fixture_answer(id: &str) -> Option<(String, String)> { fixture_answers().lock().unwrap().remove(id) }
+
+    fn source(world: &World, id: &str) -> crate::world::AnswerSource {
+        let t = world.thoughts.iter().find(|t| t.id == id).unwrap();
+        crate::world::AnswerSource { thought_id: id.into(), field: "point".into(), excerpt: t.point.clone(), revision: super::source_revision(t) }
+    }
+
+    #[tokio::test]
+    async fn asks_kept_answers_connection_contract_restart_and_history() {
+        use crate::{Core, Journal, Link};
+        use futures_util::{SinkExt, StreamExt};
+        use std::sync::Arc;
+        use tokio_tungstenite::{connect_async, tungstenite::Message};
+        type Socket = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+        async fn until(socket: &mut Socket, kind: &str) -> serde_json::Value {
+            tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                loop {
+                    if let Message::Text(text) = socket.next().await.unwrap().unwrap() {
+                        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+                        if value["type"] == kind { return value; }
+                    }
+                }
+            }).await.unwrap()
+        }
+        async fn send(socket: &mut Socket, value: serde_json::Value) {
+            socket.send(Message::Text(value.to_string().into())).await.unwrap();
+        }
+        async fn start(core: Arc<Core>) -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
+            let router = axum::Router::new().route("/ws", axum::routing::get(crate::connect))
+                .layer(axum::middleware::from_fn_with_state(core.clone(), crate::gate)).with_state(core);
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = listener.local_addr().unwrap();
+            let task = tokio::spawn(async move { axum::serve(listener, router.into_make_service_with_connect_info::<Link>()).await.unwrap(); });
+            (address, task)
+        }
+        let path = std::env::temp_dir().join(format!("asks-kept-answers-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, world) = Journal::open(&path).unwrap();
+        let core = Arc::new(Core::test(journal, world));
+        let fixture = map(&[("T1", "Synthetic duplicate phrases", None)], &[("T1", "Alpha source", "synthetic phrase"), ("T1", "Beta source", "synthetic phrase")]);
+        core.commit(fixture.threads.iter().cloned().map(|thread| Change::ThreadAdded { thread })
+            .chain(fixture.thoughts.iter().cloned().map(|thought| Change::ThoughtAdded { thought })).collect());
+        let selected = source(&core.snapshot(), "th-1");
+        let (address, task) = start(core.clone()).await;
+        let (mut a, _) = connect_async(format!("ws://{address}/ws?name=Keeper")).await.unwrap();
+        let (mut b, _) = connect_async(format!("ws://{address}/ws?name=Reader")).await.unwrap();
+        until(&mut a, "snapshot").await; until(&mut b, "snapshot").await;
+        send(&mut a,serde_json::json!({"type":"heartbeat","id":"ready-a"})).await; until(&mut a,"heartbeat").await;
+        send(&mut b,serde_json::json!({"type":"heartbeat","id":"ready-b"})).await; until(&mut b,"heartbeat").await;
+        send(&mut a, serde_json::json!({"type":"keep_answer","id":"forged","answer":"invented","model":"invented"})).await;
+        assert!(until(&mut a,"notice").await["message"].as_str().unwrap().contains("Keep refused"));
+        send(&mut a, serde_json::json!({"type":"saved_answers","on":true})).await;
+        let id = uuid::Uuid::new_v4().to_string();
+        fixture_answers().lock().unwrap().insert(id.clone(), ("The exact historical answer.".into(), "fixture-actual-model".into()));
+        send(&mut a, serde_json::json!({"type":"explain","id":id,"text":"synthetic phrase","context":"Beta source","thread_id":"T1","source":selected})).await;
+        assert_eq!(until(&mut a,"explanation").await["failed"], false);
+        send(&mut b, serde_json::json!({"type":"saved_answers","on":true})).await;
+        send(&mut b, serde_json::json!({"type":"keep_answer","id":id})).await;
+        assert!(until(&mut b,"notice").await["message"].as_str().unwrap().contains("Keep refused"));
+        send(&mut a, serde_json::json!({"type":"keep_answer","id":id,"answer":"forged replacement","model":"forged"})).await;
+        assert!(until(&mut a,"notice").await["message"].as_str().unwrap().contains("Keep refused"));
+        assert!(core.snapshot().kept_answers.is_empty());
+        send(&mut a, serde_json::json!({"type":"keep_answer","id":id})).await;
+        let kept = until(&mut b,"change").await;
+        assert_eq!(kept["change"]["answer"]["source"]["thought_id"], "th-1");
+        let answer = core.snapshot().kept_answers[0].clone();
+        assert_eq!(answer.answer, "The exact historical answer.");
+        assert_eq!(answer.model, "fixture-actual-model");
+        assert_eq!(answer.owner, "Keeper");
+        // Stale removal and another owner cannot alter the record.
+        send(&mut b, serde_json::json!({"type":"kept_answer_visibility","id":id,"revision":1,"removed":true})).await;
+        until(&mut b,"notice").await;
+        send(&mut a, serde_json::json!({"type":"kept_answer_visibility","id":id,"revision":0,"removed":true})).await;
+        until(&mut a,"notice").await;
+        assert!(!core.snapshot().kept_answers[0].removed);
+        send(&mut a, serde_json::json!({"type":"kept_answer_visibility","id":id,"revision":1,"removed":true})).await;
+        until(&mut b,"change").await;
+        assert!(core.snapshot().kept_answers[0].removed);
+        send(&mut a, serde_json::json!({"type":"kept_answer_visibility","id":id,"revision":2,"removed":false})).await;
+        until(&mut b,"change").await;
+        assert_eq!(core.snapshot().kept_answers[0].revision,3);
+        // Disabling retains data; it also rejects any subsequent Keep from the old receipt.
+        send(&mut a, serde_json::json!({"type":"saved_answers","on":false})).await;
+        send(&mut a, serde_json::json!({"type":"keep_answer","id":id})).await;
+        until(&mut a,"notice").await;
+        a.close(None).await.unwrap(); b.close(None).await.unwrap(); task.abort();
+        let (journal, world) = Journal::open(&path).unwrap();
+        assert_eq!(world.kept_answers[0].answer,answer.answer);
+        let restarted = Arc::new(Core::test(journal,world));
+        let (address, task) = start(restarted.clone()).await;
+        let (mut late,_) = connect_async(format!("ws://{address}/ws?name=LateReader")).await.unwrap();
+        let replay = until(&mut late,"snapshot").await;
+        assert_eq!(replay["world"]["kept_answers"][0]["source"]["thought_id"],"th-1");
+        assert!(super::source_current(&restarted.snapshot(),&answer.source));
+        restarted.commit(vec![Change::ThoughtRepointed { thought_id:"th-1".into(), point:"Changed synthetic point".into() }]);
+        assert!(!super::source_current(&restarted.snapshot(),&answer.source));
+        restarted.commit(vec![Change::ThoughtSkipped { thought_id:"th-1".into() }]);
+        assert!(restarted.snapshot().thoughts.iter().any(|t|t.id=="th-0"));
+        assert!(!super::source_current(&restarted.snapshot(),&answer.source));
+        assert_eq!(restarted.snapshot().kept_answers[0].source.excerpt,"synthetic phrase");
+        // With no provider key in either isolated core, reopen/replay cannot invoke a provider.
+        assert!(restarted.key.is_none());
+        late.close(None).await.unwrap(); task.abort();
+    }
+
+    #[test]
+    fn asks_kept_answers_bounds_stale_and_late_receipts() {
+        use crate::{Core, Journal};
+        use std::sync::{Arc,Mutex};
+        let path = std::env::temp_dir().join(format!("asks-kept-bounds-{}.jsonl",uuid::Uuid::new_v4()));
+        let (journal,_) = Journal::open(&path).unwrap();
+        let world = map(&[("T1","Synthetic",None)], &[("T1","Synthetic source","synthetic phrase")]);
+        let core = Core::test(journal,world);
+        let session = Arc::new(Mutex::new(super::SavedSession::default()));
+        session.lock().unwrap().switch(true);
+        let make = |id:&str| crate::world::KeptAnswer { id:id.into(),source:source(&core.snapshot(),"th-0"),phrase:"synthetic phrase".into(),answer:String::new(),model:String::new(),owner:"Keeper".into(),at_ms:0,revision:1,removed:false };
+        let answer = make("late");
+        session.lock().unwrap().pending.insert(answer.id.clone());
+        let generation=session.lock().unwrap().generation;
+        session.lock().unwrap().switch(false); session.lock().unwrap().switch(true);
+        super::served((session.clone(),generation,answer),"late answer","fixture-model",1);
+        assert!(session.lock().unwrap().served.is_empty());
+        for i in 0..31 {
+            let answer=make(&format!("answer-{i}"));
+            session.lock().unwrap().served=vec![crate::world::KeptAnswer{answer:"Exact answer".into(),..answer.clone()}];
+            super::keep(&core,"Keeper",&session,&answer.id);
+        }
+        assert_eq!(core.snapshot().kept_answers.len(),30);
+        // Removing allows another Keep; its recent tombstone remains available for Undo until capacity replaces it.
+        super::visibility(&core,"Keeper",&session,"answer-0",1,true);
+        let mut answer=make("large"); answer.answer="é".repeat(1025);
+        session.lock().unwrap().served=vec![answer]; super::keep(&core,"Keeper",&session,"large");
+        assert!(!core.snapshot().kept_answers.iter().any(|a|a.id=="large"));
+        let answer=crate::world::KeptAnswer{answer:"stale".into(),..make("stale")};
+        session.lock().unwrap().served=vec![answer];
+        core.commit(vec![Change::ThoughtRepointed{thought_id:"th-0".into(),point:"changed".into()}]);
+        super::keep(&core,"Keeper",&session,"stale");
+        assert!(!core.snapshot().kept_answers.iter().any(|a|a.id=="stale"));
+        // Legacy Explain requests omit source, and legacy worlds omit kept_answers.
+        assert!(serde_json::from_str::<crate::protocol::ClientMsg>(r#"{"type":"explain","id":"old","text":"word","context":"words"}"#).is_ok());
+        let mut value=serde_json::to_value(World::default()).unwrap(); value.as_object_mut().unwrap().remove("kept_answers");
+        assert!(serde_json::from_value::<World>(value).unwrap().kept_answers.is_empty());
     }
 
     fn map(threads: &[(&str, &str, Option<&str>)], thoughts: &[(&str, &str, &str)]) -> World {

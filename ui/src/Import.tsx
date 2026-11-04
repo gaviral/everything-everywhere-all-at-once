@@ -1,3 +1,4 @@
+import { usePluginState } from "./bricks/contract";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ImportStatus } from "./core";
@@ -58,12 +59,12 @@ function progress(status: ImportStatus) {
 
 /** "Import chats" in the header, and the panel it opens: choose a file (or the sample), see what will be sent where, then follow the import. */
 export function ImportChats({ core }: { core: ImportCore }) {
-  const [open, setOpen] = useState(false);
-  const [step, setStep] = useState<"choose" | "reading" | "preview" | "error">("choose");
-  const [fileName, setFileName] = useState("");
-  const [preview, setPreview] = useState<Preview | null>(null);
-  const [error, setError] = useState("");
-  const [started, setStarted] = useState("");
+  const [open, setOpen] = usePluginState("import:open", false);
+  const [step, setStep] = usePluginState<"choose" | "reading" | "preview" | "error">("import:step", "choose");
+  const [fileName, setFileName] = usePluginState("import:fileName", "");
+  const [preview, setPreview] = usePluginState<Preview | null>("import:preview", null);
+  const [error, setError] = usePluginState("import:error", "");
+  const [started, setStarted] = usePluginState("import:started", "");
   const [dragging, setDragging] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
   const previousFocus = useRef<HTMLElement | null>(null);

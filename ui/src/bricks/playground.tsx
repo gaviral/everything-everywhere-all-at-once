@@ -1,3 +1,4 @@
+import { DiscussionProvider } from "../discussion-ui";
 import { FullContentProvider } from "../FullContent";
 import { switchBuiltIn, useBuiltInsOn } from "../shell/features";
 import { useTextEditReview } from "../TextEditReview";
@@ -32,6 +33,7 @@ import "./playground.css";
 // The AI helper joins under the name Friend, as it does in saved maps and on the wire.
 const HELPER = "Friend"; // names-ok: the wire name
 
+// BrickMount supplies the same lifetime and optional host-owned state contract here as in the app.
 // Every feature, the template too, and every sample map's journal.
 const found = discover(
   import.meta.glob("./*/brick.json", { eager: true, import: "default" }),
@@ -208,6 +210,10 @@ function Playground() {
   const rooms = useMemo(() => roomColors(world.threads), [world.threads]);
   const recipeCopies = useRef(new Map<string, { fingerprint: string; id: string }>());
   const host = useBrickHost(world, revision, "you", connected, rooms, partial, {
+    imageEvidence:async request=>({request_id:request.request_id,ok:false,message:"Playground preview only. Extract and Keep require a local connected map.",data:null}),
+    saveChoice: async request => ({request_id:request.request_id,ok:false,message:"Playground preview only. Use a connected map to save choices."}),
+    research: async request => ({ request_id: request.request_id, ok: false, message: "Simulated research playground: no live provider. Use the isolated research check for cited fixtures.", answer: null }),
+    cancelResearch: () => {},
     setActionEstimate: async request => {
       const w = estimateWorld.current;
       const current = w.action_estimates?.find(e => e.owner === "you" && e.action_id === request.action_id);
@@ -357,10 +363,18 @@ function Playground() {
     }
   };
 
-  return <TextEditReviewContext.Provider value={review.context}>{review.panel}<div className="playground" data-errors={errors} data-brick-shown={brick ? id : ""} data-brick-ready={brickReady === id ? id : ""}>
+  return <DiscussionProvider world={world} enabled={builtIns.has("discussion-status")} set={async (thread, status, revision) => {
+    const current = estimateWorld.current.discussions?.find(s => s.thread_id === thread);
+    const request_id = crypto.randomUUID();
+    if (!builtIns.has("discussion-status") || !connected || (current?.revision ?? 0) !== revision) return { request_id, ok: false, message: "Simulated discussion unavailable or changed.", discussion: current ?? null };
+    const discussion = { thread_id: thread, status, revision: revision + 1, observed_revision: revision, request_id, actor: "you", at_ms: Date.now(), reply_count: world.thoughts.filter(t => t.thread_id === thread).length };
+    setWorld(w => apply(w, { type: "discussion_status", discussion }));
+    return { request_id, ok: true, message: "Simulated discussion saved in playground memory.", discussion };
+  }}><TextEditReviewContext.Provider value={review.context}>{review.panel}<div className="playground" data-errors={errors} data-brick-shown={brick ? id : ""} data-brick-ready={brickReady === id ? id : ""}>
     <div className="playground-bar" role="toolbar" aria-label="Playground">
       <strong>Features playground</strong>
       <button type="button" role="switch" aria-checked={compareOn} onClick={() => switchBuiltIn("compare-phone-reading", !compareOn)}>Compare phone reading</button>
+      <button type="button" role="switch" aria-label="Discussion status" aria-checked={builtIns.has("discussion-status")} onClick={() => switchBuiltIn("discussion-status", !builtIns.has("discussion-status"))}>Discussion status</button>
       <button type="button" role="switch" aria-label="Review text edits" aria-checked={reviewEnabled} onClick={() => switchBuiltIn("review-text-edits", !reviewEnabled)}>Review text edits</button>
       <label>Feature <select value={id} onChange={(event) => { setBrickReady(""); setId(event.target.value); }}>
         {!brick && <option value={id}>{id || "none"}</option>}
@@ -414,7 +428,7 @@ function Playground() {
       {heard.length ? <ol className="playground-heard">{heard.map((event) => <li key={event.n} data-event={event.name}>{event.name}: {event.value}</li>)}</ol> : <p>Nothing yet. Its events show here.</p>}
     </aside>
     {notice && <div className="playground-notice" role="status">{notice}</div>}
-  </div></TextEditReviewContext.Provider>;
+  </div></TextEditReviewContext.Provider></DiscussionProvider>;
 }
 
 /** Optional synthetic slot fixture: no mic, network, accounts or extra app mutation owners. */

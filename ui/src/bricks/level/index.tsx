@@ -1,7 +1,8 @@
+import { usePluginState } from "../contract";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { BrickProps } from "../contract";
 import { READING_MS, SECOND, splitTalk, calibrationSession, exportCalibration, type CalibrationReceipt, type MicMetadata, type VoiceLabel, type Stretch } from "./stretches";
-import "./level.css";
+import pluginStyle0 from "./level.css?inline";
 
 // `?level` in the address (brick.json's flag), or its switch in the Catalog: every loudness reading the core receives,
 // big, with explicit local calibration capture. No mic is opened here. Its code loads only once it is on.
@@ -19,9 +20,9 @@ const shown = (level: number) => level.toFixed(3);
 
 export default function LevelMeter({ map, on }: BrickProps) {
   const apps = map.apps;
-  const [readings, setReadings] = useState<{ n: number; level: number }[]>([]);
+  const [readings, setReadings] = usePluginState<{ n: number; level: number }[]>("readings", []);
   const [current, setCurrent] = useState<Stretch | null>(null);
-  const [stretches, setStretches] = useState<Stretch[]>([]);
+  const [stretches, setStretches] = usePluginState<Stretch[]>('level/index.tsx:stretches', []);
   const [live, setLive] = useState(false);
   const session = useRef<ReturnType<typeof calibrationSession> | null>(null);
   const [metadata, setMetadata] = useState<MicMetadata>({ build: "", microphone: "", browser: "", distanceCm: 30,
@@ -37,7 +38,7 @@ export default function LevelMeter({ map, on }: BrickProps) {
   const cancelSample = () => { session.current?.cancelRun(); setActive(null); };
   const reset = () => { session.current?.reset(); session.current = null; setCollecting(false); setActive(null); setRuns([]); setReceipt(null); setMessage(""); };
   useEffect(() => {
-    let n = 0;
+    let n = Math.max(0, ...readings.map(reading => reading.n));
     let stale: number | undefined;
     const split = splitTalk((stretch) => setStretches((kept) => [stretch, ...kept].slice(0, KEPT)));
     const stop = on("loudness", (level) => {
@@ -134,3 +135,6 @@ export default function LevelMeter({ map, on }: BrickProps) {
     </details>
   </aside>;
 }
+
+/** Host attaches these styles only for this mount. */
+export const styles = pluginStyle0;

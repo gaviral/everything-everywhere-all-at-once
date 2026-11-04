@@ -1,3 +1,4 @@
+import { usePluginState } from "./bricks/contract";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { Action, World } from "./core";
 import { ideaCounts } from "./chunks";
@@ -98,7 +99,7 @@ export function Recap({ onSetup, view, world, connected, noKey, resting = false,
   const dialog = useRef<HTMLDialogElement>(null);
   const { calendarFile } = useSite();
   // Recaps marked off in this window, by period and when each was made.
-  const [off, setOff] = useState<ReadonlySet<string>>(new Set());
+  const [off, setOff] = usePluginState<ReadonlySet<string>>("recap-off", new Set());
   // The wait named: the model the core is asking for this recap, from its own call (model-line.ts); a draft being made
   // when asked is waited for and answers it (recap.rs).
   const reading = runningModel(useSteps().state, "recap", "recap draft");

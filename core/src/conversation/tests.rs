@@ -349,10 +349,10 @@ async fn off_is_inert_then_question_reply_follow_up_and_identity() {
         .contains("What should I try?"));
     let journal = std::fs::read_to_string(&f.path).unwrap();
     assert!(journal.contains("Try one small step"), "reply words remain on the spine");
-    assert!(journal.lines().all(|line| {
-        let change: Value = serde_json::from_str(line).unwrap();
-        change["type"] != "guide" && change.get("speak").is_none() && change.get("reply_id").is_none()
-    }), "playback events stay transient and cannot replay from the journal");
+    assert!(journal.split_inclusive('\n')
+        .flat_map(|line| crate::world::journal_record(line.as_bytes(), line.ends_with('\n')).unwrap())
+        .all(|(_, change)| change["type"] != "guide" && change.get("speak").is_none() && change.get("reply_id").is_none()),
+        "playback events stay transient and cannot replay from the journal");
 }
 
 #[tokio::test]

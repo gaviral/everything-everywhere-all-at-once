@@ -1,9 +1,9 @@
 // Where bricks show in the app (docs/bricks.md): each kind in its place, each brick's code loaded only once it's on,
 // and each behind a boundary of its own, so a brick that breaks says so in one line, with its switch, while the rest
 // of the page carries on. The playground (bricks/playground.tsx) mounts a brick the same way, against a sample map.
-import { Component, lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type LazyExoticComponent, type ReactNode } from "react";
+import { Component, lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ActedBy, BrickActions, BrickEvents, BrickInfo, BrickKind, BrickOn, BrickProps, MapSnapshot } from "./bricks/contract";
-import { BRICKS, brickEvents, captureSourcesOf, landingWatcher, senders, snapshotOf, isOn, switchBrick, useBricksOn, type Brick } from "./bricks-core";
+import { useBrickRegistry, brickEvents, captureSourcesOf, landingWatcher, senders, snapshotOf, isOn, switchBrick, useBricksOn, type Brick } from "./bricks-core";
 import { onReading } from "./apps-audio";
 import type { Capture, Thought, UsageSnapshot, World } from "./core";
 import { hearFrom, watchPoint } from "./guide-core";
@@ -13,6 +13,9 @@ import { watchSpeaking } from "./talk/call-core";
 import { useReadPosition } from "./talk/read";
 import { useJobs } from "./work-jobs";
 import { builtInOn, useBuiltInsOn } from "./shell/features";
+import { PluginStateContext } from "./bricks/contract";
+import { savedState } from "./plugin-store";
+import { attachStyle, keepStyles, report } from "./plugins-core";
 import "./bricks.css";
 
 /** What every brick on the page is handed (contract.ts `BrickProps`, but its own brick.json): the map, `on`, and its
@@ -36,7 +39,7 @@ const MODEL_WAIT_MS = 1000;
  *  and who added it), your words as they change, the mic's loudness as the core is sent it (apps-audio.ts), what the
  *  guide points at and who has the floor in a call. `emit` is for the window's own events (App.tsx's notices and asks; it says how many heard one); a
  *  brick is handed only map, actions and on (BrickMount). */
-export function useBrickHost(world: World, revision: number, me: string, connected: boolean, rooms: ReadonlyMap<string, string>, partial: string, act: HostActions, destination?: BrickProps["destination"], usage: UsageSnapshot | null = null, placingUnavailable = false, captureContext?: { mapKey: string | null; captures: readonly Capture[] }): BrickHost & Pick<ReturnType<typeof brickEvents>, "emit"> {
+export function useBrickHost(world: World, revision: number, me: string, connected: boolean, rooms: ReadonlyMap<string, string>, partial: string, act: HostActions, destination?: BrickProps["destination"], usage: UsageSnapshot | null = null, placingUnavailable = false, captureContext?: { mapKey: string | null; confirmedMapKey?: string | null; captures: readonly Capture[] }): BrickHost & Pick<ReturnType<typeof brickEvents>, "emit"> {
   const jobs = useJobs();
   const builtIns = useBuiltInsOn();
   const conversationSpine = builtIns.has("conversation-spine");
@@ -48,7 +51,7 @@ export function useBrickHost(world: World, revision: number, me: string, connect
   const snapshot = useMemo(() => snapshotOf(world, me, connected, rooms, partial, jobs, usage, reviewTextEdits), [world, me, connected, rooms, partial, jobs, usage, reviewTextEdits]);
   const captureSources = useMemo(() => captureSourcesOf(captureContext?.captures ?? []), [captureContext?.captures]);
   const reading = useReadPosition(snapshot);
-  const map = useMemo(() => ({ ...snapshot, captureSources, visitKey: JSON.stringify([captureContext?.mapKey ?? revision, me]), readThrough: reading.mark, conversationSpine, comparePhoneReading, terse, partnerOn, rotateCanvas, placingUnavailable, pauses: world.pauses ?? [] }), [snapshot, captureSources, captureContext?.mapKey, revision, me, reading.mark, conversationSpine, comparePhoneReading, terse, partnerOn, rotateCanvas, placingUnavailable, world.pauses]);
+  const map = useMemo(() => ({ ...snapshot, mapIdentity: captureContext?.confirmedMapKey ?? null, captureSources, visitKey: JSON.stringify([captureContext?.mapKey ?? revision, me]), readThrough: reading.mark, conversationSpine, comparePhoneReading, terse, partnerOn, rotateCanvas, placingUnavailable, pauses: world.pauses ?? [] }), [snapshot, captureSources, captureContext?.confirmedMapKey, captureContext?.mapKey, revision, me, reading.mark, conversationSpine, comparePhoneReading, terse, partnerOn, rotateCanvas, placingUnavailable, world.pauses]);
   const read = useRef(reading.read);
   read.current = reading.read;
   const latest = useRef(act);
@@ -59,11 +62,17 @@ export function useBrickHost(world: World, revision: number, me: string, connect
   const actionsFor = useMemo(() => (info: BrickInfo): BrickActions => {
     let actions = made.current.get(info.id);
     if (!actions) made.current.set(info.id, actions = {
+      imageEvidence:request=>info.id==="image-evidence"?latest.current.imageEvidence?.(request)??Promise.resolve({request_id:request.request_id,ok:false,message:"Image evidence unavailable.",data:null}):Promise.resolve({request_id:request.request_id,ok:false,message:"Image evidence unavailable.",data:null}),
+      saveChoice: request => info.id === "choice-map" ? latest.current.saveChoice?.(request) ?? Promise.resolve({request_id:request.request_id,ok:false,message:"Choice map unavailable."}) : Promise.resolve({request_id:request.request_id,ok:false,message:"Choice map unavailable."}),
+      research: (request) => info.id === "question-research" && isOn(info.id) ? latest.current.research(request) : Promise.resolve({ request_id: request.request_id, ok: false, message: "Research this question is off.", answer: null }),
+      cancelResearch: () => { if (info.id === "question-research") latest.current.cancelResearch(); },
       setActionEstimate: (request) => latest.current.setActionEstimate?.(request) ?? Promise.resolve({ request_id: request.request_id, ok: false, message: "Action estimates is unavailable.", estimate: null }),
       exportRecipe: (app) => {
         if (info.id !== "app-recipes" || !(isOn(info.id) || latest.current.recipesEnabled?.())) throw Error("App recipes is off.");
         return latest.current.exportRecipe(app);
       },
+      appConnection: request => info.id === "app-connections" && isOn(info.id) && latest.current.appConnection
+        ? latest.current.appConnection(request) : Promise.resolve({ request_id: "", plans: [], play: false, message: "App connections is off." }),
       saveRecipe: (save) => info.id === "app-recipes" && (isOn(info.id) || latest.current.recipesEnabled?.()) ? latest.current.saveRecipe(save)
         : Promise.resolve({ request_id: save.request_id, app_id: null, message: "App recipes is off." }),
       saveTextFile: (name, text, mime) => {
@@ -160,20 +169,45 @@ export function useBrickHost(world: World, revision: number, me: string, connect
   return useMemo(() => ({ map, on, actionsFor, emit: events.emit, destination }), [map, on, actionsFor, events, destination]);
 }
 
-const components = new Map<string, LazyExoticComponent<ComponentType<BrickProps>>>();
-function componentOf(brick: Brick) {
-  let component = components.get(brick.info.id);
-  if (!component) components.set(brick.info.id, component = lazy(brick.load));
-  return component;
-}
-
 /** One brick in its kind's place: a view in the map's (padded clear of the dock, as the Palace is), a card in the
  *  dock (its height counted with the dock's cards, so a thought just shown moves clear of it), a panel or an input
  *  wherever it places itself. Only a new map, a switch or a new action re-renders it, not the page's clock. */
 export const BrickMount = memo(function BrickMount({ brick, host, onReady }: { brick: Brick; host: BrickHost; onReady?(id: string): void }) {
-  const Shown = componentOf(brick);
+  const detachStyles = useRef<(() => void) | null>(null);
+  const Shown = useMemo(() => lazy(async () => {
+    const module = await brick.load();
+    if (!owned.signal.aborted && module.styles) { keepStyles(brick.info.id, module.styles); detachStyles.current?.(); detachStyles.current = attachStyle(brick.info.id); }
+    return module;
+  }), [brick]);
+  const pluginsOn = useBuiltInsOn().has("plugins");
+  const scope = `${location.host}:${host.map.visitKey ?? "local"}:${brick.info.id}`;
+  const rawState = useMemo(() => pluginsOn ? savedState(scope) : null, [scope, pluginsOn]);
+  const owned = useMemo(() => {
+    let controller = new AbortController();
+    const cleanups = new Set<() => void>();
+    const cleanup = (fn: () => void) => {
+      let active = true;
+      const release = () => { if (!active) return; active = false; cleanups.delete(release); fn(); };
+      if (controller.signal.aborted) release(); else cleanups.add(release);
+      return release;
+    };
+    return { get signal() { return controller.signal; }, cleanup, start() { if (controller.signal.aborted) controller = new AbortController(); }, stop() { controller.abort(); for (const fn of cleanups) { try { fn(); } catch { /* release remaining resources */ } } cleanups.clear(); } };
+  }, [brick]);
+  const state = useMemo(() => rawState ? { scope: rawState.scope, get: rawState.get, subscribe: rawState.subscribe, set<T>(key: string, value: T) { if (!owned.signal.aborted) rawState.set(key, value); } } : null, [rawState, owned]);
+  const actions = useMemo(() => Object.fromEntries(Object.entries(host.actionsFor(brick.info)).map(([key, fn]) => [key, (...args: unknown[]) => !owned.signal.aborted && (fn as (...args: unknown[]) => unknown)(...args)])) as unknown as BrickActions, [host.actionsFor, brick, owned]);
+  const on = useMemo<BrickOn>(() => (name, listener, consumer) => {
+    if (owned.signal.aborted) return () => {};
+    const signal = owned.signal;
+    return owned.cleanup(host.on(name, ((value: never) => { if (!signal.aborted) (listener as (value: never) => void)(value); }) as typeof listener, consumer));
+  }, [host.on, owned]);
+  useLayoutEffect(() => {
+    owned.start();
+    report(brick.info.id, "Loading");
+    detachStyles.current = attachStyle(brick.info.id);
+    return () => { report(brick.info.id, "Unloading"); owned.stop(); detachStyles.current?.(); report(brick.info.id, "Unloaded"); };
+  }, [brick, owned]);
   const { info } = brick;
-  const inner = <BrickBoundary info={info}><Suspense fallback={null}><Shown map={host.map} actions={host.actionsFor(info)} on={host.on} brick={info} destination={host.destination} />{onReady && <BrickCommitted id={info.id} onReady={onReady} />}</Suspense></BrickBoundary>;
+  const inner = <PluginStateContext.Provider value={state}><BrickBoundary info={info} failure={() => { owned.stop(); detachStyles.current?.(); }}><Suspense fallback={null}><Loaded id={info.id}><Shown map={host.map} actions={actions} on={on} brick={info} state={state ?? undefined} lifetime={owned} destination={host.destination} /></Loaded>{onReady && <BrickCommitted id={info.id} onReady={onReady} />}</Suspense></BrickBoundary></PluginStateContext.Provider>;
   if (info.kind === "view") return <main className="brick-view" aria-label={info.name} data-brick={info.id}>{inner}</main>;
   if (info.kind === "card") return <div className="brick-card" data-brick={info.id} data-dock-card>{inner}</div>;
   return <div className="brick-float" data-brick={info.id}>{inner}</div>;
@@ -186,14 +220,20 @@ function BrickCommitted({ id, onReady }: { id: string; onReady(id: string): void
   return null;
 }
 
+function Loaded({ id, children }: { id: string; children: ReactNode }) {
+  useEffect(() => { report(id, "Loaded"); }, [id]);
+  return children;
+}
+
 /** Every brick of `kind` that's on, in the Catalog's order. With none on, nothing at all. */
 export const BrickSlot = memo(function BrickSlot({ kind, host }: { kind: BrickKind; host: BrickHost }) {
+  const BRICKS = useBrickRegistry();
   const on = useBricksOn();
   return <>{BRICKS.filter((brick) => brick.info.kind === kind && on.has(brick.info.id)).map((brick) => <BrickMount key={brick.info.id} brick={brick} host={host} />)}</>;
 });
 
 /** A brick that throws shows one quiet line with a way to switch it off, not the page's "Something broke" (Crash.tsx). */
-class BrickBoundary extends Component<{ info: BrickInfo; children: ReactNode }, { broken: boolean }> {
+class BrickBoundary extends Component<{ info: BrickInfo; failure: () => void; children: ReactNode }, { broken: boolean }> {
   state = { broken: false };
 
   static getDerivedStateFromError() {
@@ -201,6 +241,8 @@ class BrickBoundary extends Component<{ info: BrickInfo; children: ReactNode }, 
   }
 
   componentDidCatch(error: unknown) {
+    this.props.failure();
+    report(this.props.info.id, "Failed", String(error));
     console.warn(`The ${this.props.info.name} feature stopped:`, error);
   }
 

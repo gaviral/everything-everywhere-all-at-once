@@ -115,6 +115,7 @@ export interface Quote {
 /** What's tucked under a point's words on a narrow screen: a margin note's entries, or a short tangent (its title and
  *  latest point), so a phone needn't pan sideways for either. */
 export interface Tuck {
+  controls?: boolean;
   anchorWarning?: string;
   sourceRevision?: string;
   margin: string;
@@ -276,6 +277,7 @@ export interface Layout {
 
 /** A margin note as the layout takes it (index.tsx gathers them from the map). */
 export interface MarginInput {
+  controls?: boolean;
   context?: AnchorContext | null;
   anchorWarning?: string;
   id: string;
@@ -421,7 +423,7 @@ interface Shape {
 
 /** What's under a point's words, in px: the marks row, the landing note, tucked notes. */
 const tuckHeight = (tucks: Tuck[]) =>
-  tucks.reduce((h, tuck) => h + G.tuckTop + (tuck.anchorWarning ? 72 : 0) + (tuck.title ? G.recapLine : 0) + tuck.entries.reduce((sum, e) => sum + Math.max(1, e.lines.length) * G.marginLine, 0)
+  tucks.reduce((h, tuck) => h + (tuck.controls ? 160 : 0) + G.tuckTop + (tuck.anchorWarning ? 72 : 0) + (tuck.title ? G.recapLine : 0) + tuck.entries.reduce((sum, e) => sum + Math.max(1, e.lines.length) * G.marginLine, 0)
     + 4 * Math.max(0, tuck.entries.length - 1), 0);
 
 const globalSpineLook = SPINE_LOOK, globalMiniLook = MINI_LOOK;
@@ -574,7 +576,7 @@ export function layout(input: LayoutInput): Layout {
       if (folded && start >= 0) continue;
       if (narrow || look.variant === "mini") {
         const w = look.textW - G.tuckIn - 26;
-        tucks.push({ margin: m.id, anchorWarning: m.anchorWarning, sourceRevision: m.context?.source_text, entries: shownEntries(m, staying).map((e) => ({ ...entryOf(e.by, e.text, w, staying), thoughtId: e.thoughtId })) });
+        tucks.push({ controls: m.controls, margin: m.id, anchorWarning: m.anchorWarning, sourceRevision: m.context?.source_text, entries: shownEntries(m, staying).map((e) => ({ ...entryOf(e.by, e.text, w, staying), thoughtId: e.thoughtId })) });
       } else {
         beside.push(m);
         ends.set(m.id, start >= 0 ? wrapEnd(measured, look.font, look.textW, look.max) : { line: 0, x: -1 });
@@ -722,7 +724,7 @@ export function layout(input: LayoutInput): Layout {
       keys.push(item.key);
       // A pinned conversation is rows: leave the full comment's height before the next thought.
       const besideHeight = t.id === input.staying ? shape.beside.reduce((height, m) => height + marginHeight(shownEntries(m, true)
-        .map((e) => entryOf(e.by, e.text, G.marginText, true))) + (m.anchorWarning ? 72 : 0) + G.stack, 0) : 0;
+        .map((e) => entryOf(e.by, e.text, G.marginText, true))) + (m.controls ? 160 : 0) + (m.anchorWarning ? 72 : 0) + G.stack, 0) : 0;
       y = box.y + Math.max(box.h, besideHeight) + gap;
     }
     const slots: string[] = [];
@@ -760,7 +762,7 @@ export function layout(input: LayoutInput): Layout {
         const staying = t.id === input.staying;
         const entries = shownEntries(m, staying).map((e) => ({ ...entryOf(e.by, e.text, G.marginText, staying), thoughtId: e.thoughtId }));
         const more = m.entries.length - entries.length;
-        const h = marginHeight(entries, more) + (m.anchorWarning ? 72 : 0);
+        const h = (m.controls ? 160 : 0) + marginHeight(entries, more) + (m.anchorWarning ? 72 : 0);
         const column = columnKey(owner, 1, 1);
         const want = Math.max(point.box.y + (staying ? 0 : from.dy - 10), (s.columns.get(column) ?? -Infinity) + G.stack);
         const box = clear(s, { x: owner.x1 + G.gutter, y: want, w: G.marginW, h });

@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::fs::{File, OpenOptions};
-use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
+use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 
 fn yes() -> bool {
@@ -131,6 +131,39 @@ pub struct Action {
     pub when: String,
     pub status: ItemStatus,
     pub done_ms: Option<u64>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct EvidencePoint { pub index: usize, pub text: String, pub region: Option<[f64;4]> }
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct EvidenceKept {
+    pub request_id: String, pub extraction_id: String, pub image_id: String, pub actor: String,
+    pub target: String, pub title: String, pub width: u32, pub height: u32, pub model: String,
+    pub points: Vec<EvidencePoint>, pub thought_ids: Vec<String>, pub removed: bool,
+}
+
+/// A manual classification; captured words are historical evidence, never editable speech.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct ChoiceRelation {
+    pub id: String, pub source_id: String, pub role: String, pub option_id: Option<String>,
+    pub actor: String, pub excerpt: String, pub speaker: String, pub revision: u64,
+    pub removed_by: Option<String>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct ChoiceVote { pub actor: String, pub option_id: String, pub revision: u64 }
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct ChoiceMap {
+    pub id: String, pub revision: u64, pub relations: Vec<ChoiceRelation>, pub votes: Vec<ChoiceVote>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct ChoiceRequest {
+    pub request_id: String, pub choice_id: String, pub revision: u64, pub operation: String,
+    #[serde(default)] pub relation_id: String,
+    #[serde(default)] pub source_id: String,
+    #[serde(default)] pub observed: String,
+    #[serde(default)] pub role: String,
+    #[serde(default)] pub option_id: Option<String>,
+    #[serde(default)] pub undo_of: Option<String>,
 }
 
 /// Manual effort metadata. A clear keeps a tombstone so stale requests cannot recreate it.
@@ -291,8 +324,50 @@ pub struct VoiceAlias {
     #[serde(default)] pub unavailable: bool,
 }
 
+/// Deliberately retained Explain output. Source identity never follows text matches or merges.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AnswerSource {
+    pub thought_id: String,
+    pub field: String,
+    pub excerpt: String,
+    pub revision: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct KeptAnswer {
+    pub id: String,
+    pub source: AnswerSource,
+    pub phrase: String,
+    pub answer: String,
+    pub model: String,
+    pub owner: String,
+    pub at_ms: u64,
+    pub revision: u64,
+    #[serde(default)]
+    pub removed: bool,
+}
+
+/// Prototype bound: 40 identities per source, each already bounded by the room's name normalizer.
+pub const AGREEMENT_SPEAKERS_MAX: usize = 40;
+
+/// Explicit consent to one exact source revision; authorship and decision marks are separate.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct Agreement {
+    #[serde(default)] pub revision: String,
+    #[serde(default)] pub agreed_by: Vec<String>,
+    /// Durable duplicate suppression, bounded per source revision. Never evict an old request into eligibility.
+    #[serde(default)] pub requests: Vec<String>,
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct World {
+    #[serde(default)] pub evidence_kept: Vec<EvidenceKept>,
+    #[serde(default)] pub choice_maps: Vec<ChoiceMap>,
+    #[serde(default, skip_serializing)] pub choice_receipts: std::collections::HashMap<(String, String), (ChoiceRequest, ChoiceMap)>,
+    #[serde(default)] pub research: Vec<crate::research::ResearchKept>,
+    #[serde(default, skip_serializing)] pub research_receipts: std::collections::HashMap<(String, String), (crate::research::Command, crate::research::ResearchKept)>,
+    #[serde(default)] pub discussions: Vec<crate::discussion::DiscussionStatus>,
+    #[serde(default, skip_serializing)] pub discussion_receipts: std::collections::HashMap<(String, String), crate::discussion::DiscussionStatus>,
     #[serde(default)] pub action_estimates: Vec<ActionEstimate>,
     #[serde(default, skip_serializing)] pub estimate_receipts: std::collections::HashMap<(String, String), ActionEstimate>,
     #[serde(default)] pub questions: Vec<Question>,
@@ -301,6 +376,10 @@ pub struct World {
     pub point_edits: Vec<PointEdit>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")] pub aliases: Vec<VoiceAlias>,
     #[serde(default, skip_serializing)] pub alias_receipts: std::collections::HashMap<(String, String), String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub kept_answers: Vec<KeptAnswer>,
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub agreements: std::collections::HashMap<String, Agreement>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")] pub pauses: Vec<Pause>,
     #[serde(default, skip_serializing)] pub returning: std::collections::HashMap<String, (String, usize)>,
     #[serde(default, skip_serializing)]
@@ -408,10 +487,16 @@ pub struct World {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Change {
+    EvidenceKept { evidence: EvidenceKept },
+    ChoiceMapSaved { choice: ChoiceMap, actor: String, request: ChoiceRequest },
+    ResearchKept { research: crate::research::ResearchKept, request: crate::research::Command },
+    DiscussionStatus { discussion: crate::discussion::DiscussionStatus },
     ActionEstimateSet { estimate: ActionEstimate },
     QuestionSaved { question: Question },
     PointEdited { request_id: String, thought_id: String, old_point: String, new_point: String, actor: String, #[serde(default, skip_serializing_if = "Option::is_none")] undo_of: Option<String> },
     AliasChanged { alias: VoiceAlias, request_id: String, signature: String },
+    AgreementSource { thought_id: String, #[serde(default)] revision: String },
+    ThoughtAgreement { thought_id: String, #[serde(default)] revision: String, speaker: String, agree: bool, #[serde(default)] request_id: String },
     CaptionAdded { caption: Caption },
     Paused { pause: Pause },
     PauseResolved { id: String, by_thought: String },
@@ -556,6 +641,8 @@ pub enum Change {
     TopicRenamed { from: String, to: String },
     /// An Explain answer as the person saw it, kept so explanations can be judged and improved later. Journal only:
     /// the map doesn't change, and other windows aren't sent it.
+    AnswerKept { answer: KeptAnswer },
+    KeptAnswerVisibility { id: String, revision: u64, removed: bool },
     ExplainAnswered {
         id: String,
         phrase: String,
@@ -678,10 +765,67 @@ impl World {
         id
     }
 
+    /// Stamp source replacements in the same journal batch, including deletion/recreation and ABA edits.
+    /// Presentation-only flags (decided, read, position, thread and AI marks) never change consent.
+    pub fn with_agreement_sources(&self, changes: Vec<Change>) -> Vec<Change> {
+        if !changes.iter().any(|c| matches!(c, Change::ThoughtAdded {..} | Change::ThoughtPlaced {..}
+            | Change::ThoughtCorrected {..} | Change::ThoughtRepointed {..} | Change::ThoughtSplit {..} | Change::ThoughtSkipped {..})) { return changes; }
+        let mut preview = self.clone();
+        let mut result = Vec::new();
+        for change in changes {
+            let before: std::collections::HashMap<_, _> = preview.thoughts.iter().map(|t| (t.id.clone(), Self::agreement_source(t))).collect();
+            preview.apply(&change);
+            let after: std::collections::HashMap<_, _> = preview.thoughts.iter().map(|t| (t.id.clone(), Self::agreement_source(t))).collect();
+            result.push(change);
+            let mut ids: Vec<_> = before.keys().chain(after.keys()).cloned().collect();
+            ids.sort(); ids.dedup();
+            for id in ids {
+                if before.get(&id) != after.get(&id) {
+                    let stamp = Change::AgreementSource { thought_id: id, revision: uuid::Uuid::new_v4().to_string() };
+                    preview.apply(&stamp); result.push(stamp);
+                }
+            }
+        }
+        result
+    }
+
+    fn agreement_source(t: &Thought) -> (String, String, String, u64) {
+        (t.speaker.clone(), t.text.clone(), t.point.clone(), t.at_ms)
+    }
+
+    pub fn can_agree(&self, id: &str, revision: &str, speaker: &str, request_id: &str) -> bool {
+        if !self.thoughts.iter().any(|t| t.id == id && t.placed) || self.ai.iter().any(|s| s == speaker) { return false; }
+        let empty = Agreement::default();
+        let state = self.agreements.get(id).unwrap_or(&empty);
+        let key = format!("{speaker}:{request_id}");
+        state.revision == revision && !state.requests.contains(&key) && state.requests.len() < crate::protocol::THOUGHT_MAX
+            && (state.agreed_by.contains(&speaker.to_string()) || state.agreed_by.len() < AGREEMENT_SPEAKERS_MAX)
+    }
+
     pub fn apply(&mut self, change: &Change) {
         let change = self.resolved(change);
         crate::tidy::follow(self, &change);
         match change.as_ref() {
+            Change::EvidenceKept { evidence } => {
+                if let Some(old) = self.evidence_kept.iter_mut().find(|e| e.request_id == evidence.request_id) { *old = evidence.clone(); }
+                else { self.evidence_kept.push(evidence.clone()); }
+            }
+            Change::ChoiceMapSaved { choice, actor, request } => {
+                self.choice_receipts.insert((actor.clone(), request.request_id.clone()), (request.clone(), choice.clone()));
+                if let Some(old) = self.choice_maps.iter_mut().find(|c| c.id == choice.id) {
+                    if old.revision < choice.revision { *old = choice.clone(); }
+                } else { self.choice_maps.push(choice.clone()); }
+            }
+            Change::ResearchKept { research, request } => {
+                self.research_receipts.insert((research.owner.clone(), request.request_id.clone()), (request.clone(), research.clone()));
+                if let Some(old) = self.research.iter_mut().find(|s| s.id == research.id) { if old.revision <= research.revision { *old = research.clone(); } }
+                else { self.research.push(research.clone()); }
+            }
+            Change::DiscussionStatus { discussion } => {
+                self.discussion_receipts.insert((discussion.actor.clone(), discussion.request_id.clone()), discussion.clone());
+                if let Some(old) = self.discussions.iter_mut().find(|s| s.thread_id == discussion.thread_id) { if old.revision <= discussion.revision { *old = discussion.clone(); } }
+                else { self.discussions.push(discussion.clone()); }
+            }
             Change::ActionEstimateSet { estimate } => {
                 self.estimate_receipts.insert((estimate.owner.clone(), estimate.request.request_id.clone()), estimate.clone());
                 if let Some(existing) = self.action_estimates.iter_mut().find(|e| e.action_id == estimate.action_id && e.owner == estimate.owner) {
@@ -709,6 +853,19 @@ impl World {
                 if let Some(old) = self.aliases.iter_mut().find(|a| a.id == alias.id && a.owner == alias.owner) {
                     if old.revision < alias.revision { *old = alias.clone(); }
                 } else { self.aliases.push(alias.clone()); }
+}
+
+            Change::AgreementSource { thought_id, revision } => {
+                let state = self.agreements.entry(thought_id.clone()).or_default();
+                if state.revision != *revision { *state = Agreement { revision: revision.clone(), ..Agreement::default() }; }
+            }
+            Change::ThoughtAgreement { thought_id, revision, speaker, agree, request_id } => {
+                if self.can_agree(thought_id, revision, speaker, request_id) {
+                    let state = self.agreements.entry(thought_id.clone()).or_default();
+                    state.requests.push(format!("{speaker}:{request_id}"));
+                    if *agree && !state.agreed_by.contains(speaker) { state.agreed_by.push(speaker.clone()); }
+                    if !agree { state.agreed_by.retain(|s| s != speaker); }
+                }
             }
             Change::CaptionAdded { caption } => {
                 if !self.captions.iter().any(|c| c.id == caption.id && c.by == caption.by) {
@@ -850,6 +1007,20 @@ impl World {
                         self.topics_chosen.insert(id.clone());
                         *name = to.clone();
                     }
+                }
+            }
+            Change::AnswerKept { answer } => {
+                if !self.kept_answers.iter().any(|a| a.id == answer.id) && answer.answer.len() <= 2048 {
+                    if self.kept_answers.len() >= 30 {
+                        if let Some(i) = self.kept_answers.iter().position(|a| a.removed) { self.kept_answers.remove(i); }
+                    }
+                    if self.kept_answers.len() < 30 { self.kept_answers.push(answer.clone()); }
+                }
+            }
+            Change::KeptAnswerVisibility { id, revision, removed } => {
+                if let Some(a) = self.kept_answers.iter_mut().find(|a| &a.id == id && a.revision + 1 == *revision) {
+                    a.removed = *removed;
+                    a.revision = *revision;
                 }
             }
             Change::ExplainAnswered { .. } | Change::AnswerMarked { .. } => {}
@@ -1312,76 +1483,86 @@ fn map_identity(path: &Path) -> anyhow::Result<String> {
     Ok(id)
 }
 
-/// Append-only log of changes, written immediately; replayed on start so the app
-/// opens exactly where you left it.
+/// A journal transaction is separate from Change: the wire protocol and legacy records stay unchanged.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct JournalBatch {
+    #[serde(rename = "type")]
+    kind: String,
+    version: u32,
+    changes: Vec<serde_json::Value>,
+}
+
+/// Parse and validate the entire record before the caller applies any of it. Only new envelopes require
+/// a terminal newline; a historical individual Change at EOF keeps its legacy meaning.
+pub(crate) fn journal_record(line: &[u8], terminated: bool) -> anyhow::Result<Vec<(Change, serde_json::Value)>> {
+    let value: serde_json::Value = serde_json::from_slice(line)?;
+    let values = if value["type"] == "journal_batch" {
+        anyhow::ensure!(terminated, "incomplete journal batch");
+        let batch: JournalBatch = serde_json::from_slice(line)?;
+        anyhow::ensure!(batch.version == 1, "unsupported journal batch version");
+        anyhow::ensure!(!batch.changes.is_empty(), "empty journal batch");
+        batch.changes
+    } else {
+        vec![value]
+    };
+    values.into_iter().map(|value| Ok((serde_json::from_value(value.clone())?, value))).collect()
+}
+
+/// Append-only log. A write error or incomplete tail blocks writes until explicit repair; opening
+/// never completes, truncates or deletes the original bytes. Earlier complete records still replay.
 pub struct Journal {
     file: File,
     map_id: String,
+    poisoned: bool,
+    #[cfg(test)]
+    fail_after: Option<usize>,
 }
 
 impl Journal {
     /// An existing test file whose appends fail regardless of the process's permission to change it.
     #[cfg(test)]
     pub(crate) fn read_only(path: &Path) -> anyhow::Result<Journal> {
-        Ok(Journal { file: File::open(path)?, map_id: map_identity(path)? })
+        Ok(Journal { file: File::open(path)?, map_id: map_identity(path)?, poisoned: false, fail_after: None })
     }
+
+    /// One-shot short write, followed by an error. A later write would succeed without poisoning.
+    #[cfg(test)]
+    pub(crate) fn fail_append_after(&mut self, bytes: usize) { self.fail_after = Some(bytes); }
 
     pub fn open(path: &Path) -> anyhow::Result<(Journal, World)> {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
         let mut world = World::default();
+        let mut poisoned = false;
         if path.exists() {
             let mut reader = BufReader::new(File::open(path)?);
-            let mut line = String::new();
+            let mut line = Vec::new();
             let mut n = 0usize;
             loop {
                 line.clear();
+                if reader.read_until(b'\n', &mut line)? == 0 { break; }
                 n += 1;
-                match reader.read_line(&mut line) {
-                    Ok(0) => break,
-                    Ok(_) => {}
-                    // A crash mid-write can cut a character in half: skip that line rather than refuse to start.
-                    Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
-                        tracing::warn!("skipping journal line {} that isn't valid text", n);
-                        continue;
-                    }
-                    Err(e) => return Err(e.into()),
-                }
-                // Match BufRead::lines, reusing its allocation instead of allocating for every change.
-                if line.ends_with('\n') {
-                    line.pop();
-                    if line.ends_with('\r') { line.pop(); }
-                }
-                if line.trim().is_empty() {
-                    continue;
-                }
-                match serde_json::from_str::<Change>(&line) {
-                    Ok(change) => {
+                let terminated = line.ends_with(b"\n");
+                poisoned |= !terminated;
+                if line.iter().all(u8::is_ascii_whitespace) { continue; }
+                match journal_record(&line, terminated) {
+                    Ok(changes) => for (change, value) in changes {
                         world.apply(&change);
-                        // The source is in the same durable record as its effect, so a missing later receipt is safe.
-                        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) {
-                            if let (Some(speaker), Some(id)) = (value["source"]["speaker"].as_str(), value["source"]["id"].as_str()) {
-                                if uuid::Uuid::parse_str(id).is_ok() { world.received_text.insert((speaker.into(), id.into())); world.capture(speaker, id, value["source"]["text"].as_str(), &change); }
-                            }
+                        // The source is in the same record as its effect; legacy sources still replay.
+                        if let (Some(speaker), Some(id)) = (value["source"]["speaker"].as_str(), value["source"]["id"].as_str()) {
+                            if uuid::Uuid::parse_str(id).is_ok() { world.received_text.insert((speaker.into(), id.into())); world.capture(speaker, id, value["source"]["text"].as_str(), &change); }
                         }
-                    }
-                    Err(e) => tracing::warn!("skipping journal line {} that I can't read: {e}", n),
+                    },
+                    // Do not log record contents: they can contain private source text.
+                    Err(_) => tracing::warn!("skipping invalid journal record {}", n),
                 }
             }
         }
-        let mut file = OpenOptions::new().create(true).read(true).append(true).open(path)?;
-        // A crash mid-write can leave a partial last line; start the next change on a fresh one.
-        let len = file.metadata()?.len();
-        if len > 0 {
-            let mut last = [0u8];
-            file.seek(SeekFrom::Start(len - 1))?;
-            file.read_exact(&mut last)?;
-            if last[0] != b'\n' {
-                file.write_all(b"\n")?;
-            }
-        }
-        Ok((Journal { file, map_id: map_identity(path)? }, world))
+        let file = OpenOptions::new().create(true).append(true).open(path)?;
+        Ok((Journal { file, map_id: map_identity(path)?, poisoned,
+            #[cfg(test)] fail_after: None }, world))
     }
 
     pub fn map_id(&self) -> &str { &self.map_id }
@@ -1392,20 +1573,28 @@ impl Journal {
         if changes.is_empty() { return Ok(()); }
         let source = SOURCE.with(|source| source.borrow().clone());
         let result = (|| {
-            let mut batch = String::new();
-            for change in changes {
+            anyhow::ensure!(!self.poisoned, "journal writes blocked until incomplete tail or failed append is repaired");
+            let values = changes.iter().map(|change| {
                 let mut value = serde_json::to_value(change)?;
                 if let Some(source) = &source {
                     value["source"] = serde_json::json!({ "speaker": source.speaker, "id": source.id, "text": source.text });
                 }
-                batch.push_str(&serde_json::to_string(&value)?);
-                batch.push('\n');
+                Ok(value)
+            }).collect::<anyhow::Result<Vec<_>>>()?;
+            let mut batch = serde_json::to_vec(&JournalBatch { kind: "journal_batch".into(), version: 1, changes: values })?;
+            batch.push(b'\n');
+            #[cfg(test)]
+            if let Some(bytes) = self.fail_after.take() {
+                self.file.write_all(&batch[..bytes.min(batch.len())])?;
+                anyhow::bail!("injected partial journal append");
             }
-            self.file.write_all(batch.as_bytes())?;
+            self.file.write_all(&batch)?;
             self.file.flush()?;
+            // Retain the existing sync policy. No claim about directory or hardware durability.
             self.file.sync_data()?;
             Ok(())
         })();
+        self.poisoned |= result.is_err();
         SOURCE.with(|source| { if let Some(source) = source.borrow_mut().as_mut() {
             source.status.accepted |= result.is_ok();
             source.status.failed |= result.is_err();
@@ -1458,31 +1647,137 @@ fn put_back<T>(list: &mut Vec<T>, key: impl Fn(&T) -> &String, id: &str, before:
 
 #[cfg(test)]
 mod tests {
-    use super::{Question, Change, Thought, World};
+    use super::{AnswerSource, KeptAnswer, Question, Change, Thought, World};
+
+    fn batch_fixture() -> (std::path::PathBuf, Vec<u8>) {
+        let dir = std::env::temp_dir().join(format!("e2a2o-batches-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("synthetic.jsonl");
+        let (mut journal, _) = super::Journal::open(&path).unwrap();
+        journal.append_many(&[
+            Change::ThreadAdded { thread: super::fixtures::thread("batch", "Café", 1) },
+            Change::ActiveChanged { thread_id: "batch".into(), speaker: "tester".into() },
+        ]).unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        (path, bytes)
+    }
 
     #[test]
-    fn a_partial_last_line_doesnt_swallow_the_next_change() {
+    fn asks_journal_replay_legacy_records_and_complete_two_change_envelope() {
+        let (path, batch) = batch_fixture();
+        let legacy = b"{\"type\":\"active_changed\",\"thread_id\":\"legacy\"}\n";
+        std::fs::write(&path, [legacy.as_slice(), &batch].concat()).unwrap();
+        let (_, world) = super::Journal::open(&path).unwrap();
+        assert_eq!(world.active_for("you").map(String::as_str), Some("legacy"));
+        assert_eq!(world.active_for("tester").map(String::as_str), Some("batch"));
+        assert_eq!(world.thread("batch").unwrap().title, "Café");
+        assert_eq!(batch.iter().filter(|b| **b == b'\n').count(), 1);
+        assert_eq!(super::journal_record(&batch, true).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn asks_journal_replay_legacy_eof_defaults_remain_readable() {
+        let (path, _) = batch_fixture();
+        let bytes = b"{\"type\":\"active_changed\",\"thread_id\":\"legacy-eof\"}";
+        std::fs::write(&path, bytes).unwrap();
+        let (mut journal, world) = super::Journal::open(&path).unwrap();
+        assert_eq!(world.active_for("you").map(String::as_str), Some("legacy-eof"));
+        assert!(journal.append(&Change::AppsSeeded).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+    }
+
+    #[test]
+    fn asks_journal_replay_every_truncated_batch_byte_applies_zero_batch_effects() {
+        let (path, batch) = batch_fixture();
+        let legacy = b"{\"type\":\"active_changed\",\"thread_id\":\"legacy\"}\n";
+        // Include an earlier complete envelope too, so both formats survive every cut.
+        let prior = b"{\"type\":\"journal_batch\",\"version\":1,\"changes\":[{\"type\":\"active_changed\",\"thread_id\":\"earlier\",\"speaker\":\"prior\"}]}\n";
+        for cut in 0..batch.len() {
+            let bytes = [legacy.as_slice(), prior, &batch[..cut]].concat();
+            std::fs::write(&path, &bytes).unwrap();
+            let (mut journal, world) = super::Journal::open(&path).unwrap();
+            assert!(world.thread("batch").is_none(), "cut {cut}");
+            assert!(!world.active_by.contains_key("tester"), "cut {cut}");
+            assert_eq!(world.active_for("you").map(String::as_str), Some("legacy"), "cut {cut}");
+            assert_eq!(world.active_for("prior").map(String::as_str), Some("earlier"), "cut {cut}");
+            assert_eq!(std::fs::read(&path).unwrap(), bytes, "opening must preserve every byte");
+            if cut > 0 {
+                assert!(journal.append(&Change::AppsSeeded).is_err(), "incomplete tail blocks writes at cut {cut}");
+                assert_eq!(std::fs::read(&path).unwrap(), bytes);
+            }
+        }
+    }
+
+    #[test]
+    fn asks_journal_replay_rejects_unsupported_or_malformed_envelope_without_prefix() {
+        let (path, batch) = batch_fixture();
+        let valid: serde_json::Value = serde_json::from_slice(&batch).unwrap();
+        let mut bad_second = valid.clone(); bad_second["changes"][1] = serde_json::json!({ "type": "unknown_change" });
+        let mut future = valid.clone(); future["version"] = serde_json::json!(2);
+        let mut missing = valid.clone(); missing.as_object_mut().unwrap().remove("version");
+        let mut extra = valid.clone(); extra["unexpected"] = serde_json::json!(true);
+        let mut empty = valid.clone(); empty["changes"] = serde_json::json!([]);
+        for rejected in [bad_second, future, missing, extra, empty] {
+            let mut bytes = serde_json::to_vec(&rejected).unwrap(); bytes.push(b'\n');
+            assert!(super::journal_record(&bytes, true).is_err());
+            // Valid legacy records on either side retain their individual historical meaning.
+            bytes = [b"{\"type\":\"apps_seeded\"}\n".as_slice(), &bytes,
+                b"{\"type\":\"active_changed\",\"thread_id\":\"after\"}\n"].concat();
+            std::fs::write(&path, &bytes).unwrap();
+            let (_, world) = super::Journal::open(&path).unwrap();
+            assert!(world.apps_seeded);
+            assert!(world.threads.is_empty());
+            assert!(!world.active_by.contains_key("tester"));
+            assert_eq!(world.active.as_deref(), Some("after"));
+        }
+        let mut malformed = batch[..batch.len()-3].to_vec(); malformed.push(b'\n');
+        assert!(super::journal_record(&malformed, true).is_err(), "malformed JSON cannot apply its first change");
+        assert!(super::journal_record(&batch[..batch.len()-1], false).is_err(), "valid JSON without newline is not committed");
+    }
+
+    #[test]
+    fn asks_journal_partial_append_failure_poisons_even_a_later_valid_write() {
+        let (path, batch) = batch_fixture();
+        let (mut journal, before) = super::Journal::open(&path).unwrap();
+        journal.fail_append_after(40);
+        assert!(journal.append_many(&[Change::AppsSeeded, Change::StayChanged { thread_id: Some("batch".into()) }]).is_err());
+        let partial = std::fs::read(&path).unwrap();
+        assert!(partial.len() > batch.len());
+        assert!(journal.append(&Change::AppsSeeded).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), partial);
+        let (mut reopened, after) = super::Journal::open(&path).unwrap();
+        assert_eq!(serde_json::to_value(before).unwrap(), serde_json::to_value(after).unwrap());
+        assert!(reopened.append(&Change::AppsSeeded).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), partial);
+    }
+
+    #[test]
+    fn asks_journal_partial_legacy_tail_preserves_bytes_and_blocks_writes() {
         let path = std::env::temp_dir().join(format!("e2a2o-journal-{}.jsonl", std::process::id()));
         std::fs::write(&path, "{\"type\":\"active_changed\",\"thread_id\":\"T1\"}\n{\"type\":\"active_ch").unwrap();
         let (mut journal, world) = super::Journal::open(&path).unwrap();
         assert_eq!(world.active.as_deref(), Some("T1"));
-        journal.append(&Change::ActiveChanged { thread_id: "T2".into(), speaker: "you".into() }).unwrap();
+        let before = std::fs::read(&path).unwrap();
+        assert!(journal.append(&Change::ActiveChanged { thread_id: "T2".into(), speaker: "you".into() }).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), before);
         let (_, world) = super::Journal::open(&path).unwrap();
-        assert_eq!(world.active.as_deref(), Some("T2"));
+        assert_eq!(world.active.as_deref(), Some("T1"));
         std::fs::remove_file(&path).unwrap();
     }
 
     #[test]
-    fn a_character_cut_in_half_at_the_end_doesnt_stop_the_core() {
+    fn asks_journal_partial_utf8_tail_keeps_earlier_records() {
         let path = std::env::temp_dir().join(format!("e2a2o-journal-utf8-{}.jsonl", uuid::Uuid::new_v4()));
         let mut bytes = b"{\"type\":\"active_changed\",\"thread_id\":\"T1\"}\n{\"type\":\"thread_renamed\",\"thread_id\":\"T1\",\"title\":\"caf".to_vec();
         bytes.extend_from_slice(&"é".as_bytes()[..1]);
         std::fs::write(&path, bytes).unwrap();
         let (mut journal, world) = super::Journal::open(&path).unwrap();
         assert_eq!(world.active.as_deref(), Some("T1"));
-        journal.append(&Change::ActiveChanged { thread_id: "T2".into(), speaker: "you".into() }).unwrap();
+        let before = std::fs::read(&path).unwrap();
+        assert!(journal.append(&Change::ActiveChanged { thread_id: "T2".into(), speaker: "you".into() }).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), before);
         let (_, world) = super::Journal::open(&path).unwrap();
-        assert_eq!(world.active.as_deref(), Some("T2"));
+        assert_eq!(world.active.as_deref(), Some("T1"));
         std::fs::remove_file(&path).unwrap();
     }
 
@@ -1491,7 +1786,7 @@ mod tests {
         let path = std::env::temp_dir().join(format!("e2a2o-journal-lines-{}.jsonl", uuid::Uuid::new_v4()));
         let mut bytes = b" \r\n{bad json}\ninvalid UTF-8: \xff\n".to_vec();
         bytes.extend_from_slice(b"{\"type\":\"active_changed\",\"thread_id\":\"a long thread id\"}\r\n\n");
-        bytes.extend_from_slice(b"{\"type\":\"active_changed\",\"thread_id\":\"T2\"}");
+        bytes.extend_from_slice(b"{\"type\":\"active_changed\",\"thread_id\":\"T2\"}\n");
         std::fs::write(&path, bytes).unwrap();
         let (mut journal, world) = super::Journal::open(&path).unwrap();
         assert_eq!(world.active.as_deref(), Some("T2"));
@@ -2009,10 +2304,14 @@ mod tests {
             decided: false,
         };
         let changes = vec![
+            Change::ResearchKept { research: crate::research::ResearchKept { id: "research-fixture".into(), owner: "you".into(), thought_id: "p1".into(), quote: "When?".into(), source_point: "When?".into(), topic_id: "T1".into(), topic_title: "Venue".into(), query: "Hours".into(), answer: "Open at nine.".into(), citations: vec![crate::research::Citation { title: "Venue hours".into(), url: "https://example.com/hours".into(), start: 0, end: 13 }], at_ms: 100, model: "synthetic".into(), simulated: true, revision: 1, removed: false, request_id: "keep-fixture".into() }, request: crate::research::Command { request_id: "keep-fixture".into(), op: "keep".into(), answer_id: "research-fixture".into(), ..Default::default() } },
+            Change::DiscussionStatus { discussion: crate::discussion::DiscussionStatus { thread_id: "T1".into(), status: "resolved".into(), actor: "Sam".into(), at_ms: 100, revision: 1, request_id: "fixture-discussion".into(), observed_revision: 0, reply_count: 1 } },
             Change::QuestionSaved { question: Question { id: "00000000-0000-4000-8000-000000000001".into(), owner: "Ana".into(), question: "Which route?".into(), thought_id: None, answer: String::new(), status: "open".into(), revision: 1, updated_ms: 100 } },
 
             Change::AliasChanged { alias: super::VoiceAlias { id: "fixture-rule".into(), owner: "you".into(), phrase: "violet doorway".into(), target: super::AliasTarget::NextTopic, revision: 1, enabled: true, deleted: false, unavailable: false }, request_id: "fixture-request".into(), signature: "fixture".into() },            Change::AppsSeeded,
             Change::RecipeSaved { request_id: "recipe-1".into(), receipt: crate::apps::RecipeReceipt { fingerprint: "synthetic".into(), app_id: "app-volume".into() } },
+            Change::AgreementSource { thought_id: "agreement-fixture".into(), revision: "r1".into() },
+            Change::ThoughtAgreement { thought_id: "agreement-fixture".into(), revision: "r1".into(), speaker: "A".into(), agree: true, request_id: "once".into() },
             Change::AppRegistered { app: app("app-volume", Watcher::Volume { level: 0.2, seconds: 3 }) },
             Change::AppRegistered { app: app("app-timer", Watcher::Time { at_ms: 50, every_secs: 3600 }) },
             Change::AppEnabled { id: "app-volume".into(), enabled: false },
@@ -2055,6 +2354,8 @@ mod tests {
             Change::SuggestionAdded {
                 suggestion: super::Suggestion { id: "sg-1".into(), thread_id: "T2".into(), text: "Ask Sam".into(), status: super::ItemStatus::New },
             },
+            Change::EvidenceKept { evidence: super::EvidenceKept { request_id: "evidence-fixture".into(), extraction_id: "extract-fixture".into(), image_id: "image-fixture".into(), actor: "you".into(), target: "T1".into(), title: "Synthetic".into(), width: 2, height: 2, model: "muse-spark-1.3".into(), points: vec![], thought_ids: vec![], removed: false } },
+            Change::ChoiceMapSaved { choice: super::ChoiceMap { id: "choice-fixture".into(), revision: 1, relations: vec![], votes: vec![] }, actor: "you".into(), request: super::ChoiceRequest { request_id: "choice-request".into(), choice_id: "choice-fixture".into(), revision: 0, operation: "add".into(), relation_id: "r".into(), source_id: "s".into(), observed: "".into(), role: "question".into(), option_id: None, undo_of: None } },
             Change::ActionEstimateSet { estimate: super::ActionEstimate {
                 action_id: "ac-1".into(), owner: "you".into(), source_title: "Ask Sam".into(),
                 source_thread_id: "T2".into(), source_topic: "Workshop".into(), minutes: Some(15), reason: "First pass".into(), revision: 1,
@@ -2142,6 +2443,11 @@ mod tests {
             Change::MessagesRead { at_ms: vec![1_791_000_000_000, 1_791_000_100_000], keys: Vec::new() },
             Change::ThreadMerged { from: "T2".into(), into: "T3".into() },
             // Kept for judging answers; replaying them changes nothing on the map.
+            Change::AnswerKept { answer: KeptAnswer {
+                id: "saved-fixture".into(), source: AnswerSource { thought_id: "th-1".into(), field: "point".into(), excerpt: "Synthetic source".into(), revision: "fixture-r1".into() },
+                phrase: "source".into(), answer: "An exact synthetic answer.".into(), model: "fixture-model".into(), owner: "you".into(), at_ms: 1, revision: 1, removed: false,
+            } },
+            Change::KeptAnswerVisibility { id: "saved-fixture".into(), revision: 2, removed: true },
             Change::ExplainAnswered {
                 id: "x1".into(),
                 phrase: "Muse Spark".into(),
@@ -2257,7 +2563,8 @@ mod tests {
         // Stops compiling when a kind of change is added: add one to the list above too.
         for change in &changes {
             match change {
-                Change::CaptionAdded { .. }
+                Change::AgreementSource { .. } | Change::ThoughtAgreement { .. }
+                | Change::CaptionAdded { .. }
                 | Change::RecapSaved { .. }
                 | Change::AppRegistered { .. }
                 | Change::AppEnabled { .. }
@@ -2268,6 +2575,8 @@ mod tests {
                 | Change::AppsSeeded
                 | Change::ThoughtAdded { .. }
                 | Change::QuestionSaved { .. }
+                | Change::DiscussionStatus { .. }
+                | Change::ResearchKept { .. }
                 | Change::TextReceived { .. }
                 | Change::Paused { .. } | Change::PauseResolved { .. } | Change::PauseChoice { .. } | Change::ReturnFocused { .. }
                 | Change::SpeechRecovered { .. }
@@ -2287,6 +2596,8 @@ mod tests {
                 | Change::ThreadUnmerged { .. }
                 | Change::TidyProposed { .. }
                 | Change::SuggestionAdded { .. }
+                | Change::EvidenceKept { .. }
+                | Change::ChoiceMapSaved { .. }
                 | Change::ActionEstimateSet { .. }
                 | Change::ActionProposed { .. }
                 | Change::ItemStatus { .. }
@@ -2314,6 +2625,8 @@ mod tests {
                 | Change::TopicSet { .. }
                 | Change::TopicRenamed { .. }
                 | Change::MessagesRead { .. }
+                | Change::AnswerKept { .. }
+                | Change::KeptAnswerVisibility { .. }
                 | Change::ExplainAnswered { .. }
                 | Change::AnswerMarked { .. } => {}
             }
@@ -2326,7 +2639,7 @@ mod tests {
         let changes = every_change();
         let kinds: std::collections::HashSet<String> =
             changes.iter().map(|c| serde_json::to_value(c).unwrap()["type"].as_str().unwrap().to_string()).collect();
-        assert_eq!(kinds.len(), 62, "one of each kind of change");
+        assert_eq!(kinds.len(), 70, "one of each kind of change");
         for change in &changes {
             let json = serde_json::to_string(change).unwrap();
             let back: Change = serde_json::from_str(&json).unwrap_or_else(|e| panic!("{json} didn't read back: {e}"));

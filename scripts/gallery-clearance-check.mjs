@@ -117,6 +117,13 @@ async function runCase(core, pending, width, height) {
     const { data } = await page('Page.captureScreenshot', { format: 'png' });
     writeFileSync(join(shots, `${label}-${suffix}.png`), Buffer.from(data, 'base64'));
   };
+  const hiddenCanvas = async () => {
+    assert.ok(await until(`(() => {
+      const frames = [...document.querySelectorAll('.persistent-canvas .spine-frame')];
+      return document.documentElement.dataset.view !== 'map' && frames.length > 0
+        && frames.every(e => getComputedStyle(e).opacity === '0');
+    })()`), `${label}: hidden Canvas has zero opacity in Pictures`);
+  };
   try {
     await page('Network.enable');
     if (width === 390) await page('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: true });
@@ -131,6 +138,7 @@ async function runCase(core, pending, width, height) {
     // The public sample's existing Pictures affordance; no feature/default rewrite.
     await evaluate(`[...document.querySelectorAll('.sample-recovery-actions button')].find(e=>e.textContent==='Pictures').click()`);
     assert.ok(await until(`!!document.querySelector('.palace-tile')`));
+    await hiddenCanvas();
     await evaluate('document.fonts.ready');
     assert.equal(await evaluate(`document.activeElement?.classList.contains('palace-tile')`), true, 'gallery entry focus');
     if (pending) assert.ok(await until(`document.querySelector('[data-capture="${captureId}"]')?.textContent.includes(${JSON.stringify(pendingText)})`), 'pending card visible');
@@ -191,6 +199,7 @@ async function runCase(core, pending, width, height) {
       await shot('topic');
       await evaluate(`[...document.querySelectorAll('.sample-recovery-actions button')].find(e=>e.textContent==='Pictures').click()`);
       assert.ok(await until(`!!document.querySelector('.palace')`));
+      await hiddenCanvas();
       await evaluate(`document.querySelector('.shell-bl button').focus()`);
       await key('Enter', 'Enter', 13);
       assert.ok(await until(`document.documentElement.dataset.view==='map' && !!document.querySelector('.spine-ready')`), 'Back keyboard return');

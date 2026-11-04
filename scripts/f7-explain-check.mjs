@@ -53,18 +53,19 @@ try {
     assert.ok(await until(`!!document.querySelector(${JSON.stringify(feature)})`), 'Features opens');
   };
   const focus = async selector => evaluate(`document.querySelector(${JSON.stringify(selector)}).focus()`);
-  const showCards = async () => {
-    await openFeatures();
-    if (await evaluate(`document.querySelector('[data-row="cards"] [role="switch"]').getAttribute('aria-checked')==='false'`)) await click('[data-row="cards"] [role="switch"]');
-    await click('[data-row="cards"] .shell-link');
-    assert.ok(await until(`!!document.querySelector('.map #point-th-0')`), 'existing selected phrase is in the real Cards view');
+  const showCanvas = async () => {
     if (await evaluate(`!!document.querySelector('.shell-rail-close')`)) await click('.shell-rail-close');
+    if (await evaluate(`!!document.querySelector('.shell-bl button[aria-keyshortcuts="M"]')`)) await click('.shell-bl button[aria-keyshortcuts="M"]');
+    assert.ok(await until(`!!document.querySelector('.spine-ready [data-thought="th-0"] .spine-text')`, 10000), 'existing source is mounted on the Canvas');
   };
   const pick = async () => {
-    await sleep(600);
-    // Focus may rerender Cards after a viewport change; select from the settled live node, not a detached one.
-    await evaluate(`(async()=>{ const el=document.querySelector('#point-th-0 .point-text, #point-th-0 .point, #point-th-0'); el.scrollIntoView({block:'center',behavior:'instant'}); await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))); el.closest('li').focus(); window.pickFocus=document.activeElement;
-      await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))); const currentEl=document.querySelector('#point-th-0 .point-text, #point-th-0 .point, #point-th-0'); const walk=document.createTreeWalker(currentEl,NodeFilter.SHOW_TEXT);let node;while(node=walk.nextNode()){const at=node.textContent.indexOf('Mulch');if(at>=0){const r=document.createRange();r.setStart(node,at);r.setEnd(node,at+5);getSelection().removeAllRanges();getSelection().addRange(r);break;}}
+    // Select the visible Canvas source rather than a retained offscreen Cards tree.
+    await showCanvas();
+    await evaluate(`(()=>{ const e=document.querySelector('[data-thought="th-0"] .spine-text'); const r=e.getBoundingClientRect(); e.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerType:'mouse'})); e.focus({preventScroll:true}); e.dispatchEvent(new MouseEvent('dblclick',{bubbles:true,clientX:r.x+r.width/2,clientY:r.y+r.height/2})); window.pickBounds=null; window.pickStable=0; })()`);
+    assert.ok(await until(`!!document.querySelector('[data-thought="th-0"].spine-selecting')`), 'Canvas text selection mode');
+    assert.ok(await until(`(()=>{ const r=document.querySelector('[data-thought="th-0"] .spine-text').getBoundingClientRect(); const next=[r.x,r.y,r.width,r.height].map(n=>Math.round(n)).join(','); window.pickStable=next===window.pickBounds?window.pickStable+1:0; window.pickBounds=next; return r.width>0&&r.top>=0&&r.bottom<=(document.querySelector('.dock')?.getBoundingClientRect().top??innerHeight)&&window.pickStable>=2; })()`, 4000), 'visible source layout is settled');
+    await evaluate(`(()=>{ const el=document.querySelector('[data-thought="th-0"] .spine-text'); window.pickFocus=document.activeElement;
+      const walk=document.createTreeWalker(el,NodeFilter.SHOW_TEXT);let node;while(node=walk.nextNode()){const at=node.textContent.indexOf('Mulch');if(at>=0){const r=document.createRange();r.setStart(node,at);r.setEnd(node,at+5);getSelection().removeAllRanges();getSelection().addRange(r);break;}}
       document.dispatchEvent(new KeyboardEvent('keyup',{key:'Shift',bubbles:true})); })()`);
     assert.ok(await until(`!!document.querySelector('.explain > button')`), 'selection offers Explain without requesting it');
   };
@@ -103,7 +104,7 @@ try {
   assert.equal(await evaluate(`sent.some(m=>m.type==='explain'||m.reuse===true)`), false, 'no feature-specific messages');
   await openFeatures();
   assert.equal(await evaluate(`document.querySelector(${JSON.stringify(feature)}).getAttribute('aria-checked')`), 'false', 'off by default');
-  await showCards();
+  await showCanvas();
   await pick();
   assert.equal((await stats()).calls, 0, 'selection itself does not request');
   await explain(); await closeAnswer();
@@ -119,7 +120,7 @@ try {
   assert.ok(await until(`!!document.querySelector('#type-a-thought')`, 10000));
   await openFeatures();
   assert.equal(await evaluate(`document.querySelector(${JSON.stringify(feature)}).getAttribute('aria-checked')`), 'true', 'switch survives reload');
-  await showCards(); await pick();
+  await showCanvas(); await pick();
   const first = await explain();
   assert.equal((await stats()).calls, 2, 'first opted-in request uses provider');
   await closeAnswer(true); await pick();

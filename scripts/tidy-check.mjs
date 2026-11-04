@@ -4,6 +4,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { uiServer } from "./ui-server.mjs";
+import React from "../ui/node_modules/react/index.js";
+import { renderToStaticMarkup } from "../ui/node_modules/react-dom/server.node.js";
 
 globalThis.location = new URL("http://localhost:4321/");
 
@@ -119,8 +121,21 @@ try {
   assert.deepEqual(apply(after, { type: "item_restored", id: "ac", to: moved.was }).actions[0], due.actions[0]);
 
   // The map shows them, the note offers Undo, and every tip fits.
+  const { MapCards } = await server.ssrLoadModule("/src/MapCards.tsx");
+  const { TidyProvider } = await server.ssrLoadModule("/src/Tidy.tsx");
+  const proposalCard = (id, proposal = rename) => renderToStaticMarkup(React.createElement(TidyProvider,
+    { world: { ...world, proposals: [proposal] }, decide() {} }, React.createElement(MapCards, {
+      active: id, on: {}, activePath: new Set([id]), rooms: new Map(),
+      childrenByParent: new Map([[null, [world.threads.find(t => t.id === id)]]]),
+      thoughtsByThread: new Map(), ideasByThread: new Map(), actionsByThread: new Map(),
+      held: new Set([id]), expanded: {}, setExpanded() {}, keptOpen: { current: new Set() },
+    })));
+  const shownProposal = proposalCard("T4");
+  assert.ok(shownProposal.includes("Rename to “Grocery list”?"), "the topic card shows its waiting proposal");
+  assert.ok(shownProposal.includes(">Rename</button>") && shownProposal.includes('aria-label="Keep the title"'), "the proposal offers apply and keep controls");
+  assert.ok(!proposalCard("T2").includes("Grocery list"), "a proposal never appears on another topic");
+  assert.ok(!proposalCard("T4", { ...rename, status: "dismissed" }).includes("Grocery list"), "dismissed proposals leave the card");
   const app = readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8");
-  assert.match(app, /<ProposalRows thread=\{thread\.id\} \/>/);
   assert.match(app, /\(core\.mapChange\.undo \|\| core\.mapChange\.restore\) && <button className="undo"/);
   assert.match(app, /core\.restore\(core\.mapChange!\.restore/);
   assert.doesNotMatch(app, /mapChangeVisible/, "a hidden note is gone from the core's state, so nothing joins it");

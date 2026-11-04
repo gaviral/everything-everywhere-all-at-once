@@ -10,7 +10,7 @@ export type Watcher =
   | { kind: "time"; at_ms: number; every_secs: number }
   | { kind: "app_request" };
 
-export type Publisher = { kind: "card"; text: string } | { kind: "sound" } | { kind: "reminder"; title: string; when: string };
+export type Publisher = { kind: "app_block"; block: { query: string; when: string } } | { kind: "card"; text: string } | { kind: "sound" } | { kind: "reminder"; title: string; when: string };
 
 export interface MiniApp {
   id: string;

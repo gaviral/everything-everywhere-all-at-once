@@ -164,6 +164,11 @@ try {
       browser = await openPage("about:blank", { width, height });
       const { page, evaluate, until } = browser;
       await page("Page.enable");
+      const received = [];
+      browser.on("Network.webSocketFrameReceived", ({ response }) => {
+        try { const message = JSON.parse(response.payloadData); if (["notice", "error", "undoable"].includes(message.type)) received.push(message); } catch { /* non-JSON frame */ }
+      });
+      await page("Network.enable");
       await page("Page.addScriptToEvaluateOnNewDocument", { source: `
         localStorage.clear(); sessionStorage.clear();
         localStorage.setItem("e2a2o.toured", "1");
@@ -271,7 +276,9 @@ try {
       await live(rawMissing, "notice", hosted ? "Listening unavailable" : "No AI key");
       core.send({ type: "undoable", id: 201 });
       const missingUndo = ".shell-history-entry:last-child .shell-history-meta button";
-      assert.ok(await until(`!!document.querySelector(${JSON.stringify(missingUndo)})`, 3000), `${label}: the coalesced notice gets Undo`);
+      const attached = await until(`!!document.querySelector(${JSON.stringify(missingUndo)})`, 3000);
+      if (!attached) console.error("history Undo diagnostic", JSON.stringify({ received: received.slice(-6), rows: await evaluate(`[...document.querySelectorAll('.shell-history-entry')].map(row=>({text:row.querySelector('.shell-history-text')?.textContent,buttons:[...row.querySelectorAll('button')].map(button=>({label:button.textContent,disabled:button.disabled}))}))`) }));
+      assert.ok(attached, `${label}: the coalesced notice gets Undo`);
       assert.deepEqual(await rows(), expected, `${label}: attaching Undo does not move or duplicate the missing-key row`);
       assert.equal(await evaluate(`document.querySelector('.shell-history-entry:first-child .shell-history-meta button') === null`), true, `${label}: refusal does not receive the coalesced notice's Undo`);
       await tap(missingUndo, "the coalesced notice's Undo");

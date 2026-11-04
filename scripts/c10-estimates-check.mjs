@@ -9,6 +9,7 @@ import { join, resolve } from "node:path";
 import { createServer } from "node:net";
 import { openPage, ready, sleep } from "./headless.mjs";
 import { uiServer } from "./ui-server.mjs";
+import { decodeJournal } from "./journal-fixture.mjs";
 
 assert.equal(ready(), "", "built UI and Chrome required; this check never claims a skipped page pass");
 const root = new URL("..", import.meta.url).pathname;
@@ -132,7 +133,7 @@ try {
   const stillDisabled = request(actions[0], 1, 7); isolated.send(stillDisabled);
   assert.equal((await isolated.until(m => m.request_id === stillDisabled.request_id)).ok, false, "another connection's opt-in cannot activate this one");
   const journalBefore = readFileSync(join(data, "journal.jsonl"), "utf8");
-  const saved = journalBefore.trim().split("\n").map(JSON.parse).filter(c => c.type === "action_estimate_set");
+  const saved = decodeJournal(journalBefore).filter(c => c.type === "action_estimate_set");
   assert.deepEqual(saved.map(c => [c.estimate.action_id, c.estimate.owner, c.estimate.minutes]), [["effort-a", "you", 15], ["effort-b", "you", 40]]);
   await stop(); await start();
   await page("Page.reload");

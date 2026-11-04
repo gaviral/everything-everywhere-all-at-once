@@ -136,6 +136,8 @@ try {
   assert.ok(await until('document.querySelector("[data-decision=older] h2")?.textContent.includes("white title")'));
   core.send({ type: 'change', change: { type: 'thought_decided', thought_id: 'newer', decided: false } });
   assert.ok(await until('document.querySelectorAll("[data-decision]").length===1'), 'changed decision flag removes row');
+  // Earlier actions belonged to a view that was closed; exercise the current view's missing-source response.
+  await evaluate(`(() => {let f=document.querySelector('.decisions')[Object.keys(document.querySelector('.decisions')).find(k=>k.startsWith('__reactFiber'))]; while(f && !f.memoizedProps?.actions) f=f.return; window.decisionActions=f.memoizedProps.actions;})()`);
   core.send({ type: 'change', change: { type: 'thought_skipped', thought_id: 'older' } });
   assert.ok(await until('document.querySelectorAll("[data-decision]").length===0'), 'removed source disappears');
   assert.equal(await evaluate('window.decisionActions.openThought("older")'), false, 'stale action refuses missing thought');
@@ -171,7 +173,7 @@ try {
   core.state.world = structuredClone(seed); core.send({ type: 'snapshot', world: core.state.world });
   await show(); await features();
   await click('[role=switch][aria-label=Decisions]');
-  assert.ok(await until('!document.querySelector("[data-brick=decisions]") && document.documentElement.dataset.view === "map"'), 'disable uses existing view-off fallback');
+  assert.ok(await until(`!document.querySelector('[data-brick=decisions]') && document.documentElement.dataset.view === 'map' && [...document.querySelectorAll('.spine-frame')].some(e=>e.checkVisibility({checkVisibilityCSS:true,checkOpacity:true})) && ![...document.querySelectorAll('.shell-bl button')].some(e=>e.checkVisibility())`), 'disable returns to the visible Canvas without a redundant Back control: ' + JSON.stringify(await evaluate(`({view:document.documentElement.dataset.view, decisions:!!document.querySelector('[data-brick=decisions]'), canvas:[...document.querySelectorAll('.spine-frame')].some(e=>e.checkVisibility({checkVisibilityCSS:true,checkOpacity:true})), back:[...document.querySelectorAll('.shell-bl button')].map(e=>e.textContent), checked:document.querySelector('[role=switch][aria-label=Decisions]')?.getAttribute('aria-checked')})`)));
   assert.equal(await evaluate('document.querySelector("[data-row=decisions] .shell-link") === null'), true, 'Show removed');
   await key('Escape');
   await evaluate('document.querySelector("#type-a-thought").focus()');

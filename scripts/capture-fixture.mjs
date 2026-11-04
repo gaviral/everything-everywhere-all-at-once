@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { standInCore, openPage } from './headless.mjs';
 export const empty = () => ({ threads: [], thoughts: [], active: null, active_by: {}, suggestions: [], actions: [], proposals: [], merged: {}, apps: [], apps_seeded: true, recaps: [], notes: {} });
-export async function captureCore({ key = true, delay = 2600, seed = empty() } = {}) {
+export async function captureCore({ key = true, delay = 2600, seed = empty(), manualPlacement = false } = {}) {
   const state = { world: structuredClone(seed), failSave: false, loseReceipt: false, omitCaptureReceipt: false, reject: false, accepted: new Map(), commits: new Map() };
   const send = change => core.send({ type: 'change', change });
   const receipt = (capture, replay = false) => { if (!state.omitCaptureReceipt) core.send({ type: 'capture_saved', capture, replay }); if (!state.loseReceipt) core.send({ type: 'text_received', id: capture.id }); };
@@ -36,7 +36,7 @@ export async function captureCore({ key = true, delay = 2600, seed = empty() } =
       const capture = { id: message.id, text: message.text, thought_ids: [thought.id] };
       state.accepted.set(message.id, capture); state.world.thoughts.push(thought);
       send({ type: 'thought_added', thought }); receipt(capture);
-      if (key && !state.reject) { core.send({ type: 'placing', now: thought.id, retries: [] }); setTimeout(() => place(message.id), delay); }
+      if (key && !state.reject) { core.send({ type: 'placing', now: thought.id, retries: [] }); if (!manualPlacement) setTimeout(() => place(message.id), delay); }
       if (key && state.reject) core.send({ type: 'placing', now: null, retries: [{ thought_id: thought.id, in_ms: 1000 }] });
     },
   });

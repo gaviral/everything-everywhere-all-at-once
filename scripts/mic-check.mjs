@@ -8,6 +8,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import { uiServer } from "./ui-server.mjs";
+import { openPage, ready, standInCore } from "./headless.mjs";
+import { empty } from "./capture-fixture.mjs";
 
 // ---- The worklet, run as the browser runs it: one processor, 128-sample blocks.
 const workletSource = readFileSync(new URL("../ui/public/pcm-worklet.js", import.meta.url), "utf8");
@@ -304,12 +306,37 @@ try {
     assert.deepEqual(none, []);
   }
 
-  // The window's one way in: a click the browser made (never a script's `.click()`) or, without an event, mic.ts's
-  // gesture check above; and nothing but that path calls startMic.
+  // Exercise the real button. A synthetic click must be refused even during an active gesture;
+  // a browser click reaches the stubbed permission request. No microphone or audio device opens.
   {
-    const app = readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8");
-    assert.match(app, /const toggleMic = async \(event\?: \{ isTrusted: boolean \}\) => \{\s*if \(event && !event\.isTrusted\)/, "a script's click on the mic never starts it");
-    assert.equal(app.match(/\bstartMic\(/g)?.length, 1, "startMic is called from toggleMic alone");
+    assert.equal(ready(), "", "built UI and Chrome required for the microphone button");
+    const core = await standInCore(() => [{ type: "snapshot", world: empty() }]);
+    let browser;
+    try {
+      browser = await openPage("about:blank");
+      const { page, evaluate, until } = browser;
+      await page("Page.enable");
+      await page("Page.addScriptToEvaluateOnNewDocument", { source: `
+        localStorage.setItem('e2a2o.toured','1'); window.__micCalls=0; window.__audioContexts=0; window.__contexts=[];
+        Object.defineProperty(navigator,'userActivation',{configurable:true,value:{isActive:true}});
+        Object.defineProperty(navigator,'mediaDevices',{configurable:true,value:{getUserMedia:async()=>{
+          window.__micCalls++; window.__requestedMicContext=window.__contexts.at(-1); throw new DOMException('Synthetic permission refusal','NotAllowedError');
+        }}});
+        window.AudioContext=class { constructor(){window.__audioContexts++;window.__contexts.push(this);this.sampleRate=24000;this.state='running';}
+          close(){this.state='closed';return Promise.resolve();} };
+      ` });
+      await page("Page.navigate", { url: `http://127.0.0.1:${core.port}/` });
+      const mic = '[data-guide="mic"]';
+      assert.ok(await until(`!!document.querySelector('${mic}') && !document.querySelector('${mic}').disabled`), "microphone button is ready");
+      await evaluate(`document.querySelector('${mic}').click(); new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
+      assert.equal(await evaluate("__micCalls"), 0, "a script's click never requests the microphone");
+      assert.equal(await evaluate("__audioContexts"), 0, "a script's click opens no audio context");
+      const point = await evaluate(`(()=>{const r=document.querySelector('${mic}').getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2}})()`);
+      for (const type of ["mousePressed", "mouseReleased"]) await page("Input.dispatchMouseEvent", { type, ...point, button: "left", clickCount: 1 });
+      assert.ok(await until("__micCalls===1"), "a real click reaches the synthetic permission request");
+      assert.ok(await until("__requestedMicContext?.state==='closed'"), "permission refusal releases the capture context");
+      assert.ok(!core.heard.some(message => message.type === "listen" && message.on === true), "refused capture never starts speech");
+    } finally { await browser?.close(); core.close(); }
   }
 
   console.log("mic-check: ok (worklet at 24, 44.1 and 48 kHz; Chrome, Safari and Firefox capture paths; only a gesture starts it)");

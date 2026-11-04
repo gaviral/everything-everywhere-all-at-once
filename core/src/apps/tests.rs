@@ -925,3 +925,21 @@ async fn c10_recipes_prompt_is_quoted_and_only_runs_after_separate_enable() {
     assert_eq!(asked.len(), 1);
     assert!(asked[0].contains("quoted_prompt"));
 }
+
+#[tokio::test]
+async fn connection_publisher_only_proposes_and_is_not_portable() {
+    let fixture = Fixture::new();
+    let mut app = app();
+    app.publishers = vec![Publisher::AppBlock { block: crate::app_blocks::AppBlock { query: "rent".into(), when: "2026-11-06".into() } }];
+    validate(&app).unwrap();
+    fixture.core.commit(vec![Change::AppRegistered { app: app.clone() }]);
+    // The same production publisher path, without an external adapter or a model prompt.
+    execute(&fixture.core, &app, None).await.unwrap();
+    let reply = fixture.core.apps.connections.lock().unwrap().reply("fixture", String::new(), false);
+    assert_eq!(reply.plans.len(), 1);
+    assert!(reply.plans[0].steps.iter().all(|s| s.state == "proposed"));
+    assert!(fixture.core.snapshot().actions.is_empty());
+    assert!(fixture.core.apps.asked.lock().unwrap().is_empty());
+    assert!(Recipe { version: 1, name: app.name, purpose: app.purpose, watcher: app.watcher, prompt: None,
+        publishers: app.publishers, cooldown_secs: 30 }.validate().is_err());
+}

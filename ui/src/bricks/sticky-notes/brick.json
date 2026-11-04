@@ -1,0 +1,8 @@
+{
+  "id": "sticky-notes",
+  "name": "Sticky notes",
+  "does": "Keep source thoughts and an unsent scratch draft at hand in this tab.",
+  "kind": "card",
+  "defaultOn": false,
+  "demoSafe": false
+}

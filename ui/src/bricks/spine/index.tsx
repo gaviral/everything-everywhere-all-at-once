@@ -1,4 +1,5 @@
 import { codePointOffset } from "../contract";
+import { usePluginState } from "../contract";
 // The Spine: the map as one canvas you can pan and zoom without end. Each topic is a spine of its points, oldest at
 // the top; each tangent hangs beside the point it came from (layout.ts). The camera follows what you're talking about
 // and lets go the moment a hand moves the map (camera.ts). Your thought on its way has a dashed slot where it's
@@ -9,7 +10,7 @@ import { codePointOffset } from "../contract";
 // joins Map and Palace.
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Background, BackgroundVariant, EdgeLabelRenderer, ReactFlow, ReactFlowProvider, useReactFlow, useStore, useStoreApi, type NodeChange, type NodeProps } from "@xyflow/react";
-import "@xyflow/react/dist/base.css";
+import pluginStyle0 from "@xyflow/react/dist/base.css?inline";
 import { useBrickEvent, CanvasToolsContext, SemanticZoomContext, ShapesContext, type BrickEvents, type BrickProps, type Position } from "../contract";
 import { useCamera, type Area } from "./camera";
 import { Terse } from "./terse";
@@ -23,7 +24,7 @@ import { Shelf } from "./shelf";
 import { useStayingHere } from "../../StayHere";
 import { C, CONVERSATION } from "./conversation";
 import { lensLayout, shiftLayout, type Lens } from "./lenses";
-import "./spine.css";
+import pluginStyle1 from "./spine.css?inline";
 import { InlinePhone } from "./InlinePhone";
 import { phoneUsableArea } from "./measure";
 import { CanvasToolNode, CanvasToolControls, useCanvasToolNodes, type CanvasNode } from "./canvas-tools";
@@ -151,7 +152,7 @@ function useShelf(map: BrickProps["map"]) {
       return new Map(Array.isArray(kept) ? kept.filter((e) => Array.isArray(e) && typeof e[0] === "string" && Number.isFinite(e[1])) : []);
     } catch { return new Map(); }
   };
-  const [held, setHeld] = useState(() => ({ key, items: read(key) }));
+  const [held, setHeld] = usePluginState("shelf", () => ({ key, items: read(key) }));
   // Another map: its own shelf, read once, not on every render (the layout redoes everything when this changes).
   const fresh = useMemo(() => (held.key === key ? null : read(key)), [held.key, key]);
   const items = fresh ?? held.items;
@@ -189,7 +190,7 @@ function chromeOf(frameBox: DOMRect | undefined) {
   return { stage: stage && stage.width ? stage : null, status: status?.height ?? 0, frame: frameBox };
 }
 
-function Canvas({ map, actions, on, destination, conversation: conversationEnabled }: BrickProps & { conversation: boolean }) {
+function Canvas({ map, actions, on, destination, conversation: conversationEnabled, state }: BrickProps & { conversation: boolean }) {
   const flow = useReactFlow<ItemNode>();
   const tools = useContext(CanvasToolsContext);
   const [lens, setLens] = useState<{ view: Lens; x: number; y: number }>(() => {
@@ -201,6 +202,9 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
   const [localAngle, setLocalAngle] = useState(0);
   const angleRef = useRef(0);
   const angle = rotationOn ? localAngle : 0;
+  const hasViewport = useRef(!!state?.get("viewport")).current;
+  const [viewport, setViewport] = usePluginState("viewport", { x: 0, y: 0, zoom: 1 });
+  useLayoutEffect(() => { if (state && !hasViewport) setViewport(flow.getViewport()); }, [state]);
   const semantic = useContext(SemanticZoomContext);
   const staying = useStayingHere();
   const reduced = useReducedMotion();
@@ -216,28 +220,28 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
   const shelfRef = useRef<HTMLDivElement>(null);
   const [dock, setDock] = useState(0);
   const [corner, setCorner] = useState({ bottom: 12, bottomRight: 12, row: 12, shell: false });
-  const [open, setOpen] = useState<{ id: string; by: "follow" | "you" } | null>(null);
-  const [following, setFollowing] = useState(true);
-  const [originals, setOriginals] = useState<ReadonlySet<string>>(new Set());
-  const [picked, setPicked] = useState<string | null>(null);
+  const [open, setOpen] = usePluginState<{ id: string; by: "follow" | "you" } | null>("open-point", null);
+  const [following, setFollowing] = usePluginState('spine/index.tsx:following', true);
+  const [originals, setOriginals] = usePluginState<ReadonlySet<string>>('spine/index.tsx:originals', new Set());
+  const [picked, setPicked] = usePluginState<string | null>('spine/index.tsx:picked', null);
   const [pending, setPending] = useState<Record<string, Position | null>>({});
   const [drag, setDrag] = useState<{ key: string; dx: number; dy: number } | null>(null);
   // While a hand holds something, the map's echoes of its own steps don't move it under the hand: it stays where it was
   // when the drag began (`grip`), and lands where it's dropped.
   const grip = useRef<{ id: string; was: Position | undefined } | null>(null);
   const [overShelf, setOverShelf] = useState(false);
-  const [shelfOpen, setShelfOpen] = useState(false);
+  const [shelfOpen, setShelfOpen] = usePluginState('spine/index.tsx:shelfOpen', false);
   const [pulses, setPulses] = useState<Record<string, number>>({});
   const [cues, setCues] = useState<Cue[]>([]);
   const [fresh, setFresh] = useState<ReadonlySet<string>>(new Set());
   const [now, setNow] = useState(() => Date.now());
   const [ready, setReady] = useState(false);
-  const [stop, setStop] = useState<Stop>("words");
+  const [stop, setStop] = usePluginState<Stop>('spine/index.tsx:stop', "words");
   const [landing, setLanding] = useState<{ thought: string; text: string } | null>(null);
   const [arriving, setArriving] = useState<string | null>(null);
-  const [opened, setOpened] = useState<ReadonlySet<string>>(new Set());
+  const [opened, setOpened] = usePluginState<ReadonlySet<string>>('spine/index.tsx:opened', new Set());
   const [selecting, setSelecting] = useState<{ key: string; thoughtId: string } | null>(null);
-  const [picking, setPicking] = useState<Picking | null>(null);
+  const [picking, setPicking] = usePluginState<Picking | null>('spine/index.tsx:picking', null);
   const [pointing, setPointing] = useState<{ thread: string } | null>(null);
   // A spine moved under another topic, shown there at once until the map says so (a refused move lets go).
   const [moving, setMoving] = useState<Record<string, string>>({});
@@ -519,10 +523,13 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
   useEffect(() => {
     if (ready || top === null) return;
     const g = goal();
-    const opening = narrow && !conversation && document.documentElement.classList.contains("shell2")
-      ? layout.items.find(item => item.kind === "head" && item.thread === here?.thread) : undefined;
-    if (opening) camera.aim(opening.box, { zoom: 1, instant: true, alignTop: true });
-    else if (g) camera.aim(g.box, { zoom: 1, instant: true }); else camera.fit(all(), 1, minZoom, { instant: true });
+    if (hasViewport) void flow.setViewport(viewport);
+    else {
+      const opening = narrow && !conversation && document.documentElement.classList.contains("shell2")
+        ? layout.items.find(item => item.kind === "head" && item.thread === here?.thread) : undefined;
+      if (opening) camera.aim(opening.box, { zoom: 1, instant: true, alignTop: true });
+      else if (g) camera.aim(g.box, { zoom: 1, instant: true }); else camera.fit(all(), 1, minZoom, { instant: true });
+    }
     const timer = window.setTimeout(() => setReady(true), 0);
     return () => window.clearTimeout(timer);
   }, [top, ready]);
@@ -1044,6 +1051,7 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
       <div className="spatial-reading-mode" inert={inline} aria-hidden={inline || undefined} style={{ visibility: inline ? "hidden" : undefined }}>
       <RotationAngle.Provider value={angle}>
       <ReactFlow<CanvasNode>
+        defaultViewport={state ? viewport : undefined} onMoveEnd={state ? (_event, next) => setViewport(next) : undefined}
         className={cls("spine-flow", semantic && "spine-semantic")} nodes={[...nodes, ...toolNodes.nodes]} edges={[]} nodeTypes={rotationOn ? ROTATED_NODE_TYPES : NODE_TYPES} onNodesChange={(changes) => { toolNodes.change(changes); onNodesChange(changes); }}
         onNodeDragStart={() => { stopFollowing(); unpick(); }}
         onNodeDrag={(event, node) => {
@@ -1121,7 +1129,7 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
       </ActsContext.Provider>
       {!compare && rotationControl}
       {picking && <Reply key={`${picking.key}|${picking.quote}`} picking={picking} width={width} start={() => setPicking({ ...picking, typing: true })} cancel={() => { unpick(); getSelection()?.removeAllRanges(); }}
-        send={(text) => { if (notes.add(picking.thoughtId, picking.quote, text, picking.context)) { unpick(); getSelection()?.removeAllRanges(); } }} />}
+        send={(text) => { if (!notes.add(picking.thoughtId, picking.quote, text, picking.context)) return false; unpick(); getSelection()?.removeAllRanges(); return true; }} />}
       {/* The camera's corner: bottom left in the shell that has a stage (its regions); in the app without one, over the
           shelf at the right, where the left is the notice timeline's. */}
       {!narrow && corner.shell && <div className="spine-corner spine-corner-left" style={{ bottom: corner.bottom }}>
@@ -1222,3 +1230,6 @@ function ZoomVar({ semantic }: { semantic: boolean }) {
   }, [store, semantic]);
   return null;
 }
+
+/** Host attaches these styles only for this mount. */
+export const styles = pluginStyle0 + "\n" + pluginStyle1;

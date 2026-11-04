@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { uiServer } from "./ui-server.mjs";
+import { openPage, ready, standInCore } from "./headless.mjs";
 
 globalThis.location = new URL("http://localhost:4321/");
 const server = await uiServer();
@@ -131,8 +132,34 @@ try {
   const app = readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8");
   assert.ok(app.includes('if (asked === "export") { exportMap(core.viewAsk); return; }'), "the spoken ask exports");
   assert.ok(app.includes('onClick={() => exportMap()} aria-label="Export map as Markdown"'), "the Export button exports, named for screen readers");
-  assert.ok(app.includes('{(world.threads.length > 0 || world.thoughts.length > 0) && <button className="import-open" onClick={() => exportMap()}'), "Export shows while every thought waits for a thread");
-  console.log("export-check: ok");
 } finally {
   await server.close();
+}
+
+const unavailable = ready();
+if (unavailable) { console.log(`SKIP export-check page: ${unavailable}`); process.exit(3); }
+const empty = { threads: [], thoughts: [], active: null, active_by: {}, recaps: [], suggestions: [], actions: [], proposals: [], merged: {}, apps: [], apps_seeded: true, notes: {} };
+const fixture = await standInCore(() => [{ type: 'snapshot', world: empty }]);
+let browser;
+try {
+  browser = await openPage(`http://127.0.0.1:${fixture.port}/`);
+  const { evaluate, until } = browser;
+  assert.ok(await until(`!!document.querySelector('.shell-welcome')`, 10000), 'empty snapshot is rendered');
+  await evaluate(`document.querySelector('[data-guide="catalog"]').click()`);
+  assert.ok(await until(`!!document.querySelector('[data-row="export"] [role="switch"]')`), 'Export is available through Features');
+  assert.equal(await evaluate(`document.querySelector('[data-row="export"] [role="switch"]').getAttribute('aria-checked')`), 'false', 'Export starts off');
+  await evaluate(`document.querySelector('[data-row="export"] [role="switch"]').click()`);
+  assert.ok(await until(`document.querySelector('[data-row="export"] [role="switch"]').getAttribute('aria-checked')==='true'`));
+  await evaluate(`document.querySelector('.shell-rail-close').click()`);
+  assert.equal(await evaluate(`!!document.querySelector('[data-guide="export"]')`), false, 'empty map has no Export button even when enabled');
+  const waiting = { id: 'export-waiting', speaker: 'you', text: 'Call the landlord', point: '', thread_id: null,
+    placed: false, unclear: '', complete: true, at_ms: 1, place_ms: null };
+  fixture.send({ type: 'snapshot', world: { ...empty, thoughts: [waiting] } });
+  assert.ok(await until(`!!document.querySelector('[data-guide="export"]')`), 'an unplaced thought makes Export available');
+  assert.equal(await evaluate(`(()=>{const e=document.querySelector('[data-guide="export"]'); return e.tagName==='BUTTON' && e.checkVisibility() && !e.disabled && /export/i.test(e.getAttribute('aria-label')||e.textContent)})()`), true, 'Export is a visible enabled button with an accessible name');
+  assert.ok(!fixture.heard.some(message => ['text', 'listen', 'sample', 'import'].includes(message.type)), 'checking export availability sends no content or microphone request');
+  console.log('export-check: ok (Markdown, download, empty map and unplaced-thought Export control)');
+} finally {
+  await browser?.close();
+  fixture.close();
 }

@@ -1,3 +1,4 @@
+import { usePluginState } from "../contract";
 // Bubble flight (docs/bricks.md, a panel): a thought of yours lifts out of the box you typed or said it in as a glass
 // bubble, its words where they were; while the model places it (≈ 2.8 s, measured) it drifts toward the thread you're
 // on, a dotted line ahead to the slot the view holds open there and a comet tail back to the box; once placed it flies
@@ -13,7 +14,7 @@
 // CSS animation, so the app's no-motion rule (styles.css) leaves a flight you asked for alone.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useBrickEvent, type BrickProps } from "../contract";
-import "./bubble-flight.css";
+import pluginStyle0 from "./bubble-flight.css?inline";
 
 type Flight = {
   id: string;
@@ -451,8 +452,8 @@ export default function BubbleFlight({ map, on }: BrickProps) {
   const layer = useRef<HTMLDivElement>(null);
   const [flights, setFlights] = useState<Flight[]>([]);
   const [reduced, setReduced] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches);
-  const [show, setShowState] = useState(() => readSetting(SHOW) === "true");
-  const [hinted, setHinted] = useState(() => readSetting(HINTED) !== null);
+  const [show, setShowState] = usePluginState("show-flight", () => readSetting(SHOW) === "true");
+  const [hinted, setHinted] = usePluginState("flight-hinted", () => readSetting(HINTED) !== null);
   const [hinting, setHinting] = useState(false);
   const [landedOnce, setLandedOnce] = useState(0);
   const flies = (!reduced || show) && !map.placingUnavailable;
@@ -523,3 +524,6 @@ export default function BubbleFlight({ map, on }: BrickProps) {
     {hinting && <ShowTheFlight show={show} setShow={setShow} close={closeHint} />}
   </div>;
 }
+
+/** Host attaches these styles only for this mount. */
+export const styles = pluginStyle0;

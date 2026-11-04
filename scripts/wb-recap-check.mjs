@@ -1,21 +1,13 @@
 // Synthetic Recap fixtures, using the same SSR helper as recap-check.mjs. No sockets, mic, downloads or native core.
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import React from "../ui/node_modules/react/index.js";
 import ReactDOMServer from "../ui/node_modules/react-dom/server.node.js";
 import { uiServer } from "./ui-server.mjs";
 
 globalThis.location = new URL("http://localhost/");
-const base = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-const before = execFileSync("git", ["show", `${base}:ui/src/Recap.tsx`], { encoding: "utf8" });
-const baselineId = new URL("../ui/src/__wb_recap_baseline__.tsx", import.meta.url).pathname;
-const server = await uiServer({ plugins: [{ name: "wb-recap-baseline", enforce: "pre",
-  resolveId: id => id === baselineId ? id : null,
-  load: id => id === baselineId ? before : null,
-}] });
+const server = await uiServer();
 try {
   const { Recap } = await server.ssrLoadModule("/src/Recap.tsx");
-  const { Recap: Before } = await server.ssrLoadModule(baselineId);
   const { SiteContext, LOCAL } = await server.ssrLoadModule("/src/site.ts");
   const through = Date.UTC(2026, 10, 3, 18, 20);
   const world = { threads: [{ id: "T1", title: "Book table", parent_id: null, status: "open", last_point: "",
@@ -33,9 +25,9 @@ try {
   const props = { view: { period: "today", recap, loading: false, message: "" }, world, connected: true,
     noKey: false, listening: false, onRequest() {}, onMark: () => true, onClose() {}, onFocus() {} };
   // Retain the rendered DOM elements too, so the actual row/request handlers can be exercised without effects.
-  const render = (overrides = {}, site = LOCAL, Component = Recap) => {
+  const render = (overrides = {}, site = LOCAL) => {
     let tree;
-    function Fixture() { tree = Component({ ...props, ...overrides }); return tree; }
+    function Fixture() { tree = Recap({ ...props, ...overrides }); return tree; }
     const html = ReactDOMServer.renderToStaticMarkup(React.createElement(SiteContext.Provider, { value: site }, React.createElement(Fixture)));
     const nodes = [];
     const walk = node => {
@@ -47,9 +39,17 @@ try {
     return { html, nodes };
   };
   const saved = JSON.stringify(recap);
-  for (const overrides of [{}, { view: { ...props.view, loading: true } },
-    { view: { ...props.view, period: "session", recap: { ...recap, period: "session" } } }]) {
-    assert.equal(render(overrides).html, render(overrides, LOCAL, Before).html, "healthy recap stays byte-identical to main");
+  for (const period of ["today", "session"]) for (const loading of [false, true]) {
+    const state = render({ view: { ...props.view, period, loading, recap: { ...recap, period } } });
+    assert.ok(state.html.includes(period === "today" ? "Your day, in one place." : "Your session, in one place."), "selected period is named");
+    assert.ok(state.html.includes(`<p class="recap-summary">${recap.summary}</p>`), "saved summary stays visible while updating");
+    assert.ok(state.html.includes("Use the blue cover") && state.html.includes("Compared cover colors."), "decisions and worked-on topic stay readable");
+    assert.equal(state.nodes.find(n => n.props.className === "recap-refresh").props.disabled, loading, "Update disables only while loading");
+    assert.equal(state.nodes.find(n => n.props.className === "recap-content").props["aria-busy"], loading, "content announces update state");
+    assert.equal(state.html.includes("Bringing this up to date…"), loading, "loading is stated beside the saved recap");
+    const periods = state.nodes.filter(n => n.type === "button" && "aria-pressed" in n.props && !n.props.className);
+    assert.deepEqual(periods.map(n => n.props["aria-pressed"]), [period === "session", period === "today"]);
+    assert.ok(periods.every(n => n.props.disabled === loading), "period choices wait for the current update");
   }
   for (const resting of [false, true]) {
     const outage = render({ noKey: true, resting });
@@ -61,13 +61,20 @@ try {
     assert.ok(outage.html.includes(resting ? "Recap is back tomorrow: today&#x27;s free tries are used up." : "Recap needs a working AI key."));
     assert.equal(outage.nodes.find(n => n.props.className === "recap-refresh").props.disabled, true, "Update remains disabled");
     const empty = { noKey: true, resting, view: { ...props.view, recap: null } };
-    assert.equal(render(empty).html, render(empty, LOCAL, Before).html, "empty outage copy and controls unchanged");
+    const emptyState = render(empty);
+    assert.ok(emptyState.html.includes(resting ? "Recap is back tomorrow" : "Recap needs a working AI key."), "empty outage explains why no recap is available");
+    assert.ok(emptyState.html.includes("Press Esc to close"), "empty outage remains dismissible");
+    assert.ok(!emptyState.html.includes('class="recap-summary"') && !emptyState.html.includes('class="recap-content"'), "empty outage invents no saved content");
+    assert.equal(emptyState.nodes.find(n => n.props.className === "recap-refresh").props.disabled, true, "empty outage cannot request an unavailable provider");
   }
   const withActions = actions => ({ view: { ...props.view, recap: { ...recap, actions } } });
   const proposal = withActions([action("new", { when: "Thursday" })]);
   for (const calendarFile of [false, true]) {
     const site = { ...LOCAL, hosted: calendarFile, calendarFile };
-    assert.equal(render(proposal, site).html, render(proposal, site, Before).html, "unapproved proposal markup unchanged");
+    const proposed = render(proposal, site).html;
+    assert.ok(proposed.includes("Pending approval") && proposed.includes("Bring the covers"), "unapproved action is named as a proposal");
+    assert.ok(proposed.includes("Book table · Thursday · Calendar"), "proposal names its topic, time and destination");
+    assert.ok(!proposed.includes("Adding to") && !proposed.includes("Added to"), "proposal claims no external write");
     const kept = render(withActions([action("kept", { when: "Thursday" })]), site).html;
     assert.match(kept, />Adding <span>1<\/span>/);
     assert.ok(kept.includes("Adding to Reminders…"), "invalid date resolves to Reminders");
@@ -83,10 +90,10 @@ try {
       assert.ok(!done.includes("Saved as .ics"), "native receipt is not a file save");
     }
   }
-  const callbacks = Component => {
+  const callbacks = () => {
     const calls = [];
     const result = render({ ...proposal, onRequest: period => calls.push(["recap", period]),
-      onClose: () => calls.push(["close"]), onFocus: id => calls.push(["focus", id]) }, LOCAL, Component);
+      onClose: () => calls.push(["close"]), onFocus: id => calls.push(["focus", id]) }, LOCAL);
     result.nodes.find(n => n.props.className === "recap-refresh").props.onClick();
     for (const button of result.nodes.filter(n => n.type === "button" && "aria-pressed" in n.props && !n.props.className)) button.props.onClick();
     const row = result.nodes.find(n => n.props.className === "recap-actions");
@@ -94,10 +101,9 @@ try {
     link.props.onClick({ preventDefault: () => calls.push(["preventDefault"]) });
     return calls;
   };
-  assert.deepEqual(callbacks(Recap), callbacks(Before), "proposal navigation and request callbacks unchanged");
-  assert.deepEqual(callbacks(Recap), [["recap", "today"], ["recap", "session"], ["recap", "today"], ["preventDefault"], ["close"], ["focus", "T1"]]);
+  assert.deepEqual(callbacks(), [["recap", "today"], ["recap", "session"], ["recap", "today"], ["preventDefault"], ["close"], ["focus", "T1"]]);
   assert.equal(JSON.stringify(recap), saved, "saved data unchanged");
-  console.log(`wb-recap-check: passed (saved/empty outage, healthy main ${base.slice(0, 8)}, proposal markup/callbacks, Adding, file/native receipts; no native effects)`);
+  console.log(`wb-recap-check: passed (saved/empty outage, healthy/loading/session, proposal markup/callbacks, Adding, file/native receipts; no native effects)`);
 } finally {
   await server.close();
 }

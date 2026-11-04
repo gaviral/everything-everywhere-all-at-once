@@ -1,3 +1,4 @@
+import { usePluginState } from "./bricks/contract";
 import { useCardNotice } from "./notice-queue";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { AnimatePresence, motion } from "motion/react";
@@ -34,7 +35,7 @@ function Blocks({ app }: { app: MiniApp }) {
     <li><small>When</small>{watching(app.watcher)}</li>
     {app.prompt && <li><small>Consider</small>{app.watcher.kind === "app_request" ? "Look for an existing app" : "One prompt"}</li>}
     {app.publishers.map((p, i) => <li key={i}><small>Then</small>{p.kind === "card" ? "Show a card"
-      : p.kind === "sound" ? app.watcher.kind === "volume" ? "Play a silly tune" : "Play a light tune" : "Propose a reminder"}</li>)}
+      : p.kind === "sound" ? app.watcher.kind === "volume" ? "Play a silly tune" : "Play a light tune" : p.kind === "app_block" ? "Propose Reminders → Calendar → tune" : "Propose a reminder"}</li>)}
   </ol>;
 }
 
@@ -70,8 +71,8 @@ function Decisions({ build, core, onDecide }: { build: AppBuild; core: Core; onD
 }
 
 export function Apps({ core }: { core: Core }) {
-  const [open, setOpen] = useState(false);
-  const [request, setRequest] = useState("");
+  const [open, setOpen] = usePluginState("apps-open", false);
+  const [request, setRequest] = usePluginState("app-request", "");
   // Only an app asked for here shows here; one said or typed in the composer builds in the dock (DockBuild), so the
   // map under this panel stays where it is.
   const build = core.apps.inPanel ? core.apps.build : null;

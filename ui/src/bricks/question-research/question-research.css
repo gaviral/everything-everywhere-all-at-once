@@ -1,0 +1,13 @@
+.question-research { width: min(480px, calc(100vw - 32px)); max-height: 65dvh; overflow: auto; padding: 16px; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; color: var(--ink, CanvasText); background: var(--card, Canvas); border: 1px solid currentColor; border-radius: 12px; }
+.question-research h3 { margin: 0 0 12px; }
+.question-research label { display: block; margin-block: 12px; }
+.question-research select, .question-research textarea { display: block; width: 100%; max-width: 100%; padding: 8px; font: inherit; color: inherit; background: inherit; border: 1px solid currentColor; }
+.question-research textarea { min-height: 88px; resize: vertical; }
+.question-research button, .question-research summary { font: inherit; min-height: 44px; white-space: normal; padding: 8px; }
+.question-research blockquote { margin: 8px 0; border-left: 2px solid currentColor; padding-left: 12px; white-space: pre-wrap; }
+.question-research-actions { display: flex; gap: 12px; }
+.question-research article { border-top: 1px solid currentColor; margin-top: 16px; padding-top: 12px; }
+.question-research-simulated { display: block; padding: 4px 0; }
+.question-research-evidence [data-supported=true] { text-decoration: underline dotted; text-underline-offset: 4px; }
+.question-research-evidence a { display: inline; color: inherit; font-weight: 600; }
+.question-research-scope { font-size: 12px; }
