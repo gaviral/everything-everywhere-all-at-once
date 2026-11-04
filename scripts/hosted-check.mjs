@@ -31,6 +31,7 @@ try {
     assert.doesNotMatch(words, /\.env|MODEL_API_KEY|host's|this computer|\bMac\b|restart/, words);
   }
   assert.match(site.savedWhere(true), /server/);
+  assert.doesNotMatch(site.savedWhere(true), /account/, "the same Share copy must work for hosted guests");
   assert.match(site.siteText("The AI key was refused. Check MODEL_API_KEY in .env, then restart.", true), /refused/);
   assert.match(site.keyWords(true, false, "notice"), /no AI key/);
   // Past the hosted site's daily limit (the proxy's notice): every line says the free tries are used up until

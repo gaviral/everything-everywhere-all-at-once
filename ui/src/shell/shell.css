@@ -78,7 +78,7 @@ html.shell2 .shell-corner { position: fixed; z-index: 40; display: flex; align-i
 html.shell2 .shell-tl { top: 16px; left: 16px; }
 html.shell2 .shell-tr { top: 16px; right: 16px; }
 html.shell2 .shell-bl { bottom: calc(var(--dock-height, 120px) + var(--shell-corner-gap)); left: 16px; }
-html.shell2 .shell-br { right: 16px; bottom: max(var(--shelf-top, 36px), calc(var(--dock-height, 120px) + var(--shell-corner-gap))); z-index: 41; flex-direction: column; align-items: flex-end; }
+html.shell2 .shell-br { right: 16px; bottom: var(--work-spine-held-bottom, max(var(--shelf-top, 36px), calc(var(--dock-height, 120px) + var(--shell-corner-gap)))); z-index: 41; flex-direction: column; align-items: flex-end; }
 html.shell2 .shell-identity { gap: 10px; }
 html.shell2 .shell-wordmark { color: var(--ink); font-size: 13px; font-weight: 600; letter-spacing: .14em; }
 html.shell2 .shell-mapname { color: var(--ink-2); }
@@ -326,6 +326,13 @@ html.shell2 .shell-sample { cursor: pointer; }
 /* ── A phone: a 56 px top bar, the input inside the bottom bar; the rail is a sheet ─────── */
 
 @media (max-width: 560px) {
+  /* The phone's cards share one surface; map words must not show through their gaps. */
+  html.shell2 .spine-corner-row { z-index: 1; }
+  html.shell2 .spine-corner-row::before { content: ""; position: absolute; inset: -8px -16px; z-index: -1; background: var(--space); pointer-events: none; }
+  html.shell2[data-view="map"] .shell-stage { isolation: isolate; }
+  html.shell2[data-view="map"] .shell-stage::before {
+    content: ""; position: absolute; inset: 0 -16px -12px; z-index: -1; background: var(--space); pointer-events: none;
+  }
   html.shell2 .shell-tl { top: 10px; left: 16px; }
   html.shell2 .shell-tr { top: 10px; right: 16px; gap: 6px; }
   html.shell2 .shell-pill { height: 36px; padding: 0 12px; }

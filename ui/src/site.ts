@@ -33,7 +33,7 @@ export const useSite = () => useContext(SiteContext);
 
 /** Where your thoughts are kept, for the room menu: on the host's computer, or on the site's server. */
 export function savedWhere(hosted: boolean): string {
-  return hosted ? "Your thoughts are saved with your account, on this site's server." : "Your thoughts are saved on the host's computer.";
+  return hosted ? "Your thoughts are saved on this site's server." : "Your thoughts are saved on the host's computer.";
 }
 
 /** The hosted site's daily limit: past it, the site's proxy starts each core without the key until midnight Pacific

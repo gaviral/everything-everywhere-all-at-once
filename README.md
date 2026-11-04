@@ -7,7 +7,7 @@
 
 <!-- hosted: draft, confirm fresh guest entry and the served build before leading with it -->
 - **Local example:** `./run.sh sample` → printed `/?sample` URL (no key or mic; [setup](#run-it), cold source build ≈ 4 min).
-- **Hosted preview, verification pending:** https://e2a2o.aviralgarg.com
+- **Hosted preview, verification pending:** https://e2a2o.aviralgarg.com → **Try it without an account** → **See an example**.
 
 ![19 seconds of one recorded take, at normal speed. A synthesized voice says “Mom's birthday is Saturday…”, which becomes a new topic, Mom's Birthday Saturday. “Okay, decided: if it's under eighty dollars, I'm booking it tonight” lands on that topic marked ✓ Decided. “My stats midterm is Thursday” starts a topic of its own, and “Decided: I'll study with Priya on Wednesday night” lands on it, marked ✓ Decided. Dark labels name the model at each step: Muse Voice Transcribe 1.0 hears you, Muse Spark 1.2 placed it in 2.5 to 3.3 s.](docs/screens/hero.gif)
 
@@ -102,7 +102,7 @@ Every call, its setting, reasoning effort and time limit: [docs/FEATURES.md](doc
 
 ## Run it
 
-**Hosted preview:** fresh guest entry, example → “where was I?” → Pictures → refresh, and the hosted boot commit comparison remain pending on the final build. This link is not yet a verified judge route. Use the local example below in the meantime. Hosted pictures may be disabled; fixture pictures are pre-generated.
+**Hosted preview:** https://e2a2o.aviralgarg.com → **Try it without an account** (under the sign-in form) → **See an example**. Fresh guest entry, example → “where was I?” → Pictures → refresh, and the hosted boot commit comparison remain pending on the final build. This link is not yet a verified judge route. Use the local example below in the meantime. Hosted pictures may be disabled; fixture pictures are pre-generated.
 
 Tested on macOS. Every local start needs Node.js 22.12 or newer and npm: `run.sh` installs missing UI dependencies and builds the UI, including when using a bundled core. For the mic, use Chrome or Safari.
 
@@ -131,6 +131,8 @@ The first source build takes about 4 minutes with nothing cached (10-core Apple-
 **No key: a sample map, labelled SAMPLE.** A student's week: 8 topics, 30 thoughts, a picture for every topic (drawn once by the app's own picture pipeline and saved in `samples/images/`), two proposed reminders, and one topic left off. These are public fixtures dated for the week of Nov 3, 2026; their deadlines are examples. Type “where was I?” to return to the unfinished topic, then “pictures” to open its saved pictures. You can also try `j`/`k` and Enter, `/` to search, and the “Did you mean BC Hydro?” question written into the sample. Cards and Pictures start off: switch one on in Features (`C`) and choose Show. Without a key the status line at the bottom says “No AI key”; new text needs a working key for automatic placement. `./run.sh sample founder` opens a founder's day, also labelled SAMPLE. Each sample start restores its fixture.
 
 The default page opens the current shell; `/?sample` adds its SAMPLE stamp. The earlier classic page (a header across the top and a bottom bar) stays at `http://localhost:4321/?shell=1`.
+
+**Work spine and Remote (simulated helper work, no key needed).** In **Features** (`C`), switch on **Work spine**. It shows jobs beside the Canvas on a laptop; on a phone, tap its bar above the composer. With the local app running, open a second terminal in the repository and run `node scripts/demo-jobs.mjs` (add `--port PORT` for a different app port, or `--room CODE` for a room). The feed labels its jobs **Demo mode · simulated**; it makes no bookings or payments. Leave it running to answer its held question. Open `/?remote` on the same app for the phone Remote: in a room it joins as a guest and relays your answer; without a room it plays a simulated feed in the page.
 
 **With a key: watch the story build itself.**
 
