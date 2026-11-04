@@ -1,39 +1,207 @@
 {
   "event": "Meta × Cerebral Valley",
   "title": "Make it ready.",
-  "subtitle": "One place to return to. One thoughtful submission.",
-  "deadline": "2026-11-04T19:00:00-08:00",
-  "deadlineLabel": "Nov 4 · 7:00 pm BC",
-  "sourceNote": "Working brief · official rules and form details awaiting verification.",
-  "submissionNote": "Preparation only. Marking an item ready does not submit the entry.",
+  "subtitle": "Think out loud. Keep your place.",
+  "deadline": "2026-11-04T19:00:00-07:00",
+  "deadlineLabel": "Nov 4 · 7:00 pm BC · 9:00 pm ET",
+  "sourceNote": "Rules checked Nov 4, 2026 · dev.meta.ai/events/global-hackathon · cerebralvalley.ai/e/meta-ai-developer-hackathon/details",
+  "submissionNote": "Preparation only. Review marks do not submit, publish or grant consent.",
   "deliverables": [
-    { "id": "repo", "title": "Public repository", "detail": "New work, setup instructions and a link anyone can open.", "state": "pending" },
-    { "id": "video", "title": "Demo video link", "detail": "Show it working. Check playback and public access.", "state": "pending" },
-    { "id": "contributors", "title": "Contributors", "detail": "Confirm the contributor list and credits in the form.", "state": "pending" },
-    { "id": "form", "title": "Submission form", "detail": "Review answers, attach links and keep the confirmation.", "state": "pending" }
+    {
+      "id": "repo",
+      "title": "Public repository",
+      "detail": "Approve the final build, pass release checks, clear private data and rights, then verify public access.",
+      "state": "pending"
+    },
+    {
+      "id": "video",
+      "title": "Demo video link",
+      "detail": "Show real Meta work within three minutes. Verify rights, the final build and logged-out playback.",
+      "state": "pending"
+    },
+    {
+      "id": "contributors",
+      "title": "Contributors and eligibility",
+      "detail": "Confirm every approved human builder, eligibility, track, personal answers and publication consent.",
+      "state": "pending"
+    },
+    {
+      "id": "form",
+      "title": "Submission and receipt",
+      "detail": "Approve the drafts and final links; include X only if pursuing Viral. Submit before cutoff and verify the receipt.",
+      "state": "pending"
+    }
   ],
-  "rulesNote": "These are constraints from the working brief. Confirm the organizer’s eligibility, track requirements, video limits and submission instructions before sending.",
+  "rulesNote": "Organizer requirements and disqualification risks, checked Nov 4, 2026. Read the official guide and waiver; owner review remains necessary.",
   "rules": [
-    { "title": "Submit before the cutoff", "detail": "Have the entry and required links submitted by Nov 4, 7:00 pm BC." },
-    { "title": "Use Meta models", "detail": "Runtime models must be Meta models. No GPT runtime calls." },
-    { "title": "Submit new work", "detail": "Keep the public submission to new work. Verify any reuse against the official rules." },
-    { "title": "Keep it public-safe", "detail": "No secrets, private material or personal paths in the repository, video or answers." }
+    {
+      "title": "Meet the cutoff",
+      "detail": "Submit by November 4, 19:00 BC / 21:00 ET. Late entries are not considered; do not rely on editing afterward."
+    },
+    {
+      "title": "Use Meta meaningfully",
+      "detail": "Show the submitted project using Meta models for real work. Do not present another provider’s or simulated outputs as Meta execution."
+    },
+    {
+      "title": "Disclose earlier work",
+      "detail": "Distinguish event-built contributions from prior work. Misrepresentation can disqualify; use only original app work and properly licensed dependencies."
+    },
+    {
+      "title": "Make required links accessible",
+      "detail": "Provide a public source repository, a working demo-video link and all approved human contributors. Broken or inaccessible links can prevent evaluation."
+    },
+    {
+      "title": "Confirm entrant eligibility",
+      "detail": "Accepted applicants must be at least 18 and of local majority age. Sanctions, prohibited locations and organizer/government affiliations or household exclusions apply; read the waiver."
+    },
+    {
+      "title": "One eligible team and entry",
+      "detail": "At most four approved people; one project in one track. False identity, duplicate applications or spam risk disqualification."
+    },
+    {
+      "title": "Respect rights and conduct",
+      "detail": "Use only material you may publish. Illegal, unethical, abusive, discriminatory or platform-policy-violating work or conduct can disqualify."
+    },
+    {
+      "title": "Keep public artifacts safe",
+      "detail": "Remove secrets, personal paths, private speech and journals. Label sample data, seeded defects and edited waits; claim only work actually demonstrated."
+    }
   ],
   "tracks": [
-    { "name": "Official track selection", "status": "To verify", "detail": "Track names and eligibility have not been supplied. Choose after reviewing the official rules." }
+    {
+      "name": "Indie Developer Track",
+      "status": "Proposed — owner review",
+      "detail": "Build for Your World: help a solo builder keep direction while small software parts are built and reviewed."
+    }
   ],
   "rubric": [
-    { "name": "Impact", "points": 30, "prompt": "Make the benefit clear." },
-    { "name": "Meta tooling", "points": 25, "prompt": "Show what Meta enables." },
-    { "name": "Technical depth", "points": 20, "prompt": "Explain the hard part." },
-    { "name": "Demo", "points": 25, "prompt": "Let the experience speak." }
+    {
+      "name": "Impact",
+      "points": 30,
+      "prompt": "Make the benefit clear."
+    },
+    {
+      "name": "Meta tooling",
+      "points": 25,
+      "prompt": "Show what Meta enables."
+    },
+    {
+      "name": "Technical depth",
+      "points": 20,
+      "prompt": "Explain the hard part."
+    },
+    {
+      "name": "Demo",
+      "points": 25,
+      "prompt": "Let the experience speak."
+    }
   ],
-  "draftsNote": "Example answers, not verified form fields or product claims. Edit and review before copying into the official form.",
+  "draftsNote": "Owner-review drafts for the observed form. Pending choices and links are not ready to paste. The complete parallel-build-and-repair loop is not yet demonstrated.",
   "drafts": [
-    { "id": "name", "label": "Project name", "answer": "Shared Canvas (working title)" },
-    { "id": "summary", "label": "What are you building?", "answer": "A shared space that helps a group turn a conversation into an organized set of ideas and next steps." },
-    { "id": "impact", "label": "Who does it help?", "answer": "Small teams who want to stay present in a conversation and return to what matters afterward." },
-    { "id": "meta", "label": "How does it use Meta tooling?", "answer": "Meta models help organize contributions into topics. Confirm the exact model names and demonstrated capabilities before submission." },
-    { "id": "depth", "label": "What did you build?", "answer": "A shared interface for capturing, organizing and revisiting ideas. Add the verified architecture, hardest technical decision and demo evidence here." }
+    {
+      "id": "name",
+      "label": "Team Name",
+      "answer": "E2A2O — proposed; confirm against the registered team."
+    },
+    {
+      "id": "members",
+      "label": "Team Members",
+      "answer": "Owner to confirm and select every approved human contributor in the signed-in form; no identities are drafted here."
+    },
+    {
+      "id": "track",
+      "label": "Which track are you submitting to?",
+      "answer": "Indie Developer Track."
+    },
+    {
+      "id": "statement",
+      "label": "Which problem statement did you build towards?",
+      "answer": "Build for Your World."
+    },
+    {
+      "id": "viral",
+      "label": "If you're competing for the Most Viral Track, please submit your X post link here to be considered.",
+      "answer": "Leave blank unless pursuing the Most Viral award and an approved final post URL is available. No post has been made by this task."
+    },
+    {
+      "id": "description",
+      "label": "Project Description",
+      "answer": "E2A2O is a conversation-led workspace for someone with more ideas than time to coordinate them. Think out loud. Keep your place. Speak or type, move between topics, and return to an unfinished thought.\n\nWe are extending that base into a way to build software through conversation: Muse Spark works on small, reusable parts in separate Git branches while the person keeps shaping the goal. The intended workflow checks each part, combines working changes, and repairs or switches off failed parts without losing the rest. Parts can be made from smaller parts and reused in later work.\n\nThe current prototype has a Rust core, a TypeScript interface, topic organization, return-to-thought navigation and bounded Spark coding proposals in isolated worktrees. The complete speech-to-parallel-build-to-checked-merge-and-repair loop still needs an end-to-end demonstration; we do not claim it is finished. A labelled sample works without an AI key; live model features need a Meta key.\n\nBefore the event there were ideas and design notes, no app code. Original app code was written during the event; third-party dependencies retain their licences."
+    },
+    {
+      "id": "repository",
+      "label": "Public GitHub Repository",
+      "answer": "https://github.com/gaviral/e2a2o-app — proposed repository; public access and final release verification are pending."
+    },
+    {
+      "id": "video",
+      "label": "3-Minute Demo Video",
+      "answer": "Pending: final hosted demo video URL. Do not substitute the app or repository URL."
+    },
+    {
+      "id": "meta",
+      "label": "Describe your use of Meta products to build the submitted project",
+      "answer": "Muse Voice Transcribe turns spoken input into text. Muse Spark organizes thoughts by topic, supports refinement and Recap, and produces bounded coding proposals for isolated worktrees. Our intended extension uses Spark to divide a request into reusable parts, build them concurrently and repair failed checks; the complete integration loop remains to be demonstrated. Muse Image generates topic pictures for the optional visual view.\n\nDuring development, Muse Code with Muse Wonder Full reviewed supplied source snapshots. That was a development review, not a runtime component or proof that its recommendations were implemented. The app's live model functions use Meta models; ordinary code handles storage, navigation, branch isolation and checks."
+    },
+    {
+      "id": "why-meta",
+      "label": "Why are Meta's models important to your solution?",
+      "answer": "Meta's models connect a spoken intention to work the person can inspect. Voice Transcribe makes speech usable as input. Spark interprets the meaning of a thought, organizes it and produces a scoped code proposal instead of requiring a person to translate every idea into a detailed task. The intended parallel-parts workflow builds on those proposals, with ordinary code enforcing boundaries and checks. Muse Image adds an optional visual way to revisit topics. These roles let us explore whether someone can keep thinking while the workspace carries work forward. We have not established a productivity or reliability improvement."
+    },
+    {
+      "id": "partner-feedback",
+      "label": "Provide feedback from your experience using partner technologies.",
+      "answer": "Leave blank: no verified firsthand partner feedback is supplied."
+    },
+    {
+      "id": "api-likelihood",
+      "label": "How likely are you to build with Meta Model API?",
+      "answer": "Owner choice required: Very likely / Somewhat likely / Neutral / Somewhat unlikely / Very unlikely. No opinion selected."
+    },
+    {
+      "id": "api-opinion",
+      "label": "How would you describe your overall opinion of Meta Model API?",
+      "answer": "Owner choice required: Very favorable / Somewhat favorable / Neutral / Somewhat unfavorable / Very unfavorable. No opinion selected."
+    },
+    {
+      "id": "permission",
+      "label": "Publication-permission checkbox",
+      "answer": "Owner decision required. Review permission for Meta and Cerebral Valley to use, publish, share and promote submitted materials; no consent is selected."
+    },
+    {
+      "id": "recommend-api",
+      "label": "How likely are you to recommend the Meta Model API to another developer or engineering team building with LLMs?",
+      "answer": "Owner to choose a firsthand rating on the displayed scale, or leave blank if permitted. No rating drafted."
+    },
+    {
+      "id": "recommend-code",
+      "label": "How likely are you to recommend Muse Code to another developer or engineering team?",
+      "answer": "Owner to choose a firsthand rating on the displayed scale, or leave blank if permitted. A completed source review does not establish a rating."
+    },
+    {
+      "id": "obstacle",
+      "label": "What was the biggest obstacle your team hit while building this project?",
+      "answer": "Proposed choice: Slow responses. Owner must confirm this was the biggest obstacle; coordinating asynchronous results and integration also remain material challenges."
+    },
+    {
+      "id": "comparison",
+      "label": "Compared with other AI models your team has used for the same kind of work, how did Meta’s models perform on this project?",
+      "answer": "Proposed choice, only if accurate: We've used other models but couldn't make a clear comparison. Owner to confirm; no comparative benchmark is claimed."
+    },
+    {
+      "id": "priority",
+      "label": "When your team chooses an AI model or coding tool, what matters most?",
+      "answer": "Proposed choice: Quality of the answers and code. Owner to confirm this personal priority."
+    },
+    {
+      "id": "switching",
+      "label": "What makes it hardest for your team to switch to a different AI model or coding tool?",
+      "answer": "Proposed choice: Our product is tuned to our current model’s behavior and prompts. Owner to confirm this is the hardest factor."
+    },
+    {
+      "id": "production",
+      "label": "If your team took this project to production, what would most likely stop you from using Meta’s models?",
+      "answer": "Proposed choice: Price or unpredictable costs. Owner to confirm; this prototype does not establish production costs."
+    }
   ]
 }

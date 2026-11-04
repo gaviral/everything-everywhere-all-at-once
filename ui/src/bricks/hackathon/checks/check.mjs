@@ -76,18 +76,18 @@ try {
   assert.equal(await evaluate('typeof window.micAttempts'), 'number', 'Microphone guard installed before feature load');
   assert.equal(await evaluate(`document.querySelector('.hackathon-ready').textContent`), '0 / 4 ready');
   assert.equal(await evaluate(`hackathonCheck.content.rubric.reduce((n, item) => n + item.points, 0)`), 100);
-  assert.equal(await evaluate(`Date.parse(hackathonCheck.content.deadline)`), Date.parse('2026-11-05T03:00:00Z'));
-  assert.deepEqual(await evaluate(`hackathonCheck.timeRemaining(hackathonCheck.content.deadline, Date.parse('2026-11-05T02:59:58Z'))`), { closed: false, hours: '00', minutes: '00', seconds: '02' });
+  assert.equal(await evaluate(`Date.parse(hackathonCheck.content.deadline)`), Date.parse('2026-11-05T02:00:00Z'));
+  assert.deepEqual(await evaluate(`hackathonCheck.timeRemaining(hackathonCheck.content.deadline, Date.parse('2026-11-05T01:59:58Z'))`), { closed: false, hours: '00', minutes: '00', seconds: '02' });
   assert.equal(await evaluate(`document.querySelector('[role="timer"]').getAttribute('aria-label')`), await evaluate(`(() => { const t = hackathonCheck.timeRemaining(hackathonCheck.content.deadline, Date.now()); return t.closed ? 'Deadline reached' : t.hours + ' hours ' + t.minutes + ' minutes ' + t.seconds + ' seconds remaining'; })()`));
   await evaluate(`(() => { const field = document.querySelector('select'); field.value = 'ready'; field.dispatchEvent(new Event('change', { bubbles: true })); })()`);
   await waitFor(`document.querySelector('.hackathon-ready').textContent === '1 / 4 ready'`);
   await click('.hackathon-navigation button:nth-child(2)');
   await waitFor(`!!document.querySelector('.hackathon-tracks')`);
-  assert.equal(await evaluate(`document.querySelectorAll('.hackathon-rules-list article').length`), 4);
-  assert.match(await evaluate(`document.querySelector('.hackathon-tracks').textContent`), /To verify/);
+  assert.equal(await evaluate(`document.querySelectorAll('.hackathon-rules-list article').length`), 8);
+  assert.match(await evaluate(`document.querySelector('.hackathon-tracks').textContent`), /Indie Developer Track/);
   await click('.hackathon-navigation button:nth-child(3)');
-  await waitFor(`document.querySelectorAll('textarea').length === 5`);
-  assert.match(await evaluate(`document.querySelector('.hackathon-context').textContent`), /Example answers/);
+  await waitFor(`document.querySelectorAll('textarea').length === 21`);
+  assert.match(await evaluate(`document.querySelector('.hackathon-context').textContent`), /Owner-review drafts/);
   const editName = async text => {
     await evaluate(`(() => { const field = document.querySelector('textarea'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(field, ${JSON.stringify(text)}); field.dispatchEvent(new Event('input', { bubbles: true })); })()`);
   };
@@ -105,10 +105,10 @@ try {
   assert.equal(await evaluate(`hackathonCheck.itemState({...hackathonCheck.content.deliverables[0], detail: 'Changed requirement'}, {source: JSON.stringify(hackathonCheck.content.deliverables[0]), state: 'ready'})`), 'pending');
   assert.equal(await evaluate(`hackathonCheck.draftValue({id: 'new', label: 'New', answer: 'Updated draft'}, {source: 'Old draft', text: 'Old answer', reviewed: true}).reviewed`), false);
   // Exercise actual timer updates and a tab returning at the cutoff without fixed sleeps.
-  await evaluate(`window.realNow = Date.now; window.clockStart = performance.now(); Date.now = () => Date.parse('2026-11-05T02:59:58Z') + performance.now() - clockStart; dispatchEvent(new Event('focus'));`);
+  await evaluate(`window.realNow = Date.now; window.clockStart = performance.now(); Date.now = () => Date.parse('2026-11-05T01:59:58Z') + performance.now() - clockStart; dispatchEvent(new Event('focus'));`);
   await waitFor(`document.querySelector('[role="timer"]').getAttribute('aria-label') === '00 hours 00 minutes 02 seconds remaining'`);
   await waitFor(`document.querySelector('[role="timer"]').getAttribute('aria-label') === '00 hours 00 minutes 01 seconds remaining'`);
-  await evaluate(`Date.now = () => Date.parse('2026-11-05T03:00:00Z'); document.dispatchEvent(new Event('visibilitychange'));`);
+  await evaluate(`Date.now = () => Date.parse('2026-11-05T02:00:00Z'); document.dispatchEvent(new Event('visibilitychange'));`);
   await waitFor(`document.querySelector('[role="timer"]').textContent === 'Deadline reached'`);
   await evaluate(`Date.now = realNow; dispatchEvent(new Event('focus'));`);
   for (const [width, height, theme] of [[1920, 1080, 'light'], [1920, 1080, 'dark'], [390, 844, 'light'], [390, 844, 'dark']]) {
