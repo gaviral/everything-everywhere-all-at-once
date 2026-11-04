@@ -1,9 +1,9 @@
 // Where bricks show in the app (docs/bricks.md): each kind in its place, each brick's code loaded only once it's on,
 // and each behind a boundary of its own, so a brick that breaks says so in one line, with its switch, while the rest
 // of the page carries on. The playground (bricks/playground.tsx) mounts a brick the same way, against a sample map.
-import { Component, lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ActedBy, BrickActions, BrickEvents, BrickInfo, BrickKind, BrickOn, BrickProps, MapSnapshot } from "./bricks/contract";
-import { useBrickRegistry, brickEvents, captureSourcesOf, landingWatcher, senders, snapshotOf, isOn, switchBrick, useBricksOn, type Brick } from "./bricks-core";
+import { useBrickRegistry, brickEvents, captureSourcesOf, landingWatcher, senders, snapshotOf, isOn, useBricksOn, type Brick } from "./bricks-core";
 import { onReading } from "./apps-audio";
 import type { Capture, Thought, UsageSnapshot, World } from "./core";
 import { hearFrom, watchPoint } from "./guide-core";
@@ -17,6 +17,10 @@ import { PluginStateContext } from "./bricks/contract";
 import { savedState } from "./plugin-store";
 import { attachStyle, keepStyles, report } from "./plugins-core";
 import "./bricks.css";
+import { FeatureBoundary } from "./bricks/self-heal/Boundary";
+import { ensureNotices } from "./bricks/self-heal/Notices";
+import { isStopped, useRecovery } from "./bricks/self-heal/state";
+import { reloadChunkOnce } from "./bricks/self-heal/reload";
 
 /** What every brick on the page is handed (contract.ts `BrickProps`, but its own brick.json): the map, `on`, and its
  *  own actions (`actionsFor`), which know which brick asks (a thought it adds lands `by` it; its hint carries its name). */
@@ -182,10 +186,21 @@ export function useBrickHost(world: World, revision: number, me: string, connect
 /** One brick in its kind's place: a view in the map's (padded clear of the dock, as the Palace is), a card in the
  *  dock (its height counted with the dock's cards, so a thought just shown moves clear of it), a panel or an input
  *  wherever it places itself. Only a new map, a switch or a new action re-renders it, not the page's clock. */
-export const BrickMount = memo(function BrickMount({ brick, host, onReady }: { brick: Brick; host: BrickHost; onReady?(id: string): void }) {
+type MountProps = { brick: Brick; host: BrickHost; onReady?(id: string): void };
+export const BrickMount = memo(function BrickMount(props: MountProps) {
+  const recovery = useRecovery();
+  useEffect(() => { if (Object.keys(recovery.stopped).length) ensureNotices(); }, [recovery]);
+  if (isStopped(props.brick.info.id)) return null;
+  return <FeatureBoundary info={props.brick.info}><FeatureContent {...props} /></FeatureBoundary>;
+});
+
+const FeatureContent = memo(function FeatureContent({ brick, host, onReady }: MountProps) {
   const detachStyles = useRef<(() => void) | null>(null);
   const Shown = useMemo(() => lazy(async () => {
-    const module = await brick.load();
+    const module = await brick.load().catch(error => {
+      if (!owned.signal.aborted && reloadChunkOnce(error)) return new Promise<never>(() => {});
+      throw error;
+    });
     if (!owned.signal.aborted && module.styles) { keepStyles(brick.info.id, module.styles); detachStyles.current?.(); detachStyles.current = attachStyle(brick.info.id); }
     return module;
   }), [brick]);
@@ -217,7 +232,7 @@ export const BrickMount = memo(function BrickMount({ brick, host, onReady }: { b
     return () => { report(brick.info.id, "Unloading"); owned.stop(); detachStyles.current?.(); report(brick.info.id, "Unloaded"); };
   }, [brick, owned]);
   const { info } = brick;
-  const inner = <PluginStateContext.Provider value={state}><BrickBoundary info={info} failure={() => { owned.stop(); detachStyles.current?.(); }}><Suspense fallback={null}><Loaded id={info.id}><Shown map={host.map} actions={actions} on={on} brick={info} state={state ?? undefined} lifetime={owned} destination={host.destination} /></Loaded>{onReady && <BrickCommitted id={info.id} onReady={onReady} />}</Suspense></BrickBoundary></PluginStateContext.Provider>;
+  const inner = <PluginStateContext.Provider value={state}><Suspense fallback={null}><Loaded id={info.id}><Shown map={host.map} actions={actions} on={on} brick={info} state={state ?? undefined} lifetime={owned} destination={host.destination} /></Loaded>{onReady && <BrickCommitted id={info.id} onReady={onReady} />}</Suspense></PluginStateContext.Provider>;
   if (info.kind === "view") return <main className="brick-view" aria-label={info.name} data-brick={info.id}>{inner}</main>;
   if (info.kind === "card") return <div className="brick-card" data-brick={info.id} data-dock-card>{inner}</div>;
   return <div className="brick-float" data-brick={info.id}>{inner}</div>;
@@ -241,28 +256,3 @@ export const BrickSlot = memo(function BrickSlot({ kind, host }: { kind: BrickKi
   const on = useBricksOn();
   return <>{BRICKS.filter((brick) => brick.info.kind === kind && on.has(brick.info.id)).map((brick) => <BrickMount key={brick.info.id} brick={brick} host={host} />)}</>;
 });
-
-/** A brick that throws shows one quiet line with a way to switch it off, not the page's "Something broke" (Crash.tsx). */
-class BrickBoundary extends Component<{ info: BrickInfo; failure: () => void; children: ReactNode }, { broken: boolean }> {
-  state = { broken: false };
-
-  static getDerivedStateFromError() {
-    return { broken: true };
-  }
-
-  componentDidCatch(error: unknown) {
-    this.props.failure();
-    report(this.props.info.id, "Failed", String(error));
-    console.warn(`The ${this.props.info.name} feature stopped:`, error);
-  }
-
-  render() {
-    if (!this.state.broken) return this.props.children;
-    const { info } = this.props;
-    const floating = info.kind === "panel" || info.kind === "input";
-    return <p className={floating ? "brick-broke brick-broke-floating" : "brick-broke"} role="status">
-      <span>{info.name} stopped working.</span>
-      <button type="button" onClick={() => switchBrick(info.id, false)}>Switch it off</button>
-    </p>;
-  }
-}

@@ -1,0 +1,15 @@
+.self-heal-notices { position: fixed; bottom: 76px; left: 50%; transform: translateX(-50%); width: min(540px, calc(100vw - 32px)); max-height: 55vh; overflow: auto; z-index: 1200; pointer-events: none; }
+.self-heal-notices > .self-heal-notice { display: block; margin: 12px 0; padding: 22px 26px; border: 1px solid var(--line, #ccd4cd); border-radius: 22px; background: var(--card, #f8faf7); color: var(--ink, #203629); box-shadow: 0 12px 48px #0002; pointer-events: auto; font-size: 18px; line-height: 1.45; }
+.self-heal-notice strong { font-size: 23px; }
+.self-heal-notice p { margin: 8px 0 18px; }
+.self-heal-notice div { display: flex; gap: 10px; flex-wrap: wrap; }
+.self-heal-notice button, .self-heal-log button { min-height: 44px; padding: 8px 14px; border: 1px solid var(--line, #ccd4cd); border-radius: 14px; color: inherit; background: var(--bg, #fff); cursor: pointer; font: inherit; }
+.self-heal-notice button:focus-visible, .self-heal-log button:focus-visible { outline: 3px solid var(--accent, #538761); outline-offset: 3px; }
+.self-heal-log { color: var(--ink, #203629); padding: 16px; font-size: 16px; line-height: 1.5; }
+.self-heal-log h3 { font-size: 21px; margin: 0 0 6px; }
+.self-heal-log p { margin: 6px 0 12px; }
+.self-heal-log article { padding: 14px 0; }
+.self-heal-log pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
+.self-heal-log summary { cursor: pointer; }
+.self-heal-panel { position: fixed; right: 20px; top: 88px; width: min(420px, calc(100vw - 40px)); max-height: 70vh; overflow: auto; border: 1px solid var(--line, #ccd4cd); border-radius: 22px; background: var(--card, #f8faf7); box-shadow: 0 12px 48px #0002; z-index: 100; }
+.self-heal-sr { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
