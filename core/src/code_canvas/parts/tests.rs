@@ -1,6 +1,13 @@
 use super::*;
 
 #[test]
+fn quoted_role_names_and_comments_do_not_assign_part_tags() {
+    let ordinary = tags("core/src/mechanism.rs", "// struct Data\nconst EXAMPLE: &str = \"system_prompt\";");
+    assert_eq!(ordinary, ["mechanism"]);
+    assert!(tags("core/src/mechanism.rs", "fn system_prompt() {} ").iter().any(|tag| tag == "prompt"));
+}
+
+#[test]
 fn source_only_files_have_tags_and_versions_advance_from_real_git_history() {
     let root = std::env::temp_dir().join(format!("canvas-parts-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(root.join("core/src")).unwrap();
