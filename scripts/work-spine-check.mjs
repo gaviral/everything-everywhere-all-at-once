@@ -391,12 +391,25 @@ try {
     await check(`!!document.querySelector(${JSON.stringify(`${job$("demo-study")} .work-spine-now`)})`, "the newest, at the foot, says Just now");
     if (!phone) {
       // The words on the Canvas (both threads' titles and points), as far as the eye reads them, end before the lane begins.
-      assert.equal(await evaluate(`(() => {
+      const canvasWords = await evaluate(`(() => {
         const edge = document.querySelector(".work-spine-lane").getBoundingClientRect().left;
         const words = [...document.querySelectorAll('.spine-frame .spine-title, .spine-frame .spine-text')];
-        const ends = words.map((el) => { const range = document.createRange(); range.selectNodeContents(el); return Math.max(0, ...[...range.getClientRects()].map((r) => r.right)); });
-        return words.length >= 7 && ends.every((right) => right <= edge);
-      })()`), true, `${where}: both threads' words stand beside the lane, whole`);
+        // A block speaker label's range includes its empty width. Measure the text inside it, too.
+        const ends = words.map((el) => {
+          const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+          const rights = [];
+          for (let text = walker.nextNode(); text; text = walker.nextNode()) {
+            if (!text.textContent.trim()) continue;
+            const range = document.createRange(); range.selectNodeContents(text);
+            rights.push(...[...range.getClientRects()].map((r) => r.right));
+          }
+          return { text: el.textContent, right: Math.max(0, ...rights) };
+        });
+        return { edge, ends };
+      })()`);
+      if (canvasWords.ends.length < 7 || canvasWords.ends.some(({ right }) => right > canvasWords.edge)) await shot("words-failed", "light");
+      assert.ok(canvasWords.ends.length >= 7 && canvasWords.ends.every(({ right }) => right <= canvasWords.edge),
+        `${where}: both threads' words stand beside the lane, whole: ${JSON.stringify(canvasWords)}`);
     }
     for (const schemeName of ["light", "dark"]) {
       await scheme(schemeName);
