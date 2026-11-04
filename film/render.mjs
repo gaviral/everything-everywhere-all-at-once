@@ -84,7 +84,7 @@ async function resolveClips(plan, configFile, clipsDir, directory) {
         durations.set(spec.source, duration);
       }
       spec.mediaDuration = durations.get(spec.source);
-      const needed = shot.kind === 'wall' ? spec.loopSeconds ?? spec.mediaDuration - (spec.start ?? 0) : shot.duration;
+      const needed = shot.kind === 'wall' ? spec.loopSeconds ?? spec.mediaDuration - (spec.start ?? 0) : Math.min(shot.duration, spec.playSeconds ?? shot.duration);
       if (needed <= 0 || (spec.start ?? 0) + needed > spec.mediaDuration + 1e-6)
         throw new Error(`Clip is too short for shot ${shot.index + 1}`);
     }

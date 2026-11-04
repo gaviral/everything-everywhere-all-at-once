@@ -21,6 +21,13 @@ function plane(clip) {
     clip[key]?.forEach(n => finite(n, key));
   }
   if (clip.width !== undefined) positive(clip.width, 'width');
+  if (clip.playSeconds !== undefined && finite(clip.playSeconds, 'playSeconds') < 0) throw new Error('playSeconds must be nonnegative');
+  if (clip.crop !== undefined) {
+    if (!Array.isArray(clip.crop) || clip.crop.length !== 4) throw new Error('crop needs normalized [x,y,width,height]');
+    const [x,y,w,h] = clip.crop;
+    clip.crop.forEach(n => finite(n, 'crop'));
+    if (x < 0 || y < 0 || w <= 0 || h <= 0 || x+w > 1 || y+h > 1) throw new Error('crop must fit inside the clip');
+  }
 }
 export function timeline(config) {
   if (!Array.isArray(config.shots) || !config.shots.length) throw new Error('shots must be a nonempty array');
