@@ -196,6 +196,9 @@ export interface MapSnapshot {
 
 /** What a brick may do. Each does what its button in the app does, with the same answer on screen. */
 export interface BrickActions {
+  /** Explicitly hands a plain text file to the browser, not proof it reached disk. Host bounds: plain filename
+   *  up to 80 characters, text/plain or text/markdown, and at most 64 KiB UTF-8. False on refusal or failure. */
+  saveTextFile(name: string, text: string, mime: string): boolean;
   /** Counts a visible thought as read, advancing the shared Talk/canvas position (never moving it back). */
   readThought(thoughtId: string): void;
   /** Adds a thought as if typed in the composer: it lands on a thread a few seconds later, and its `landed` says this

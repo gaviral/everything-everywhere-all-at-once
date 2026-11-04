@@ -8,6 +8,7 @@ import { StrictMode, useEffect, useLayoutEffect, useMemo, useRef, useState } fro
 import { createRoot } from "react-dom/client";
 import { noteChanges } from "../annotate-core";
 import { received } from "../apps-audio";
+import { saveFile } from "../save-file";
 import { BrickMount, useBrickHost } from "../BrickSlot";
 import { discover, type BrickModule } from "../bricks-core";
 import { apply, type Thought, type World } from "../core";
@@ -170,6 +171,7 @@ function Playground() {
 
   const rooms = useMemo(() => roomColors(world.threads), [world.threads]);
   const host = useBrickHost(world, revision, "you", connected, rooms, partial, {
+    saveTextFile: (name, text, mime) => { saveFile(text, mime, name); said(`File handed to browser: ${name}`); return true; },
     addThought: (text) => { const ok = add(text); said(`addThought “${text}”${ok ? " → lands on the topic you're on in 1.2 s" : " → refused"}`); return ok; },
     openThread: (thread) => {
       said(`openThread ${title(thread)} → in the app: back to the map, that topic open and highlighted`);
