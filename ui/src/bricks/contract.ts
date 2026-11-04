@@ -10,6 +10,9 @@ import type { Action, Note, Pause, Suggestion, Thought, Thread as MapThread, Usa
 import type { Position } from "../positions-core";
 
 /** The app's existing speech-correction controls, attached to a thought by a view. */
+/** This browser's optional readable Canvas overview; the playground keeps the default. */
+export const SemanticZoomContext = createContext(false);
+
 export const SpeechFixesContext = createContext<((thought: Thought) => ReactNode) | null>(null);
 
 export type { Action, Anchor, MiniApp, Note, Pause, Position, Suggestion, Thought, UsageRow, UsageSnapshot };
