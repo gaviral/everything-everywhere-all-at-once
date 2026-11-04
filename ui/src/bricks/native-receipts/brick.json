@@ -1,0 +1,8 @@
+{
+  "id": "native-receipts",
+  "name": "Reminder receipts",
+  "does": "Read example reminder outcomes and their supporting evidence.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": true
+}

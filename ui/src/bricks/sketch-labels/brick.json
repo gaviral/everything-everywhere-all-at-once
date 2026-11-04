@@ -1,0 +1,8 @@
+{
+  "id": "sketch-labels",
+  "name": "Sketch labels",
+  "does": "Label sample strokes and regions, then revise or undo them.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": true
+}

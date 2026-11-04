@@ -1,0 +1,40 @@
+.my-words { color: var(--ink); background: radial-gradient(ellipse at top right, color-mix(in srgb, var(--accent) 16%, transparent), transparent 70%), var(--card); padding: 22px; border: 1px solid var(--line); border-radius: 25px; width: min(100%, 560px); box-sizing: border-box; text-align: left; }
+.my-words-intro { display: flex; gap: 20px; align-items: center; justify-content: space-between; }
+.my-words h2, .my-words-dialog h2 { font-size: clamp(26px, 3vw, 34px); line-height: 1.15; letter-spacing: -.035em; margin: 8px 0 12px; font-weight: 650; }
+.my-words-eyebrow { font-size: 12px; font-weight: 650; letter-spacing: .09em; text-transform: uppercase; color: var(--accent); }
+.my-words-mark { font-family: Georgia, serif; font-size: 38px; border-radius: 50% 50% 42% 58%; padding: 15px; background: color-mix(in srgb, var(--accent) 13%, var(--card)); color: var(--accent); transform: rotate(-8deg); }
+.my-words-lead { font-size: 17px; line-height: 1.5; margin: 0 0 18px; }
+.my-words-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 18px; }
+.my-words-chips > span { font-size: 18px; padding: 8px 14px; border-radius: 16px 16px 16px 4px; background: color-mix(in srgb, var(--accent) 10%, var(--card)); overflow-wrap: anywhere; }
+.my-words-chips small, .my-words-note { font-size: 13px; line-height: 1.5; color: var(--muted); }
+.my-words button, .my-words-dialog button { font: inherit; cursor: pointer; border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; min-height: 44px; color: var(--ink); background: var(--card); }
+.my-words button:disabled, .my-words-dialog button:disabled { opacity: .5; cursor: default; }
+.my-words button.my-words-primary, .my-words-dialog button.my-words-primary { background: var(--ink); color: var(--bg); font-weight: 650; }
+.my-words-primary span { margin-left: 15px; }
+.my-words-dialog { padding: 0; border: 1px solid var(--line); border-radius: 28px; width: min(760px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); color: var(--ink); background: var(--card); box-shadow: var(--shadow); text-align: left; }
+.my-words-dialog::backdrop { background: #101518a8; backdrop-filter: blur(6px); }
+.my-words-sheet { padding: clamp(20px, 4vw, 36px); }
+.my-words-close { float: right; margin: 0 0 12px 12px; }
+.my-words-editor { border: 0; padding: 0; margin: 25px 0; min-width: 0; }
+.my-words-editor legend { font-size: 16px; font-weight: 650; margin-bottom: 16px; }
+.my-words-terms { display: grid; gap: 12px; }
+.my-words-term { display: flex; align-items: center; gap: 16px; justify-content: space-between; padding: 16px; border-radius: 20px; background: color-mix(in srgb, var(--accent) 7%, var(--card)); overflow-wrap: anywhere; }
+.my-words-term > div:first-child { min-width: 0; }
+.my-words-term strong { font-size: 23px; }
+.my-words-term p { margin: 5px 0 0; font-size: 15px; color: var(--muted); }
+.my-words-tools, .my-words-footer { display: flex; flex-wrap: wrap; gap: 8px; }
+.my-words-tools { flex-shrink: 0; }
+.my-words-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 20px; }
+.my-words-fields label { display: grid; gap: 8px; font-size: 15px; font-weight: 600; }
+.my-words-fields label span { font-weight: 400; color: var(--muted); }
+.my-words-fields input { box-sizing: border-box; width: 100%; min-width: 0; font: inherit; font-size: 18px; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 13px; }
+.my-words-examples { padding: 18px; border-radius: 22px; background: color-mix(in srgb, var(--accent) 8%, var(--card)); }
+.my-words-examples p { font-size: 14px; color: var(--muted); margin: 0 0 10px; }
+.my-words-examples p:last-child { margin: 12px 0 0; }
+.my-words-examples button { font-size: 21px; margin: 0 8px 4px 0; }
+.my-words-examples span { color: var(--accent); }
+.my-words-status, .my-words-undo { padding: 12px 16px; border-radius: 14px; font-size: 15px; line-height: 1.5; background: color-mix(in srgb, var(--accent) 8%, var(--card)); }
+.my-words-error { color: var(--ink); background: color-mix(in srgb, var(--amber) 18%, var(--card)); padding: 12px; border-radius: 12px; line-height: 1.5; }
+.my-words-error button { margin: 8px 8px 0 0; }
+.my-words button:focus-visible, .my-words-dialog button:focus-visible, .my-words-dialog input:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+@media (max-width: 520px) { .my-words-term { align-items: flex-start; flex-direction: column; } .my-words-fields { grid-template-columns: 1fr; } .my-words { padding: 18px; } .my-words-mark { display: none; } }

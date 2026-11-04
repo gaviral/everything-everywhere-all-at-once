@@ -14,6 +14,10 @@ import { commandIn } from "./spoken";
 import "./draw.css";
 
 const SAID_MAX = 1800;
+/** Keeps up: a pause this long in drawing is the moment to look, as a person beside you would. */
+const FOLLOW_PAUSE_MS = 1400;
+const FOLLOW_MIN_STROKES = 3;
+const plainWords = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 const flagged = () => new URLSearchParams(location.search).has("draw");
 
 /** Keeps the bottom bar, with the mic and the live words, in view below the sheet. */
@@ -42,7 +46,7 @@ function openFlow(reading: Reading) {
   dispatchEvent(new CustomEvent("e2a2o:flow-load", { detail: pipeline }));
 }
 
-export default function Draw({ on, actions }: BrickProps) {
+export default function Draw({ on, actions, map }: BrickProps) {
   const [open, setOpen] = useState(flagged);
   const [strokes, setStrokes] = useKept<Stroke[]>("strokes", []);
   const [labels, setLabels] = useKept<Label[]>("labels", []);
@@ -52,6 +56,8 @@ export default function Draw({ on, actions }: BrickProps) {
   const [reply, setReply] = useState<Reply | null>(null);
   const [busy, setBusy] = useState<"" | "reading">("");
   const [typed, setTyped] = useState("");
+  const [following, setFollowing] = useState(true);
+  const [seeThrough, setSeeThrough] = useState(false);
   const said = useRef("");
   const barHeight = useBarHeight(open);
   const sheet = useRef<HTMLDivElement>(null);
@@ -70,18 +76,33 @@ export default function Draw({ on, actions }: BrickProps) {
     });
   }, [setLabels]);
 
-  const read = useCallback(async () => {
+  const inRead = useRef(false);
+  const readCount = useRef(0);
+  const read = useCallback(async (quietly = false) => {
     const { strokes: ink, labels: names } = now.current;
-    if (!ink.length || busy) return now.current.reading?.value ?? null;
-    setBusy("reading");
+    if (!ink.length || inRead.current) return now.current.reading?.value ?? null;
+    inRead.current = true;
+    readCount.current = ink.length;
+    if (!quietly) setBusy("reading");
     try {
       const box = sheet.current?.getBoundingClientRect();
       const answer = await readSketch(pictureOf(ink, names, box ? box.width / box.height : 16 / 9), names, said.current);
-      const placed = onTheInk(answer.reading, ink, names);
+      const placed = onTheInk(answer.reading, now.current.strokes, now.current.labels);
       setReading({ value: placed, ms: answer.ms });
       return placed;
-    } catch (error) { failed(error); return null; } finally { setBusy(""); }
-  }, [busy, failed]);
+    } catch (error) { if (!quietly) failed(error); return null; } finally { inRead.current = false; setBusy(""); }
+  }, [failed]);
+
+  // Keeps up: it reads along at each pause in the drawing, and waits while the pen is moving.
+  const pause = useRef(0);
+  const followNext = useCallback(() => {
+    clearTimeout(pause.current);
+    pause.current = window.setTimeout(() => {
+      const count = now.current.strokes.length;
+      if (count >= FOLLOW_MIN_STROKES && count !== readCount.current) void read(true);
+    }, FOLLOW_PAUSE_MS);
+  }, [read]);
+  useEffect(() => () => clearTimeout(pause.current), []);
 
   const answerInInk = useCallback(async () => {
     const known = now.current.reading?.value ?? await read();
@@ -118,13 +139,23 @@ export default function Draw({ on, actions }: BrickProps) {
     const command = commandIn(sentence);
     if (command === "open") setOpen(true);
     if (!open) return;
-    if (command === "read") void read();
+    if (command === "read") { clearTimeout(pause.current); void read(); }
     if (command === "back") void answerInInk();
     if (command === "build") void build();
     if (command === "undo") undo();
     if (command === "clear") clear();
     if (command === "close") setOpen(false);
   }, [answerInInk, build, clear, open, read, undo]);
+
+  const lastSentence = useRef("");
+  const finished = (sentence: string) => {
+    lastSentence.current = sentence;
+    said.current = `${said.current} ${sentence}`.trim().slice(-SAID_MAX);
+    if (open && now.current.picked.length && !clausesIn(sentence).length && !commandIn(sentence)) {
+      nameDrawing(crypto.randomUUID(), sentence.replace(/[.!?]+$/, ""), Date.now());
+    }
+    obey(sentence);
+  };
 
   // Words as they're heard: each "this is ..." names the drawing around that moment, growing as the person talks.
   const heard = useRef({ words: "", names: [] as { id: string; at: number }[] });
@@ -141,12 +172,14 @@ export default function Draw({ on, actions }: BrickProps) {
     }
     const sentence = heard.current.words;
     heard.current = { words: "", names: [] };
-    if (!sentence) return;
-    said.current = `${said.current} ${sentence}`.trim().slice(-SAID_MAX);
-    if (open && now.current.picked.length && !clausesIn(sentence).length && !commandIn(sentence)) {
-      nameDrawing(crypto.randomUUID(), sentence.replace(/[.!?]+$/, ""), Date.now());
-    }
-    obey(sentence);
+    if (sentence) finished(sentence);
+  });
+  // A typed sentence, or one the mic didn't give word by word here, counts the same.
+  useBrickEvent(on, "landed", event => {
+    const text = event.mine ? map.thoughts.find(thought => thought.id === event.thoughtId)?.text : null;
+    if (!text || plainWords(text) === plainWords(lastSentence.current)) return;
+    if (open) clausesIn(text).forEach(name => { if (name) nameDrawing(crypto.randomUUID(), name, Date.now()); });
+    finished(text);
   });
 
   useEffect(() => {
@@ -157,7 +190,7 @@ export default function Draw({ on, actions }: BrickProps) {
   }, [open]);
 
   if (!open) return <button className="draw-open" onClick={() => setOpen(true)} aria-label="Open the drawing sheet">Draw</button>;
-  return <div className="draw-sheet" ref={sheet} style={{ bottom: barHeight }}>
+  return <div className={seeThrough ? "draw-sheet draw-see-through" : "draw-sheet"} ref={sheet} style={{ bottom: barHeight }}>
     <div className={reply ? "draw-page draw-page-shared" : "draw-page"}>
     <InkSheet
       strokes={strokes} tool={tool}
@@ -165,6 +198,7 @@ export default function Draw({ on, actions }: BrickProps) {
         setStrokes(old => [...old, stroke]);
         // A name said just before drawing waits for the drawing.
         setLabels(old => old.map(label => label.strokes.length ? label : { ...label, strokes: [stroke.id] }));
+        if (following) followNext();
       }}
       onLoop={loop => { setPicked(pickedBy(loop, now.current.strokes)); setTool("pen"); }}
     />
@@ -174,6 +208,8 @@ export default function Draw({ on, actions }: BrickProps) {
     <div className="draw-tools" role="toolbar" aria-label="Drawing">
       <button aria-pressed={tool === "pen"} onClick={() => setTool("pen")}>Pen</button>
       <button aria-pressed={tool === "lasso"} onClick={() => setTool("lasso")}>Lasso</button>
+      <button aria-pressed={seeThrough} onClick={() => setSeeThrough(value => !value)}>See through</button>
+      <button aria-pressed={following} onClick={() => setFollowing(value => !value)}>Read along</button>
       <button onClick={undo} disabled={!strokes.length}>Undo</button>
       <button onClick={clear} disabled={!strokes.length}>Clear</button>
       <form onSubmit={event => {
