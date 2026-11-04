@@ -1010,11 +1010,13 @@ export function useCore(speaker?: string) {
         }, DELIVERY_HEARTBEAT_MS);
         attention.current.resend((message) => ws.send(message));
         coreBack();
+        window.dispatchEvent(new Event("e2a2o-build"));
       };
       ws.onmessage = (event) => {
         if (socket.current !== ws || ended) return;
         if (ignorePartner(event.data)) return;
         const incoming = JSON.parse(event.data as string);
+        if (incoming.type === "build_available") { window.dispatchEvent(new Event("e2a2o-build")); return; }
         if (incoming.type === "recipe_result") {
           if (!isOn("app-recipes")) return;
           const pending = recipePending.current.get(incoming.request_id);

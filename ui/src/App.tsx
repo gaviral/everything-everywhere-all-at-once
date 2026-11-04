@@ -1,3 +1,4 @@
+import { useDevBuild } from "./dev-build";
 import { CaptureContext } from "./bricks/spine/capture";
 import { micWords } from "./shell/Shell";
 import { ReplyFormat, FormattedReply } from "./ReplyFormat";
@@ -132,6 +133,7 @@ export default function App() {
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; micStart.current?.abort(); }; }, []);
   useEffect(() => () => { stopMic?.(); }, [stopMic]);
   const [draft, setDraft] = useState("");
+  useDevBuild(() => !!(draft || stopMic || micStart.current || core.partial || core.handoff || core.placing.now));
   const [query, setQuery] = useState("");
   const talk = useTalk();
   useEffect(() => {

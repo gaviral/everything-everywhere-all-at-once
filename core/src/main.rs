@@ -15,6 +15,7 @@ mod clock;
 mod data_lock;
 mod storage;
 mod decided;
+mod dev_build;
 mod explain;
 mod find;
 mod flow;
@@ -1494,10 +1495,13 @@ async fn main() -> anyhow::Result<()> {
         let _ = core.placer_queue.send(placer::Job::Place(id));
     }
 
+    tokio::spawn(dev_build::watch(core.clone()));
     let ui = std::env::var("E2A2O_UI").unwrap_or_else(|_| "../ui/dist".into());
     let app = Router::new()
         .route("/ws", get(connect))
         .route("/room", get(room_info))
+        .route("/build-id", get(dev_build::status))
+        .route("/build-activity", post(dev_build::activity))
         .route("/terse", post(terse::read))
         .route("/flow/plan", post(flow::plan))
         .route("/flow/run", post(flow::run))

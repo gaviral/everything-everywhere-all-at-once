@@ -46,6 +46,7 @@ pub enum RemoteSelection {
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMsg {
+    BuildAvailable { id: String },
     ActionEstimateResult { request_id: String, ok: bool, message: String, estimate: Option<crate::world::ActionEstimate>, #[serde(skip)] window: u64 },
     QuestionResult { id: String, revision: u64, ok: bool, #[serde(skip_serializing_if = "Option::is_none")] error: Option<String> },
     PointProposal { request_id: String, thought_id: String, text: String, failed: bool },
