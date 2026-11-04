@@ -395,7 +395,7 @@ function ConversationPoint({ data }: { data: ItemData }) {
 }
 
 function ConversationHead({ item }: { item: Item }) {
-  return <div className="spine-conversation-head"><strong>Conversation</strong><span>{item.count} turns · topics linked beside your words</span></div>;
+  return <div className="spine-conversation-head" data-spine-target tabIndex={-1} data-session={item.session ? item.id : undefined}><strong>{item.title ?? "Conversation"}</strong><span>{item.subtitle ?? `${item.count} turns · topics linked beside your words`}</span></div>;
 }
 
 function TopicProjection({ data }: { data: ItemData }) {
