@@ -1,4 +1,4 @@
-.recovery-panel { max-height: 40vh; overflow: auto; padding: 12px; background: var(--paper); color: var(--ink); }
+.recovery-panel { max-height: 40vh; overflow: auto; padding: 12px; background: var(--card); color: var(--ink); }
 .recovery-panel article + article { margin-top: 12px; }
 .recovery-panel blockquote { margin: 8px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .recovery-panel button { margin-inline-end: 8px; }

@@ -774,6 +774,8 @@ export function useCore(speaker?: string) {
   const identityReady = useRef(false);
   const queueKey = useRef<string | null>(null);
   const outbox = useRef<string[]>([]);
+  // Explicit, non-durable sends stay here until receipts arrive. Never replay them automatically in another map.
+  const onlineSend = useRef<{ map: string; text: string; messages: string[]; awaiting: Set<string>; received: () => void } | null>(null);
   const [recovery, setRecovery] = useState<RecoveryState>({ entries: [], storageUnavailable: false });
   const refreshRecovery = () => {
     try { setRecovery((state) => ({ ...state, entries: [...state.entries.filter(entry => entry.kind === "speech"), ...quarantined(speaker ?? "you", mapId.current)] })); }
@@ -861,7 +863,7 @@ export function useCore(speaker?: string) {
         coreBack();
       };
       ws.onmessage = (event) => {
-        if (socket.current !== ws) return;
+        if (socket.current !== ws || ended) return;
         if (ignorePartner(event.data)) return;
         const msg = JSON.parse(event.data as string) as ServerMsg;
         // In the same update as the move, so the map follows you there (App.tsx doesn't while Recap is open).
@@ -884,7 +886,8 @@ export function useCore(speaker?: string) {
             mapId.current = msg.id;
             identityReady.current = true;
             queueKey.current = waitingKey(speaker ?? "you", msg.id);
-            try { localStorage.setItem(lastMapKey, msg.id); outbox.current = readWaiting(queueKey.current); }
+            try { localStorage.setItem(lastMapKey, msg.id); } catch { /* Reading saved entries may still work. */ }
+            try { outbox.current = readWaiting(queueKey.current); }
             catch { outbox.current = []; }
             setQueuedCount(outbox.current.length);
             refreshRecovery();
@@ -898,6 +901,12 @@ export function useCore(speaker?: string) {
           }
           case "text_received": {
             if (!identityReady.current || !queueKey.current) break;
+            const pending = onlineSend.current;
+            if (pending?.map === mapId.current && pending.awaiting.delete(msg.id) && pending.awaiting.size === 0) {
+              onlineSend.current = null;
+              setRecovery(state => ({ ...state, onlinePending: false }));
+              pending.received();
+            }
             try { receivedWaiting(queueKey.current, msg.id); outbox.current = readWaiting(queueKey.current); }
             catch { break; } // Retrying a saved entry is safe: the core remembers its id.
             setQueuedCount(outbox.current!.length);
@@ -1064,6 +1073,7 @@ export function useCore(speaker?: string) {
         ended = true;
         window.clearInterval(heartbeat);
         identityReady.current = false;
+        setRecovery(state => ({ ...state, onlinePending: false }));
         setUsage(null);
         window.clearTimeout(handoffTimer);
         lastPartial = "";
@@ -1169,7 +1179,29 @@ export function useCore(speaker?: string) {
   };
 
   return {
-    recovery,
+    recovery: { ...recovery, onlineAvailable: connected && identityReady.current },
+    sendOnline: (text: string, received: () => void) => {
+      const ws = socket.current;
+      if (!identityReady.current || !mapId.current || ws?.readyState !== WebSocket.OPEN || recovery.onlinePending) return false;
+      const parts = splitThought(text);
+      if (!parts.length || parts.length > 50) return false;
+      let pending = onlineSend.current;
+      if (pending && (pending.map !== mapId.current || pending.text !== text)) return false;
+      if (!pending) {
+        const messages = parts.map(part => JSON.stringify({ type: "text", id: thoughtId(), text: part }));
+        pending = { map: mapId.current, text, messages, awaiting: new Set(messages.map(message => JSON.parse(message).id)), received };
+        onlineSend.current = pending;
+      }
+      pending.received = received;
+      setRecovery(state => ({ ...state, onlinePending: true }));
+      try {
+        for (const message of pending.messages) if (pending.awaiting.has(JSON.parse(message).id)) ws.send(message);
+        return true;
+      } catch {
+        setRecovery(state => ({ ...state, onlinePending: false }));
+        return false;
+      }
+    },
     deliveryMapId: mapId.current,
     recover: (id: string) => {
       const entry = recovery.entries.find((entry) => entry.id === id);
@@ -1301,8 +1333,10 @@ export function useCore(speaker?: string) {
           // Save the entire batch before telling the composer it can clear the draft.
           saveWaiting(queueKey.current!, messages);
         } catch {
-          sayNotice("Couldn't save this thought. Keep it here and try again when connected."); answered(); return false;
+          setRecovery(state => ({ ...state, storageUnavailable: true }));
+          sayNotice("Couldn't save this thought. Keep it here, or choose Send online and wait for its receipt."); answered(); return false;
         }
+        setRecovery(state => ({ ...state, storageUnavailable: false }));
         outbox.current = readWaiting(queueKey.current!);
         setQueuedCount(outbox.current.length);
       }

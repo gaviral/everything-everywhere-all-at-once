@@ -2228,6 +2228,19 @@ mod tests {
         std::fs::remove_file(path).unwrap();
     }
 
+    #[test]
+    fn delivery_speech_reconnect_replays_only_the_owners_unfinished_words() {
+        let (core, _queue, path) = keyless(World::default());
+        let id = uuid::Uuid::new_v4().to_string();
+        core.remember_speech(crate::world::SpeechDraft { id: id.clone(), speaker: "you".into(), text: "Unfinished across reconnect".into() });
+        let (journal, world) = crate::Journal::open(&path).unwrap();
+        let restarted = Core::test(journal, world);
+        let own = super::catch_up(&restarted, "you");
+        assert_eq!(own.iter().filter(|message| matches!(message, ServerMsg::RecoverableSpeech { id: got, text } if got == &id && text == "Unfinished across reconnect")).count(), 1);
+        assert!(super::catch_up(&restarted, "someone else").iter().all(|message| !matches!(message, ServerMsg::RecoverableSpeech { .. })));
+        std::fs::remove_file(path).unwrap();
+    }
+
     #[tokio::test]
     async fn typed_receipt_survives_a_lost_socket_and_restart() {
         use tokio_tungstenite::tungstenite::Message;
