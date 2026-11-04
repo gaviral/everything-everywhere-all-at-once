@@ -1,0 +1,8 @@
+{
+  "id": "advisor",
+  "name": "Advisor mode",
+  "does": "Start with a fast Meta answer; explicitly ask for a second perspective.",
+  "kind": "view",
+  "defaultOn": false,
+  "demoSafe": true
+}
