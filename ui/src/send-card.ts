@@ -21,6 +21,8 @@ export type Card = { purpose?: "helpers"; id: number; to: string; text: string; 
  *  length, so the bar runs on from where it was; the same end again leaves the card as it is, its time up included. */
 export function received(shown: Card | null, msg: SendCardMsg, now: number): Card | null {
   const same = shown?.id === msg.id;
+  // Helper and connector IDs occupy separate ranges. Match identity for ends;
+  // numeric order cannot tell which action owns the shared card.
   if (msg.state !== "counting" && msg.state !== "running" && (!same || shown!.state === msg.state)) return shown;
   const total = msg.state !== "counting" ? (shown?.total ?? 0) : same && shown!.state === "counting" ? shown!.total : msg.in_ms;
   return { ...(msg.channel ? { channel: msg.channel, subject: msg.subject } : {}), ...(msg.purpose ? { purpose: msg.purpose } : {}), id: msg.id, to: msg.to, text: msg.text, state: msg.state, live: msg.live, message: msg.message, until: now + msg.in_ms, total };

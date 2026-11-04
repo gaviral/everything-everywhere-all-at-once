@@ -124,10 +124,25 @@ pub struct Runtime {
 #[derive(Default)]
 struct State {
     next: u64,
-    active: Option<Arc<Run>>,
+    active: Runs,
+    pending: Option<u64>,
     off: HashSet<String>,
     stopped_voice: HashSet<String>,
     speech_end: HashMap<String, (Instant, u64)>,
+}
+#[derive(Default)]
+struct Runs(HashMap<u64, Arc<Run>>);
+impl std::ops::Deref for Runs {
+    type Target = HashMap<u64, Arc<Run>>;
+    fn deref(&self) -> &Self::Target { &self.0 }
+}
+impl std::ops::DerefMut for Runs {
+    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.0 }
+}
+impl Runs {
+    // Existing runner mechanics tests probe whether any owned run remains.
+    #[cfg(test)]
+    fn is_some(&self) -> bool { !self.is_empty() }
 }
 struct Run {
     id: u64,
@@ -187,17 +202,10 @@ pub fn switch(core: &Core, speaker: &str, on: bool) {
     } else {
         state.off.insert(speaker.into());
     }
-    let pending = (!on)
-        .then(|| {
-            state
-                .active
-                .as_ref()
-                .filter(|r| r.speaker == speaker)
-                .map(|r| r.id)
-        })
-        .flatten();
+    let pending: Vec<_> = state.active.values()
+        .filter(|r| !on && r.speaker == speaker).map(|r| r.id).collect();
     drop(state);
-    if let Some(id) = pending {
+    for id in pending {
         stop(core, id);
     }
 }
@@ -341,14 +349,18 @@ fn card(run: &Run, state: SendState, message: &str) -> ServerMsg {
     }
 }
 fn end_card(core: &Core, run: &Run, state: SendState, message: &str) {
+    if state != SendState::Counting {
+        let mut registry = core.helpers.state.lock().unwrap();
+        if registry.pending == Some(run.id) { registry.pending = None; }
+    }
     let card = card(run, state, message);
     crate::messages::end(core, &run.speaker, card);
 }
 pub fn card_for(core: &Core, speaker: &str) -> Option<ServerMsg> {
+    let id = crate::messages::current_id(core, speaker)?;
     let state = core.helpers.state.lock().unwrap();
     state
-        .active
-        .as_ref()
+        .active.get(&id)
         .filter(|r| {
             r.speaker == speaker
                 && !r.stopped.load(Ordering::Relaxed)
@@ -367,20 +379,15 @@ pub fn counting(core: &Core) -> bool {
         .state
         .lock()
         .unwrap()
-        .active
-        .as_ref()
-        .is_some_and(|r| r.counting.load(Ordering::Relaxed))
+        .pending.is_some()
 }
 pub fn stop(core: &Core, id: u64) -> bool {
     let run = {
         let state = core.helpers.state.lock().unwrap();
-        if !state.active.as_ref().is_some_and(|r| {
-            r.id == id
-                && !r.stopped.load(Ordering::Relaxed)
-        }) {
+        let Some(run) = state.active.get(&id).filter(|r| !r.stopped.load(Ordering::Relaxed)) else {
             return false;
-        }
-        state.active.as_ref().unwrap().clone()
+        };
+        run.clone()
     };
     run.counting.store(false, Ordering::Relaxed);
     run.stopped.store(true, Ordering::Relaxed);
@@ -429,15 +436,10 @@ pub fn heard(core: &Core, speaker: &str, text: &str) {
     if !crate::messages::is_stop(text) {
         return;
     }
-    let id = core
-        .helpers
-        .state
-        .lock()
-        .unwrap()
-        .active
-        .as_ref()
-        .filter(|r| r.speaker == speaker)
-        .map(|r| r.id);
+    // ASR delivers the draft to Messages first. Its consumed Stop must not
+    // fall through to a running parent after the email countdown disappears.
+    if crate::messages::owns_stop(core, speaker) { return; }
+    let id = crate::messages::current_id(core, speaker);
     if id.is_some_and(|id| stop(core, id)) {
         core.helpers
             .state
@@ -523,17 +525,11 @@ pub fn said(core: &Arc<Core>, speaker: &str, text: &str) -> bool {
         .map(|t| t.text.as_str())
         .collect::<Vec<_>>()
         .join("\n");
-    let message_counting = matches!(
-        crate::messages::card_for(core, speaker),
-        Some(ServerMsg::SendCard {
-            state: SendState::Counting,
-            ..
-        })
-    );
+    let message_counting = crate::messages::pending(core);
     let mut state = core.helpers.state.lock().unwrap();
-    if state.active.is_some() || message_counting {
+    if state.pending.is_some() || message_counting {
         drop(state);
-        core.send_to(speaker, ServerMsg::Notice { message: "Wait for the current card or helpers to finish, or say Stop during the countdown.".into() });
+        core.send_to(speaker, ServerMsg::Notice { message: "Wait for the current countdown, or say Stop.".into() });
         return true;
     }
     state.next += 1;
@@ -554,8 +550,10 @@ pub fn said(core: &Arc<Core>, speaker: &str, text: &str) -> bool {
         outcomes: Mutex::default(),
         cancel: Notify::new(),
     });
-    state.active = Some(run.clone());
+    state.pending = Some(run.id);
+    state.active.insert(run.id, run.clone());
     drop(state);
+    crate::messages::claim(core, speaker, run.id);
     core.send_to(speaker, card(&run, SendState::Counting, ""));
     row(
         core,
@@ -604,9 +602,8 @@ pub fn said(core: &Arc<Core>, speaker: &str, text: &str) -> bool {
             }
         }
         let mut state = core.helpers.state.lock().unwrap();
-        if state.active.as_ref().is_some_and(|r| r.id == run.id) {
-            state.active = None;
-        }
+        state.active.remove(&run.id);
+        if state.pending == Some(run.id) { state.pending = None; }
     });
     true
 }
