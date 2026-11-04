@@ -1,0 +1,9 @@
+{
+  "id": "hackathon",
+  "name": "Hackathon",
+  "does": "Keep the deadline, submission checklist, rules and answer drafts together.",
+  "kind": "view",
+  "defaultOn": false,
+  "demoSafe": true,
+  "flag": "hackathon"
+}
