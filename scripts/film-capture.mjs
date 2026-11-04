@@ -11,7 +11,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { mkdirSync, mkdtempSync, writeFileSync, copyFileSync, existsSync, readFileSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
 const url = new URL(process.env.FILM_URL || 'http://127.0.0.1:4466');
@@ -25,7 +25,8 @@ const story = 'Saturday is our free repair night at the hall and Mira wants a pl
 const flags = '?film&bricks=quiet-screen,clarify,draw,crew';
 const repairBrief = 'Repair Night needs three parts: Volunteer Shifts with a volunteer count; Bring List with tools, gloves and spare parts to tick plus packed progress; Flyer Words with our free repair night invitation and a note for the welcome team.';
 const runFile = promisify(execFile);
-let core;
+let core, scratchData, latestCrewRun;
+const keptPartIds = new Set();
 async function startScratchCore() {
   if (process.env.FILM_URL) return;
   const repo = fileURLToPath(new URL('../', import.meta.url));
@@ -39,6 +40,7 @@ async function startScratchCore() {
   try { await fetch(url, { signal: AbortSignal.timeout(1000) }); throw Error('Scratch port is already occupied'); }
   catch (error) { if (error.message === 'Scratch port is already occupied') throw error; }
   const data = realpathSync(mkdtempSync(join(realpathSync(tmpdir()), 'film-map-')));
+  scratchData = data;
   const service = process.env.FILM_KEYCHAIN_SERVICE, account = process.env.FILM_KEYCHAIN_ACCOUNT;
   assert(service && account, 'Set FILM_KEYCHAIN_SERVICE and FILM_KEYCHAIN_ACCOUNT to the Muse Keychain entry');
   let key;
@@ -70,6 +72,7 @@ let socket, current, pointer = { x: 1420, y: 900 };
 const pending = new Map(), listeners = new Map();
 let nextId = 0, session;
 const rows = new Map(), requests = new Map();
+const activeClarify = new Set();
 const note = (event, detail = {}) => current?.events.push({ ms: Date.now() - current.start, event, ...detail });
 
 async function connect() {
@@ -108,7 +111,18 @@ async function connect() {
   listeners.set('Network.requestWillBeSent', [({ requestId, request }) => {
     const path = new URL(request.url).pathname;
     if (/^\/(clarify|draw|crew|flow)/.test(path)) requests.set(requestId, Date.now());
+    if (path === '/clarify') activeClarify.add(requestId);
+    if (path === '/crew/promote') {
+      const body = JSON.parse(request.postData || '{}');
+      if (body.to === 'main') {
+        latestCrewRun = body.run;
+        for (const part of body.keep || []) keptPartIds.add(part.id);
+        note('parts-kept', { count: body.keep?.length || 0, ids: (body.keep || []).map(part => part.id) });
+      }
+    }
   }]);
+  listeners.set('Network.loadingFinished', [({ requestId }) => activeClarify.delete(requestId)]);
+  listeners.set('Network.loadingFailed', [({ requestId }) => activeClarify.delete(requestId)]);
   listeners.set('Network.responseReceived', [({ requestId, response }) => {
     const path = new URL(response.url).pathname;
     if (/^\/(clarify|draw|crew|flow)/.test(path)) note('response', { path, status: response.status, wait_ms: requests.has(requestId) ? Date.now() - requests.get(requestId) : null });
@@ -171,6 +185,15 @@ async function type(text, selector = '[data-guide="composer"] textarea', submit 
     await cdp('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
   }
 }
+async function clearDraft() {
+  await click('[data-guide="composer"] textarea');
+  await cdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'a', code: 'KeyA', modifiers: 4, commands: ['selectAll'] });
+  await cdp('Input.dispatchKeyEvent', { type: 'keyUp', key: 'a', code: 'KeyA', modifiers: 4 });
+  await until(`(()=>{const input=document.querySelector('[data-guide="composer"] textarea');return input.selectionStart === 0 && input.selectionEnd === input.value.length})()`);
+  await cdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 });
+  await cdp('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 });
+  await until('document.querySelector("[data-guide=composer] textarea").value === ""');
+}
 async function words(text) {
   const parts = text.split(' ');
   for (let i = 1; i <= parts.length; i++) {
@@ -196,6 +219,38 @@ async function screenshot(path) {
   const { data } = await cdp('Page.captureScreenshot', { format: 'png' });
   writeFileSync(path, Buffer.from(data, 'base64'));
 }
+function contentCheck(name, passed, evidence) {
+  current.checks ??= [];
+  current.checks.push({ name, passed, evidence });
+  if (!passed) {
+    current.limitations ??= [];
+    current.limitations.push(`REAL: ${name}`);
+    console.log(`REAL content check: ${name}`);
+  }
+}
+async function checkNoSecondQuestion() {
+  const end = Date.now() + 20000;
+  let quietSince = Date.now(), appeared = false, questions = [];
+  while (Date.now() < end) {
+    const text = await evaluate('document.querySelector(".clarify-note")?.innerText || ""');
+    if (text) { appeared = true; if (!questions.includes(text)) questions.push(text); }
+    if (activeClarify.size) quietSince = Date.now();
+    if (!activeClarify.size && Date.now() - quietSince >= 4000) break;
+    await delay(150);
+  }
+  contentCheck('no second question after answering Mira', !appeared && !activeClarify.size, { questions, pending: activeClarify.size });
+}
+async function checkDrawClearance() {
+  await delay(700); // Let the visible sheet transition finish before measuring it.
+  const bounds = await evaluate(`(()=>{const ink=document.querySelector('.draw-ink').getBoundingClientRect(),said=document.querySelector('.draw-said').getBoundingClientRect();return {inkBottom:ink.bottom,saidTop:said.top,saidBottom:said.bottom,height:innerHeight}})()`);
+  contentCheck('Draw sentence stays below all ink', bounds.inkBottom <= bounds.saidTop + 1 && bounds.saidBottom <= bounds.height + 1, bounds);
+}
+async function checkCrewCounts() {
+  const counts = await evaluate(`(()=>{const values=[...document.querySelectorAll('.crew-count dd')].map(x=>x.textContent);const foot=document.querySelector('.crew-foot').textContent;return {total:document.querySelectorAll('.crew-branch').length,merged:document.querySelectorAll('.crew-merged').length,shown:values[0],catalog:Number(foot.match(/next time: (\\d+)/)?.[1]),footer:foot}})()`);
+  const kept = current.events.filter(event => event.event === 'parts-kept').at(-1);
+  contentCheck('all merged parts are kept with the right count', counts.total === counts.merged && kept?.count === counts.total && counts.catalog === keptPartIds.size,
+    { ...counts, keptThisRun: kept?.count, expectedCatalog: keptPartIds.size });
+}
 async function verifyClip(record) {
   const { stdout } = await runFile('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height,r_frame_rate,avg_frame_rate', '-show_entries', 'format=duration', '-of', 'json', join(record.folder, `${record.name}.mp4`)]);
   const probe = JSON.parse(stdout), stream = probe.streams[0], seconds = Number(probe.format.duration);
@@ -206,6 +261,7 @@ async function verifyClip(record) {
   assert(Math.abs(seconds - record.duration_ms / 1000) < .2, 'Encoded timing drift');
   record.seconds = seconds;
   return { clip: record.name, seconds, width: 1920, height: 1080, fps: 30, raw_frames: ordered.length, capture_order_verified: true,
+    ...(record.checks ? { checks: record.checks } : {}), ...(record.error ? { error: record.error } : {}),
     ...(record.observed ? { observed: record.observed } : {}), ...(record.limitations?.length ? { limitations: record.limitations } : {}) };
 }
 function saveVerification(verified) {
@@ -248,11 +304,10 @@ async function capture(name, action, real) {
   await encode(record);
   const verified = await verifyClip(record);
   writeFileSync(join(folder, 'timing.json'), JSON.stringify(record, null, 2));
-  if (!record.error) {
-    copyFileSync(join(folder, `${name}.mp4`), join(output, `${name}.mp4`));
-    copyFileSync(join(folder, 'timing.json'), join(output, `${name}.json`));
-    saveVerification(verified);
-  }
+  // The selected take is always this capture; failures remain explicit instead of silently selecting an older clip.
+  copyFileSync(join(folder, `${name}.mp4`), join(output, `${name}.mp4`));
+  copyFileSync(join(folder, 'timing.json'), join(output, `${name}.json`));
+  saveVerification(verified);
   rows.set(name, record);
   writeReadme();
   console.log(`${name}: ${(record.duration_ms / 1000).toFixed(1)}s, ${record.frames.length} frames${record.error ? ', retained failed take' : ''}`);
@@ -265,6 +320,16 @@ function writeReadme() {
   const lines = [...rows].map(([name, record]) => `- ${name}: ${record.seconds.toFixed(1)} seconds; ${record.real}; ${record.error ? `FAILED take: ${record.error}` : record.limitations?.length ? record.limitations.join('; ') : 'real waits retained; shorten only editorially'}.`);
   updated.splice(lastBullet < 0 ? updated.length : lastBullet + 1, 0, ...lines);
   writeFileSync(path, updated.join('\n').replace('Eight silent clips', 'Silent clips') + '\n');
+}
+function writeRunSummary() {
+  const path = join(output, 'README.md');
+  const existing = readFileSync(path, 'utf8').split('\n').filter(line =>
+    !line.startsWith('Observed app issues (unchanged):') && !line.startsWith('Selected take checks:'));
+  const selected = JSON.parse(readFileSync(join(output, 'verification.json'), 'utf8'));
+  const checks = selected.flatMap(record => (record.checks || []).map(check => ({ clip: record.clip, ...check })));
+  const failed = checks.filter(check => !check.passed).map(check => `${check.clip}: ${check.name}`);
+  existing.push('', `Selected take checks: ${checks.filter(check => check.passed).length}/${checks.length} visible-behavior checks passed.${failed.length ? ` Still wrong: ${failed.join('; ')}.` : ''} Repair still lacks a visible “failed” tree label; its fault disclosure appears only at completion.`, '');
+  writeFileSync(path, existing.join('\n').replace('The latest take contains only repair and board; prior eight MP4s were retained.', 'The latest run selects freshly captured clips; all earlier raw takes remain available.'));
 }
 
 // These holds pause delivery of real responses, never change their contents or the UI.
@@ -313,6 +378,7 @@ async function repair() {
   assert(current.events.some(e => e.event === 'fixing-visible') && current.events.some(e => e.event === 'repaired-visible'));
   current.observed = observed;
   current.limitations = ['tree shows fixing motion, then “fixed” and merged checkmark, but no visible “failed” label; fault disclosure appears only at completion; genuine repair/merge responses held 3.5s each'];
+  await checkCrewCounts();
   note('merged-visible', { part: faultPart });
   await delay(3500);
 }
@@ -361,6 +427,7 @@ async function board() {
   }
   current.observed = { checked: await evaluate(`document.querySelectorAll(${JSON.stringify(`${bring} .kit-list button[aria-pressed="true"]`)}).length`), counts, answers };
   assert(current.observed.checked === 2 && counts + answers > 0, 'Board did not visibly change');
+  current.real = `finished live Repair Night board: two Bring List ticks, ${counts} counter changes and ${answers} editable answers`;
   await delay(2500);
 }
 async function prepareBoard() {
@@ -370,6 +437,39 @@ async function prepareBoard() {
   await type(repairBrief, '.crew-ask textarea', false);
   await click('.crew-ask button');
   await until('document.querySelector(".crew-foot")', 180000);
+}
+async function captureGitGraph() {
+  assert(scratchData && latestCrewRun, 'A local completed Crew run is required for its real Git graph');
+  const repository = join(dirname(scratchData), `${basename(scratchData)}-crew`, latestCrewRun);
+  const args = ['log', '--graph', '--oneline', '--all'];
+  const { stdout } = await runFile('git', args, { cwd: repository });
+  const graph = stdout.trimEnd().split('\n').slice(0, 24).join('\n');
+  assert(graph.includes('Promote dev to staging') && graph.includes('Promote staging to main'), 'The actual graph must show both promotions');
+  writeFileSync(join(take, 'git-graph.txt'), graph + '\n');
+  await cdp('Page.navigate', { url: 'about:blank' });
+  await until('document.readyState === "complete"');
+  const displayed = await evaluate(`(()=>{
+    document.documentElement.style.cssText='background:#0c0e12;color:#eef0f5;';
+    document.body.style.cssText='margin:0;width:1920px;height:1080px;display:flex;align-items:center;justify-content:center;overflow:hidden;';
+    const pre=document.createElement('pre');pre.textContent=${JSON.stringify(graph)};
+    pre.style.cssText='margin:0;white-space:pre;font:32px/1.18 Menlo,Monaco,monospace;';
+    document.body.replaceChildren(pre);
+    const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d');ctx.font=getComputedStyle(pre).font;
+    const widest=Math.max(...pre.textContent.split('\\n').map(line=>ctx.measureText(line).width));
+    const font=Math.min(32,32*1780/widest,900/(pre.textContent.split('\\n').length*1.18));pre.style.fontSize=font+'px';
+    return {text:pre.textContent,fontSize:font,width:innerWidth,height:innerHeight};
+  })()`);
+  assert(displayed.text === graph && displayed.width === 1920 && displayed.height === 1080);
+  await screenshot(join(take, 'git-graph.png'));
+  copyFileSync(join(take, 'git-graph.png'), join(output, 'git-graph.png'));
+  copyFileSync(join(take, 'git-graph.txt'), join(output, 'git-graph.txt'));
+  saveVerification({ clip: 'git-graph', kind: 'still', seconds: 2, width: 1920, height: 1080,
+    command: ['git', ...args], run: latestCrewRun, lines: graph.split('\n').length, exact_text_verified: true, font_size: displayed.fontSize });
+  const readme = join(output, 'README.md');
+  const lines = readFileSync(readme, 'utf8').split('\n').filter(line => !line.startsWith('- git-graph:'));
+  lines.splice(lines.findLastIndex(line => line.startsWith('- ')) + 1, 0, '- git-graph: 2.0-second still hold; exact first 24 available lines of the completed Crew repository’s git log --graph --oneline --all; no output rewritten.');
+  writeFileSync(readme, lines.join('\n'));
+  console.log(`git-graph: ${graph.split('\n').length} real lines, 1920x1080, 2-second hold`);
 }
 const clips = {
   think: [async () => {
@@ -383,6 +483,7 @@ const clips = {
     await type('Mira runs the volunteers');
     await until('!document.querySelector(".clarify-note")');
     note('question-answered');
+    await checkNoSecondQuestion();
   }, 'real Spark question, dotted underline and arrow; real saved answer'],
   draw: [async () => {
     await click('.draw-open');
@@ -392,19 +493,23 @@ const clips = {
     await box(.35, .66, .24, .18, 'flyer words');
     await until('document.querySelectorAll(".draw-part").length >= 3 && document.querySelector(".draw-said:not(.draw-looking)")', 120000);
     note('spark-marks-visible');
+    await checkDrawClearance();
   }, 'real CDP pen strokes, film-only transcriber words, live Spark reading and teal marks'],
   'draw-back': [async () => {
     if (!await evaluate('!!document.querySelector(".draw-page")')) await click('.draw-open');
     await words('Draw it back');
     await until('document.querySelector(".draw-reply img")?.complete', 180000);
     note('muse-image-visible');
+    await checkDrawClearance();
   }, 'live Muse Image drawing beside the original sketch'],
   crew: [async () => {
     if (!await evaluate('!!document.querySelector(".draw-page")')) await click('.draw-open');
-    await words('Build all that. Build it.');
+    await words('Build all that');
     await until('document.querySelector(".crew-foot")', 180000);
     assert(await evaluate('document.querySelectorAll(".crew-off").length') === 0, 'Crew turned a part off');
     note('all-parts-on-main');
+    contentCheck('Build all that alone hands the sketch to Crew', !await evaluate('!!document.querySelector(".draw-page")'), { command: 'Build all that' });
+    await checkCrewCounts();
   }, 'real sketch handoff, Spark parts, checked Git branches and promotion to main'],
   'crew-more': [async () => {
     await navigate(flags);
@@ -416,6 +521,7 @@ const clips = {
     assert(await evaluate('document.querySelector(".crew-tree").textContent.includes("reused")'), 'Expected visible reused label');
     assert(await evaluate('document.querySelectorAll(".crew-off").length') === 0, 'Crew turned a part off');
     note('reused-and-main');
+    await checkCrewCounts();
   }, 'second live Spark run with persistent part reuse and a larger Git tree'],
   parts: [async () => {
     await navigate(`${flags}&parts`);
@@ -436,15 +542,11 @@ const clips = {
     await type('Still thinking about the audience', '[data-guide="composer"] textarea', false);
     await until('document.querySelector(".flow-canvas-status")?.textContent.includes("held")', 120000);
     note('real-question-held'); await delay(2000);
-    await click('[data-guide="composer"] textarea');
-    await cdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'a', code: 'KeyA', modifiers: 4 });
-    await cdp('Input.dispatchKeyEvent', { type: 'keyUp', key: 'a', code: 'KeyA', modifiers: 4 });
-    await cdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 });
-    await cdp('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 });
+    await clearDraft();
     await until('document.querySelector(".flow-canvas-question")');
     note('held-question-shown');
   }, 'three real Flow boxes and a live Spark question held during a draft'],
-  repair: [repair, 'real intentional fault, live Spark repair, and merge to main; fault disclosure visible at completion'],
+  repair: [repair, 'real intentional fault, checked repair and merge of generated or reused parts; live Spark plan; fault disclosure visible at completion'],
   board: [board, 'finished live Repair Night board: two Bring List ticks, live counts and editable answers'],
 };
 if (process.env.FILM_REENCODE === '1') {
@@ -469,7 +571,9 @@ if (process.env.FILM_REENCODE === '1') {
     if (name === 'board') await prepareBoard();
     await capture(name, ...clips[name]);
   }
-  if ([...rows.values()].some(record => record.error)) process.exitCode = 1;
+  if (scratchData && latestCrewRun) await captureGitGraph();
+  writeRunSummary();
+  if ([...rows.values()].some(record => record.error || record.checks?.some(check => !check.passed))) process.exitCode = 1;
 } finally {
   socket?.close();
   await stopProcess(chrome);
