@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Box } from "./layout";
 import { READ } from "./nodes";
+import { FILM, connectFilmCamera, filmHeld, type FilmOptions, type FilmTarget } from "./film";
 
 export type Viewport = { x: number; y: number; zoom: number };
 /** What the camera needs of React Flow's instance. */
@@ -32,13 +33,16 @@ const AIM = 0.55;
 const COMFORT = { left: 0.08, right: 0.92, top: 0.1, bottom: 0.8 };
 export const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
 
-export function useCamera(flow: Flow, area: () => Area, reduced: boolean, pane: () => HTMLElement | null) {
+export function useCamera(flow: Flow, area: () => Area, reduced: boolean, pane: () => HTMLElement | null, node?: (key: string) => Box | undefined) {
   /** When the camera last moved, and the follow's move waiting out its spacing. */
   const last = useRef(0);
   const waiting = useRef(0);
   const fade = useRef<Animation | null>(null);
   const [cut, setCut] = useState<string | null>(null);
   const cutTimer = useRef(0);
+  const findNode = useRef(node);
+  findNode.current = node;
+  const followTarget = useRef<(() => { box: Box; ring?: string } | null) | null>(null);
   useEffect(() => () => { window.clearTimeout(waiting.current); window.clearTimeout(cutTimer.current); fade.current?.cancel(); }, []);
 
   /** Past a screen: out, cut, in. */
@@ -52,6 +56,7 @@ export function useCamera(flow: Flow, area: () => Area, reduced: boolean, pane: 
     const cutHere = () => {
       if (done) return;
       done = true;
+      if (filmHeld()) { out.cancel(); return; }
       void flow.setViewport(next, { duration: 0 });
       out.cancel();
       fade.current = element.animate([{ opacity: 0 }, { opacity: 1 }], { duration: FADE_MS / 2, easing: "ease-out" });
@@ -70,6 +75,7 @@ export function useCamera(flow: Flow, area: () => Area, reduced: boolean, pane: 
 
   /** Goes to `next`: a glide within a screen, a cross-fade past it, a cut (and a ring on `ring`) under Reduce Motion. */
   const move = useCallback((next: Viewport, ring?: string) => {
+    if (filmHeld()) return;
     last.current = Date.now();
     const was = flow.getViewport();
     if (reduced) {
@@ -101,6 +107,7 @@ export function useCamera(flow: Flow, area: () => Area, reduced: boolean, pane: 
 
   /** Puts `box` where you'd look for it, at once (the opening frame) or as a move. */
   const aim = useCallback((box: Box, options: { zoom?: number; ring?: string; instant?: boolean } = {}) => {
+    if (filmHeld()) return;
     window.clearTimeout(waiting.current);
     const next = viewFor(box, options.zoom);
     if (options.instant) { last.current = Date.now(); void flow.setViewport(next, { duration: 0 }); return; }
@@ -109,6 +116,7 @@ export function useCamera(flow: Flow, area: () => Area, reduced: boolean, pane: 
 
   /** Fits `box` with 32 px around it in the free part, between `least` and `most` zoom. */
   const fit = useCallback((box: Box, most = 1, least = 0.04, options: { instant?: boolean } = {}) => {
+    if (filmHeld()) return;
     window.clearTimeout(waiting.current);
     const a = area();
     const w = a.x1 - a.x0, h = a.y1 - a.y0;
@@ -130,8 +138,10 @@ export function useCamera(flow: Flow, area: () => Area, reduced: boolean, pane: 
   /** The follow: `target()` (asked when the move is due, so it's the latest) into the comfortable middle, if it left it;
    *  spaced at least SPACING_MS from the camera's last move. */
   const follow = useCallback((target: () => { box: Box; ring?: string } | null) => {
+    followTarget.current = target;
     window.clearTimeout(waiting.current);
     const run = () => {
+      if (filmHeld()) return;
       const goal = target();
       if (!goal || comfortable(goal.box)) return;
       const wait = last.current + SPACING_MS - Date.now();
@@ -143,6 +153,49 @@ export function useCamera(flow: Flow, area: () => Area, reduced: boolean, pane: 
 
   /** A hand on the map: whatever the follow had waiting doesn't happen. */
   const hold = useCallback(() => { window.clearTimeout(waiting.current); }, []);
+
+  // Film motion deliberately bypasses React Flow's timed transitions: Date + rAF can be stepped by a virtual clock.
+  useEffect(() => {
+    if (!FILM) return;
+    let frame = 0;
+    let finish: ((done: boolean) => void) | null = null;
+    const stop = () => { cancelAnimationFrame(frame); finish?.(false); finish = null; };
+    const drive = (target: FilmTarget | null, options: FilmOptions = {}): Promise<boolean> => {
+      stop();
+      hold();
+      fade.current?.cancel();
+      if (!target) {
+        if (followTarget.current) follow(followTarget.current);
+        return Promise.resolve(true);
+      }
+      let next: Viewport;
+      if ("node" in target) {
+        const box = findNode.current?.(target.node);
+        if (!box) return Promise.resolve(false);
+        next = viewFor(box, target.zoom);
+      } else next = target;
+      const was = flow.getViewport();
+      const duration = options.duration ?? 600;
+      const easing = typeof options.ease === "function" ? options.ease
+        : options.ease === "linear" ? (t: number) => t
+        : options.ease === "ease-in" ? (t: number) => t ** 3
+        : options.ease === "ease-out" ? (t: number) => 1 - (1 - t) ** 3 : ease;
+      const start = Date.now();
+      return new Promise((resolve) => {
+        finish = resolve;
+        const tick = () => {
+          const t = duration <= 0 ? 1 : Math.min(1, (Date.now() - start) / duration);
+          const e = easing(t);
+          void flow.setViewport({ x: was.x + (next.x - was.x) * e, y: was.y + (next.y - was.y) * e, zoom: was.zoom + (next.zoom - was.zoom) * e }, { duration: 0 });
+          if (t < 1) frame = requestAnimationFrame(tick);
+          else { finish = null; resolve(true); }
+        };
+        tick();
+      });
+    };
+    const disconnect = connectFilmCamera(drive);
+    return () => { stop(); disconnect(); };
+  }, [flow, viewFor, hold, follow]);
 
   return { aim, fit, follow, hold, flash, comfortable, cut };
 }

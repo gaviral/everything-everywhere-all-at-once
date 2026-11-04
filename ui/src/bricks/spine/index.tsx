@@ -11,6 +11,7 @@ import { Background, BackgroundVariant, EdgeLabelRenderer, ReactFlow, ReactFlowP
 import "@xyflow/react/dist/base.css";
 import { useBrickEvent, type BrickEvents, type BrickProps, type Position } from "../contract";
 import { useCamera, type Area } from "./camera";
+import { filmHeld } from "./film";
 import { Corner, type Stop } from "./corner";
 import { Cues, onScreen, type Cue } from "./cues";
 import { bounds, G, layout as place, type Box, type End, type Item, type Layout, type Link } from "./layout";
@@ -407,7 +408,7 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
 
   // The camera.
   const pane = useCallback(() => frame.current?.querySelector<HTMLElement>(".spine-flow") ?? null, []);
-  const camera = useCamera(flow, area, reduced, pane);
+  const camera = useCamera(flow, area, reduced, pane, (key) => layout.byKey.get(key)?.box);
   const all = () => bounds(layout.items.map((item) => item.box));
   const minZoom = useMemo(() => {
     const everything = all();
@@ -441,6 +442,7 @@ function Canvas({ map, actions, on, destination }: BrickProps) {
     if (!box) return;
     const previous = previousSize.current;
     previousSize.current = { width, height: box.tall };
+    if (filmHeld()) return;
     if (!ready) return;
     if (!following && previous) {
       const view = flow.getViewport();

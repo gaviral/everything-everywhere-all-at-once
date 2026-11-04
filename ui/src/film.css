@@ -1,0 +1,12 @@
+/* Only ?film: keep the page's own type and colours, with no filming chrome in the shot. */
+html.film, html.film *, html.film *::before, html.film *::after {
+  cursor: none !important;
+  scrollbar-width: none !important;
+}
+html.film ::-webkit-scrollbar { display: none !important; }
+html.film :is(vite-error-overlay, .react-flow__devtools, [data-dev-overlay], .dev-overlay, [role="tooltip"], .mark-tip, .tiny-transcript-hint, .take-clock, .speed) { display: none !important; }
+.film-layer { position: fixed; inset: 0; z-index: 2147483647; pointer-events: none; font: inherit; }
+.film-pointer, .film-ripple { position: absolute; left: -10px; top: -10px; width: 20px; height: 20px; border-radius: 50%; transform-origin: center; }
+.film-pointer { background: color-mix(in srgb, var(--accent) 65%, transparent); border: 2px solid var(--card); box-shadow: 0 2px 12px #0003; }
+.film-ripple { border: 2px solid var(--accent); }
+.film-caption { position: absolute; left: 50%; top: 10%; transform: translateX(-50%); max-width: calc(100vw - 48px); padding: 12px 24px; border-radius: 18px; background: var(--card); color: var(--ink); box-shadow: var(--shadow); font-size: clamp(24px, 3.2vw, 48px); font-weight: 600; line-height: 1.2; letter-spacing: -.025em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
