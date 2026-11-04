@@ -17,15 +17,18 @@ if (FILM) startFilm();
 // `?remote` opens a phone's page for the AI helpers' work (ui/src/remote/) instead of the map, in the shell's look and in the
 // same room as any window: its code loads only then.
 const Remote = lazy(() => import("./remote/Remote"));
+const CodeCanvas = lazy(() => import("./code-canvas/CodeCanvas"));
+const codeCanvas = new URLSearchParams(location.search).get("canvas") === "code";
 if (REMOTE) document.documentElement.classList.add("shell2");
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <Crash>
-      {!REMOTE && <RememberedRemote />}
+      {!REMOTE && !codeCanvas && <RememberedRemote />}
+      {codeCanvas ? <Suspense fallback={<p>Opening code canvas…</p>}><CodeCanvas /></Suspense> :
       <Room>
         {REMOTE ? <Suspense fallback={null}><Remote /></Suspense> : <PhoneRemoteHost><App /></PhoneRemoteHost>}
-      </Room>
+      </Room>}
     </Crash>
   </StrictMode>,
 );

@@ -11,6 +11,7 @@ mod call;
 mod conversation;
 mod catalog;
 mod chunks;
+mod code_canvas;
 mod clock;
 mod data_lock;
 mod storage;
@@ -1494,6 +1495,7 @@ async fn main() -> anyhow::Result<()> {
 
     let ui = std::env::var("E2A2O_UI").unwrap_or_else(|_| "../ui/dist".into());
     let app = Router::new()
+        .route("/code-canvas/snapshot", get(code_canvas::read))
         .route("/ws", get(connect))
         .route("/room", get(room_info))
         .route("/terse", post(terse::read))
