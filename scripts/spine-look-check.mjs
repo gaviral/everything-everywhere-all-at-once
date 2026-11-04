@@ -67,7 +67,7 @@ try {
     await navigate();
     assert.ok(await evaluate(`!!document.querySelector('.spine-loose')`), "choice survives reload");
     if (width === 3840) {
-      const size = await evaluate(`(() => {const e=document.querySelector('[data-thought="p5"] .spine-text');return e.getBoundingClientRect().height/parseFloat(getComputedStyle(e).lineHeight)*parseFloat(getComputedStyle(e).fontSize)})()`);
+      const size = await evaluate(`(() => {const e=document.querySelector('[data-thought="p5"] .spine-text');return e.getBoundingClientRect().width/parseFloat(getComputedStyle(e).width)*parseFloat(getComputedStyle(e).fontSize)})()`);
       assert.ok(size >= 44, `4K reading size at least 44 screen pixels: ${size}`);
     }
     if (shots) writeFileSync(`${shots}/loose-${width}.png`, Buffer.from((await page("Page.captureScreenshot", { format: "png" })).data, "base64"));
