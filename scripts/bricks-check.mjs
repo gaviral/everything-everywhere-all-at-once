@@ -1486,10 +1486,20 @@ try {
         // T1's one point is "Rent due Friday, point 1": Sam asks about "Friday" (unanswered), you asked about "Rent due", and Sam's
         // question on "point 1" is answered.
         const quoted = { N1: "Friday", N2: "Rent due", N3: "point 1" };
+        // Persisted valid notes carry the actual immutable source revision/range.
+        const anchorSource = full.thoughts.find((point) => point.id === "T1-0");
+        const sourceText = anchorSource.point || anchorSource.text;
+        const anchored = (quote) => {
+          const at = sourceText.indexOf(quote);
+          assert.ok(at >= 0 && sourceText.lastIndexOf(quote) === at, "valid-note fixture uses one known occurrence");
+          const start = [...sourceText.slice(0, at)].length;
+          return { thought_id: anchorSource.id, quote, context: { source_text: sourceText,
+            source_speaker: anchorSource.speaker, start, end: start + [...quote].length } };
+        };
         const said = (id, by, text, after) => ({ ...thought(id, text, id.split("-")[0]), speaker: by, at_ms: now + after });
         shown = { ...full, threads: [...full.threads, ...Object.entries(quoted).map(([id, quote]) => thread(id, quote, { parent_id: "T1" }))],
           thoughts: [...full.thoughts, said("N1-0", "Sam", "Which Friday?", 10), said("N2-0", "you", "Is it paid?", 11), said("N3-0", "Sam", "Which one?", 12), said("N3-1", "you", "The first", 13)],
-          anchors: Object.fromEntries(Object.entries(quoted).map(([id, quote]) => [id, { thought_id: "T1-0", quote }])) };
+          anchors: Object.fromEntries(Object.entries(quoted).map(([id, quote]) => [id, anchored(quote)])) };
         const openSpine = async () => {
           await go(`${base}/?cards`);
           if (!await until(`document.querySelectorAll(".thread").length > 0`, 8000)) return false;
@@ -1552,6 +1562,17 @@ try {
             await digit("2");
             if (!await until(`[...document.querySelectorAll(".spine-stop")].filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.firstChild.textContent).join() === "Titles"`, 2500)) fail("spine (zoom stops)", "in the app, 2 doesn't show Titles once the composer lets go of the keyboard");
           }
+        }
+        // Legacy repeated words remain unresolved: never guess the first occurrence.
+        shown = { ...shown, threads: [...shown.threads, thread("L1", "Legacy question", { parent_id: "T1" })],
+          thoughts: [...shown.thoughts, thought("legacy-source", "Friday then Friday", "T1"), said("L1-0", "Sam", "Which occurrence?", 20)],
+          anchors: { ...shown.anchors, L1: { thought_id: "legacy-source", quote: "Friday" } } };
+        if (!await openSpine()) fail("spine (notes)", "legacy fixture never opened");
+        else {
+          if (!await until(`document.querySelector('.spine-margin[data-margin="L1"]')?.textContent.includes("Anchor unresolved")`, 2000))
+            fail("spine (notes)", "ambiguous legacy anchor must visibly remain unresolved");
+          if (await evaluate(`!!document.querySelector('.spine-quote[data-margin="L1"]')`))
+            fail("spine (notes)", "legacy repeated words must not underline a guessed occurrence");
         }
         await evaluate(previousSwitches === null ? `localStorage.removeItem("e2a2o.bricks")` : `localStorage.setItem("e2a2o.bricks", ${JSON.stringify(previousSwitches)})`);
         shown = full;

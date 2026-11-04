@@ -100,7 +100,7 @@ try {
    }
   }
   await open("D");
-  assert.match(await evaluate(`document.querySelector('.phone-back').textContent`), /Topic branch/, "topic-only parent is explicit");
+  assert.equal(await evaluate(`document.querySelector('.phone-back').textContent`), "Back to Tangent · Reading plan", "topic-only parent names its actual destination");
   assert.equal(await evaluate(`document.querySelector('.phone-back').dataset.sourceId`), undefined, "topic parent never invents a point");
   await open("A");
   current = { ...world, thoughts: world.thoughts.filter(p=>p.id!=="p1") };
