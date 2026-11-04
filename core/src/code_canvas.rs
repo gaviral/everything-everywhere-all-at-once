@@ -6,6 +6,9 @@ use axum::{
     Json,
 };
 use serde::Serialize;
+mod agent_state;
+mod parts;
+pub use agent_state::answer;
 use std::{
     collections::{BTreeMap, HashMap, HashSet, VecDeque},
     path::{Path, PathBuf},
@@ -35,6 +38,8 @@ struct Branch {
     current: bool,
     ahead: usize,
     behind: usize,
+    merged_into: Option<String>,
+    joined_at: Option<String>,
 }
 #[derive(Serialize)]
 struct Snapshot {
@@ -42,6 +47,8 @@ struct Snapshot {
     branches: Vec<Branch>,
     files: usize,
     warnings: Vec<String>,
+    parts: Vec<parts::Part>,
+    agents: agent_state::AgentState,
 }
 
 /// A room guest must never be able to read the host's source or local branch names.
@@ -562,6 +569,7 @@ fn branches(root: &Path) -> Result<Vec<Branch>, ()> {
     let main_history = reachable(main, &parents);
     let current = git(root, &["symbolic-ref", "--quiet", "--short", "HEAD"]).unwrap_or_default();
     let merging = merging_branches(root, &refs);
+    let landings = integration_landings(&refs, &parents);
     let mut out = Vec::new();
     for (name, tip) in &refs {
         let history = reachable(tip, &parents);
@@ -603,9 +611,41 @@ fn branches(root: &Path) -> Result<Vec<Branch>, ()> {
             current: current.trim() == name,
             ahead: history.difference(&main_history).count(),
             behind: main_history.difference(&history).count(),
+            merged_into: landings.get(name).map(|(target, _)| target.clone()),
+            joined_at: landings.get(name).map(|(_, at)| at[..8.min(at.len())].into()),
         });
     }
     Ok(out)
+}
+/// Assign each commit its first visible arrival on an integration's first-parent line.
+fn integration_landings(refs: &BTreeMap<String, String>, parents: &HashMap<String, Vec<String>>) -> HashMap<String, (String, String)> {
+    let mut result = HashMap::new();
+    for target in ["main", "staging", "dev"] {
+        let Some(tip) = refs.get(target) else { continue };
+        let mut line = Vec::new();
+        let mut at = Some(tip.clone());
+        while let Some(id) = at {
+            at = parents.get(&id).and_then(|p| p.first()).cloned();
+            line.push(id);
+        }
+        let mut seen = HashSet::new();
+        let mut arrivals = HashMap::new();
+        for join in line.into_iter().rev() {
+            let mut pending = vec![join.clone()];
+            while let Some(id) = pending.pop() {
+                if seen.insert(id.clone()) {
+                    if let Some(p) = parents.get(&id) { pending.extend(p.iter().cloned()); }
+                    arrivals.insert(id, join.clone());
+                }
+            }
+        }
+        for (name, hash) in refs {
+            if name != target && !matches!(name.as_str(), "main" | "staging" | "dev") && !result.contains_key(name) {
+                if let Some(join) = arrivals.get(hash) { result.insert(name.clone(), (target.into(), join.clone())); }
+            }
+        }
+    }
+    result
 }
 fn snapshot(root: &Path) -> Result<Snapshot, ()> {
     let mut paths = Vec::new();
@@ -631,11 +671,15 @@ fn snapshot(root: &Path) -> Result<Snapshot, ()> {
         warnings.push("Branch history unavailable. Nothing was changed.".into());
         Vec::new()
     });
+    let functions = compose(parsed);
+    let parts = parts::read(root, &functions);
     Ok(Snapshot {
-        functions: compose(parsed),
+        functions,
         branches,
         files,
         warnings,
+        parts,
+        agents: agent_state::read(),
     })
 }
 
@@ -784,6 +828,10 @@ mod tests {
         );
         std::fs::rename(common.join("MERGE_HEAD"), common.join("MERGE_HEAD.saved")).unwrap();
         git(&root, &["merge", "--ff-only", "dev/piece"]).unwrap();
+        let integrated = branches(&root).unwrap();
+        let joined = integrated.iter().find(|b| b.name == "dev/piece").unwrap();
+        assert_eq!(joined.merged_into.as_deref(), Some("main"));
+        assert_eq!(joined.joined_at.as_deref(), Some(joined.tip.as_str()));
         assert_eq!(
             branches(&root)
                 .unwrap()
