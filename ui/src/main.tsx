@@ -9,6 +9,7 @@ import "./styles.css";
 import "./legible.css";
 import { FILM, startFilm } from "./film";
 import "./film.css";
+import "./code-canvas/entry.css";
 
 // `?recording` in the address dresses the page for a screen recording: big live words, every placing time, a take clock.
 if (FILM || new URLSearchParams(location.search).has("recording")) document.documentElement.classList.add("recording");
@@ -17,15 +18,18 @@ if (FILM) startFilm();
 // `?remote` opens a phone's page for the AI helpers' work (ui/src/remote/) instead of the map, in the shell's look and in the
 // same room as any window: its code loads only then.
 const Remote = lazy(() => import("./remote/Remote"));
+const CodeCanvas = lazy(() => import("./code-canvas/CodeCanvas"));
+const codeCanvas = new URLSearchParams(location.search).get("canvas") === "code";
 if (REMOTE) document.documentElement.classList.add("shell2");
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <Crash>
-      {!REMOTE && <RememberedRemote />}
+      {!REMOTE && !codeCanvas && <><RememberedRemote /><a className="cc-map-entry" href="/?canvas=code">Agent work ↗</a></>}
+      {codeCanvas ? <Suspense fallback={<p>Opening code canvas…</p>}><CodeCanvas /></Suspense> :
       <Room>
         {REMOTE ? <Suspense fallback={null}><Remote /></Suspense> : <PhoneRemoteHost><App /></PhoneRemoteHost>}
-      </Room>
+      </Room>}
     </Crash>
   </StrictMode>,
 );

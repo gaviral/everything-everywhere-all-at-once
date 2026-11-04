@@ -14,6 +14,7 @@ mod call;
 mod conversation;
 mod catalog;
 mod chunks;
+mod code_canvas;
 mod clock;
 mod data_lock;
 mod storage;
@@ -1580,6 +1581,8 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(dev_build::watch(core.clone()));
     let ui = std::env::var("E2A2O_UI").unwrap_or_else(|_| "../ui/dist".into());
     let app = Router::new()
+        .route("/code-canvas/snapshot", get(code_canvas::read))
+        .route("/code-canvas/answer", post(code_canvas::answer))
         .route("/ws", get(connect))
         .route("/room", get(room_info))
         .route("/build-id", get(dev_build::status))
