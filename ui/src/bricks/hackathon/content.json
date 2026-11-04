@@ -1,0 +1,39 @@
+{
+  "event": "Meta × Cerebral Valley",
+  "title": "Make it ready.",
+  "subtitle": "One place to return to. One thoughtful submission.",
+  "deadline": "2026-11-04T19:00:00-08:00",
+  "deadlineLabel": "Nov 4 · 7:00 pm BC",
+  "sourceNote": "Working brief · official rules and form details awaiting verification.",
+  "submissionNote": "Preparation only. Marking an item ready does not submit the entry.",
+  "deliverables": [
+    { "id": "repo", "title": "Public repository", "detail": "New work, setup instructions and a link anyone can open.", "state": "pending" },
+    { "id": "video", "title": "Demo video link", "detail": "Show it working. Check playback and public access.", "state": "pending" },
+    { "id": "contributors", "title": "Contributors", "detail": "Confirm the contributor list and credits in the form.", "state": "pending" },
+    { "id": "form", "title": "Submission form", "detail": "Review answers, attach links and keep the confirmation.", "state": "pending" }
+  ],
+  "rulesNote": "These are constraints from the working brief. Confirm the organizer’s eligibility, track requirements, video limits and submission instructions before sending.",
+  "rules": [
+    { "title": "Submit before the cutoff", "detail": "Have the entry and required links submitted by Nov 4, 7:00 pm BC." },
+    { "title": "Use Meta models", "detail": "Runtime models must be Meta models. No GPT runtime calls." },
+    { "title": "Submit new work", "detail": "Keep the public submission to new work. Verify any reuse against the official rules." },
+    { "title": "Keep it public-safe", "detail": "No secrets, private material or personal paths in the repository, video or answers." }
+  ],
+  "tracks": [
+    { "name": "Official track selection", "status": "To verify", "detail": "Track names and eligibility have not been supplied. Choose after reviewing the official rules." }
+  ],
+  "rubric": [
+    { "name": "Impact", "points": 30, "prompt": "Make the benefit clear." },
+    { "name": "Meta tooling", "points": 25, "prompt": "Show what Meta enables." },
+    { "name": "Technical depth", "points": 20, "prompt": "Explain the hard part." },
+    { "name": "Demo", "points": 25, "prompt": "Let the experience speak." }
+  ],
+  "draftsNote": "Example answers, not verified form fields or product claims. Edit and review before copying into the official form.",
+  "drafts": [
+    { "id": "name", "label": "Project name", "answer": "Shared Canvas (working title)" },
+    { "id": "summary", "label": "What are you building?", "answer": "A shared space that helps a group turn a conversation into an organized set of ideas and next steps." },
+    { "id": "impact", "label": "Who does it help?", "answer": "Small teams who want to stay present in a conversation and return to what matters afterward." },
+    { "id": "meta", "label": "How does it use Meta tooling?", "answer": "Meta models help organize contributions into topics. Confirm the exact model names and demonstrated capabilities before submission." },
+    { "id": "depth", "label": "What did you build?", "answer": "A shared interface for capturing, organizing and revisiting ideas. Add the verified architecture, hardest technical decision and demo evidence here." }
+  ]
+}

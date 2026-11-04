@@ -34,7 +34,13 @@ Where each kind shows:
 
 `ui/src/bricks-core.ts` reads every `./bricks/*/brick.json` (at once: they're small) and every `./bricks/*/index.tsx` (lazily) with Vite's `import.meta.glob`. Folders whose name starts with `_` are skipped: the template is copied, not run. A feature's code loads only once it's on, so a feature that's off costs the page its `brick.json` and nothing else. A feature whose `brick.json` is wrong is left out with a warning in the console; `scripts/bricks-check.mjs` says the same, in the same words, before a merge.
 
-`ui/src/BrickSlot.tsx` mounts each kind in its place, every feature behind a boundary of its own: one that throws shows "… stopped working" with a Switch it off button, and the rest of the page carries on.
+`ui/src/BrickSlot.tsx` mounts each kind inside its own self-heal boundary. A render failure or rejected lazy load switches only that feature off in this browser, including features normally forced on by the shell or address. Its owned resources are released and the rest of the page stays interactive. A calm notice names the feature and offers **Turn it back on**; retrying a still-broken feature stops it again.
+
+Protection is always active. The optional `self-heal` panel starts off and exposes the same recovery log available in Features. The latest 20 errors (feature name, time and bounded message) stay in `localStorage` under `e2a2o.self-heal`, alongside the stopped feature ids; each failure also reaches `console.error`. No existing core error-report route is available, so nothing is posted. Storage denial falls back to this visit's memory. Other browser tabs follow persisted changes.
+
+A failed deployment chunk gets one automatic reload per tab, recorded in `sessionStorage` before navigation. A second failure is isolated normally. An offline page, an unsaved draft, active capture, speech or pending sends prevents automatic reload. The guard is not reset by retrying a feature.
+
+Self-heal's host integration is deliberately limited to `BrickSlot`, feature enablement and the two Features presentations. Its boundary, notices, log and reload guard are named parts in `bricks/self-heal`; only those integration parts may import their specific host APIs. `Crash.tsx` remains the last-resort page boundary. `node scripts/self-heal-check.mjs` exercises synthetic throwing and missing-module fixtures under `ui/checks/self-heal`, outside the discovered/shipped feature folders.
 
 ## The contract
 

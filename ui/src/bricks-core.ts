@@ -13,6 +13,7 @@ import { topicsOf } from "./topics-core";
 import { talkOn, watchTalk } from "./talk-preset";
 import { builtInOn, watchBuiltIns } from "./shell/features";
 import { CORE_BRICKS } from "./shell/flag";
+import { clearStopped, isStopped, watchRecovery } from "./bricks/self-heal/state";
 
 export const KINDS: readonly BrickKind[] = ["view", "card", "input", "panel"];
 /** Address flags the app keeps for itself (room.tsx, main.tsx, the playground), which no brick's `flag` may take. */
@@ -125,9 +126,10 @@ const params = browser ? new URLSearchParams(location.search) : new URLSearchPar
 let switches: Switches = browser ? readSwitches() : {};
 const listed = new Set((params.get("bricks") ?? "").split(",").map((id) => id.trim()).filter(Boolean));
 const flagged = new Set(BRICKS.filter(({ info }) => (info.flag && params.has(info.flag)) || listed.has(info.id)).map(({ info }) => info.id));
-// A core brick that broke and was switched off from its "stopped working" line: off for this visit only.
+// Manual core switches last for this visit; self-heal quarantine below persists across visits.
 const coreOff = new Set<string>();
-const currentIds = () => talkOn() ? new Set(["spine", "tiny-transcript", "usage"].filter(id => !builtInOn("plugins") || switches[id] !== false)) : onIds(BRICKS.filter(b => !importedIds.has(b.info.id) || builtInOn("plugins")), builtInOn("plugins") ? Object.fromEntries(BRICKS.map(b => [b.info.id, switches[b.info.id] ?? (CORE_BRICKS.includes(b.info.id) || b.info.defaultOn)])) : switches, flagged, builtInOn("plugins") ? [] : CORE_BRICKS, coreOff);
+const enabledIds = () => talkOn() ? new Set(["spine", "tiny-transcript", "usage"].filter(id => !builtInOn("plugins") || switches[id] !== false)) : onIds(BRICKS.filter(b => !importedIds.has(b.info.id) || builtInOn("plugins")), builtInOn("plugins") ? Object.fromEntries(BRICKS.map(b => [b.info.id, switches[b.info.id] ?? (CORE_BRICKS.includes(b.info.id) || b.info.defaultOn)])) : switches, flagged, builtInOn("plugins") ? [] : CORE_BRICKS, coreOff);
+const currentIds = () => new Set([...enabledIds()].filter(id => !isStopped(id)));
 export const importedIds = new Set<string>();
 let on = currentIds();
 /** Whether a brick is enabled now, including core bricks and this visit's switches. */
@@ -137,6 +139,7 @@ export const brickChoice = (id: string) => readSwitches()[id] ?? BRICKS.find((b)
 const watchers = new Set<() => void>();
 const changed = () => { on = currentIds(); for (const watcher of watchers) watcher(); };
 watchTalk(changed);
+watchRecovery(changed);
 watchBuiltIns(() => { changed(); registryChanged(); });
 const watch = (watcher: () => void) => { watchers.add(watcher); return () => { watchers.delete(watcher); }; };
 // Switched in another window of this browser: this one follows.
@@ -149,6 +152,7 @@ export function useBricksOn(): ReadonlySet<string> {
 
 /** Switches a brick on or off in this browser, at once, and keeps it so. */
 export function switchBrick(id: string, value: boolean) {
+  if (value) clearStopped(id);
   if (isCore(id)) {
     if (value) coreOff.delete(id); else coreOff.add(id);
     changed();

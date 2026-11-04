@@ -13,7 +13,6 @@
    meter does, so it never covers the composer. */
 .brick-broke { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--muted); font-size: 13px; }
 .brick-broke button { min-height: 36px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--ink); font: inherit; cursor: pointer; }
-.brick-broke-floating { position: fixed; left: 16px; bottom: calc(var(--dock-height, 120px) + 8px); z-index: 7; max-width: calc(100% - 32px); box-shadow: var(--shadow); }
 
 /* The Apps panel's way in: one quiet row at its foot, under the apps. */
 .apps-catalog { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 16px; padding: 10px 0 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
