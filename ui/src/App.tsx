@@ -72,7 +72,7 @@ import { showHint } from "./guide-core";
 import { Markdown } from "./md";
 import { CARDS_FLAG, DEMO, SAMPLE_FLAG, SHELL2 } from "./shell/flag";
 import { useShellCountdownPlacement } from "./shell/countdown";
-import { BUILT_INS, switchBuiltIn, useBuiltInsOn } from "./shell/features";
+import { builtInOn, BUILT_INS, switchBuiltIn, useBuiltInsOn } from "./shell/features";
 import { useHistory, type Entry } from "./shell/history";
 import { FEATURE_NAMES, NAMES } from "./shell/names";
 import { Icon, Keycap, mod, modAria, type Mode } from "./shell/parts";
@@ -1114,6 +1114,13 @@ export default function App() {
   const brickHost = useBrickHost(world, core.snapshotRevision, me, core.connected, rooms, core.partial, {
     addThought: core.sendText,
     resume: (id,keyboard) => finishPause(id,keyboard),
+    openPoint: (threadId, thoughtId) => {
+      if (!builtInOn("compare-phone-reading")) return;
+      if (!world.threads.some(t => t.id === threadId) || (thoughtId && !world.thoughts.some(t => t.id === thoughtId && t.thread_id === threadId))) {
+        core.showNotice("Source point unavailable. Its reference has been kept."); return;
+      }
+      setDestination(was => ({ threadId, thoughtId, revision: (was?.revision ?? 0) + 1 }));
+    },
     openThread: (id) => { const thread = threadById.get(resolveMerged(world, id)); if (thread) goBack(thread); },
     select: core.select,
     notify: (text) => core.showNotice(text),

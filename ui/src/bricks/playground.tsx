@@ -15,7 +15,8 @@ import { receiveRoute, type RouteMsg } from "../route";
 import { roomColors } from "../rooms";
 import { moveChange, renameChange } from "../topics-core";
 import { receiveJob, type JobMsg } from "../work-jobs";
-import type { BrickActions, BrickEvents } from "./contract";
+import { switchBuiltIn, useBuiltInsOn } from "../shell/features";
+import type { ViewDestination, BrickActions, BrickEvents } from "./contract";
 import "../styles.css";
 import "./playground.css";
 
@@ -74,6 +75,8 @@ function Playground() {
   const [sample, setSample] = useState(params.get("sample") ?? (SAMPLES["student-week"] ? "student-week" : "empty"));
   const [world, setWorld] = useState(() => sampleWorld(sample));
   // Bumped with each map picked, as the core's snapshot count is: a new map's thoughts aren't landings.
+  const compareOn = useBuiltInsOn().has("compare-phone-reading");
+  const [destination, setDestination] = useState<ViewDestination | null>(null);
   const [revision, setRevision] = useState(1);
   const [connected, setConnected] = useState(true);
   // Your words as they're heard (`map.partial`), while "Say a thought" talks.
@@ -171,6 +174,7 @@ function Playground() {
   const rooms = useMemo(() => roomColors(world.threads), [world.threads]);
   const host = useBrickHost(world, revision, "you", connected, rooms, partial, {
     addThought: (text) => { const ok = add(text); said(`addThought “${text}”${ok ? " → lands on the topic you're on in 1.2 s" : " → refused"}`); return ok; },
+    openPoint: (threadId, thoughtId) => { if (compareOn) setDestination(was => ({ threadId, thoughtId, revision: (was?.revision ?? 0) + 1 })); },
     openThread: (thread) => {
       said(`openThread ${title(thread)} → in the app: back to the map, that topic open and highlighted`);
       setWorld((w) => apply(w, { type: "active_changed", thread_id: thread, speaker: "you" }));
@@ -207,7 +211,7 @@ function Playground() {
       if (ok) showNotice(`${by}: ${text.trim()}`);
       return ok;
     },
-  });
+  }, destination);
   // What the brick hears, listed as it passes.
   useEffect(() => {
     const names: (keyof BrickEvents)[] = ["landed", "words", "notice", "pointing", "asked", "speaking"];
@@ -239,6 +243,7 @@ function Playground() {
   return <div className="playground" data-errors={errors} data-brick-shown={brick ? id : ""}>
     <div className="playground-bar" role="toolbar" aria-label="Playground">
       <strong>Features playground</strong>
+      <button type="button" role="switch" aria-checked={compareOn} onClick={() => switchBuiltIn("compare-phone-reading", !compareOn)}>Compare phone reading</button>
       <label>Feature <select value={id} onChange={(event) => setId(event.target.value)}>
         {!brick && <option value={id}>{id || "none"}</option>}
         {found.bricks.map(({ info }) => <option key={info.id} value={info.id}>{info.name} ({info.id})</option>)}

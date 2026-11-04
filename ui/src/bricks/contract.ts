@@ -143,6 +143,8 @@ export interface Job {
 export interface MapSnapshot {
   /** Optional browser presentation: chronological turns with linked topics. Missing/off keeps the current Canvas. */
   readonly conversationSpine?: boolean;
+  /** Optional presentation only; never enabled by a sample or recording preset. */
+  readonly comparePhoneReading?: boolean;
   /** Allowances from USAGE_FILE and the core's rolling-hour model budget; null with no readable file or connection. */
   readonly usage: UsageSnapshot | null;
   /** The helpers' jobs, in the order each first came (the oldest first, the newest last), each in its latest state; the
@@ -204,6 +206,8 @@ export interface BrickActions {
   resume?(pauseId: string, keyboard?: boolean): boolean;
   /** Shows a thread as a Palace picture does: back to the Map with the thread open, in view and highlighted. Your
    *  place moves there too. */
+  /** Inspect an exact live destination without changing the routing or the draft. */
+  openPoint(threadId: string, thoughtId: string | null): void;
   openThread(threadId: string): void;
   /** Makes a thread "this", as pointing at its card does: what "rename this" or "expand this" said next acts on.
    *  null lets it go. A view's own elements can skip this: one marked `data-thread={id}` is "this" while pointed at. */

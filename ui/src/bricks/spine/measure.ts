@@ -5,6 +5,7 @@
 /** The faces the Spine sets text in, as spine.css sets them: the app's six sizes (11, 13, 15, 18) in one sans. */
 export const FONTS = {
   title: { weight: 600, size: 18 },
+  phone: { weight: 400, size: 16 },
   point: { weight: 400, size: 15 },
   cardTitle: { weight: 600, size: 13 },
   small: { weight: 400, size: 13 },
@@ -27,15 +28,16 @@ function canvas() {
 }
 
 function width(text: string, font: FontKey): number {
-  const key = `${font}\u0000${text}`;
+  const scale = font === "phone" && typeof document !== "undefined" ? (parseFloat(getComputedStyle(document.body).fontSize) || 15) / 15 : 1;
+  const key = `${scale}:${font}\u0000${text}`;
   let w = widths.get(key);
   if (w === undefined) {
     const { weight, size } = FONTS[font];
     const c = canvas();
     if (c) {
-      c.font = `${weight} ${size}px ${family || "system-ui, sans-serif"}`;
+      c.font = `${weight} ${size * scale}px ${family || "system-ui, sans-serif"}`;
       w = c.measureText(text).width;
-    } else w = text.length * size * (weight > 500 ? 0.56 : 0.5);
+    } else w = text.length * size * scale * (weight > 500 ? 0.56 : 0.5);
     widths.set(key, w);
   }
   return w;
@@ -77,4 +79,21 @@ export function wrapEnd(prefix: string, font: FontKey, max: number, limit: numbe
   const lines = wrap(prefix, font, max, Number.MAX_SAFE_INTEGER);
   if (lines.length > limit) return { line: limit - 1, x: max - 3 };
   return { line: lines.length - 1, x: lines[lines.length - 1] };
+}
+
+/** Actual occupied bands, shared by both phone treatments. Coordinates are relative to the frame. */
+export function phoneUsableArea(frame: HTMLElement | null, dock: number) {
+  const f = frame?.getBoundingClientRect();
+  const left = f?.left ?? 0, top = f?.top ?? 0, w = f?.width ?? innerWidth, h = f?.height ?? innerHeight;
+  const vv = window.visualViewport;
+  let y0 = Math.max(0, (vv?.offsetTop ?? 0) - top), y1 = Math.min(h, (vv?.offsetTop ?? 0) + (vv?.height ?? innerHeight) - top);
+  let x1 = w;
+  const boxes = (selector: string) => [...document.querySelectorAll<HTMLElement>(selector)].filter(e => e.getClientRects().length && getComputedStyle(e).visibility !== "hidden").map(e => e.getBoundingClientRect()).filter(r => r.width && r.height);
+  for (const r of boxes('[data-slot="top-left"], [data-slot="top-right"], .talk-pill, header, .phone-controls')) y0 = Math.max(y0, r.bottom - top + 8);
+  const bottoms = boxes('[data-slot="stage"], [data-slot="status"], [data-slot="held"], [data-slot="bottom-left"], [data-slot="bottom-right"], .spine-corner, .recovery-panel, .delivery-recovery');
+  for (const r of bottoms) y1 = Math.min(y1, r.top - top - 8);
+  if (!bottoms.length) y1 = Math.min(y1, h - dock);
+  for (const r of boxes('[data-slot="rail"]')) if (r.left > left + w / 2) x1 = Math.min(x1, r.left - left - 8);
+  const safe = frame?.querySelector('.phone-safe')?.getBoundingClientRect().height ?? 0;
+  return { x0: 0, x1: Math.max(0,x1), y0, y1: Math.max(y0, y1 - safe) };
 }

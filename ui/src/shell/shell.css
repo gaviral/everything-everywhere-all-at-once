@@ -379,3 +379,7 @@ html.shell2 .capture-placed { padding: 6px 10px; border-radius: 8px; background:
 html.shell2 .capture-placed p { white-space: pre-wrap; overflow-wrap: anywhere; }
 html.shell2 .sample-recovery-actions { position: fixed; top: 68px; left: 16px; z-index: 12; display: flex; gap: 8px; }
 html.shell2 .keyless-help { margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); font-size: 13px; }
+
+/* Phone reading comparison is contained above the measured stage; it never moves the composer. */
+html.shell2 .spine-phone-compare .phone-controls { top: 68px; }
+html.shell2 .spine-phone-compare .inline-phone { touch-action: pan-y; }

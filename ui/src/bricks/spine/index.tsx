@@ -14,13 +14,15 @@ import { useCamera, type Area } from "./camera";
 import { filmHeld } from "./film";
 import { Corner, type Stop } from "./corner";
 import { Cues, onScreen, type Cue } from "./cues";
-import { bounds, G, layout as place, type Box, type End, type Item, type Layout, type Link } from "./layout";
+import { bounds, phoneParents, G, layout as place, type Box, type End, type Item, type Layout, type Link } from "./layout";
 import { Reply, useMargins, type Picking } from "./margin";
 import { ActsContext, ItemView, NowContext, READ, type Acts, type ItemData, type ItemNode } from "./nodes";
 import { Shelf } from "./shelf";
 import { useStayingHere } from "../../StayHere";
 import { CONVERSATION, conversationLayout } from "./conversation";
 import "./spine.css";
+import { InlinePhone } from "./InlinePhone";
+import { phoneUsableArea } from "./measure";
 import { semanticBlend } from "./semantic-zoom";
 
 /** A press that moves less than this is a click, not a drag: a hand's wobble on a click is 1–3 px. */
@@ -176,7 +178,7 @@ function chromeOf(frameBox: DOMRect | undefined) {
   return { stage: stage && stage.width ? stage : null, status: status?.height ?? 0, frame: frameBox };
 }
 
-function Canvas({ map, actions, on, destination, conversation }: BrickProps & { conversation: boolean }) {
+function Canvas({ map, actions, on, destination, conversation: conversationEnabled }: BrickProps & { conversation: boolean }) {
   const flow = useReactFlow<ItemNode>();
   const semantic = useContext(SemanticZoomContext);
   const staying = useStayingHere();
@@ -269,6 +271,37 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
   const top = box?.top ?? null;
   const width = box ? box.width - box.left - box.right : innerWidth;
   const narrow = width < NARROW;
+  const compare = !!map.comparePhoneReading && (box?.width ?? innerWidth) <= 600;
+  const conversation = conversationEnabled && !compare;
+  const [treatment, setTreatment] = useState<"spatial" | "inline">("spatial");
+  const inline = compare && treatment === "inline";
+  const [inspected, setInspected] = useState<string | null>(null);
+  const [phoneArea, setPhoneArea] = useState<Area>({ x0: 0, y0: 80, x1: width, y1: 500 });
+  const [textScale, setTextScale] = useState(1);
+  const phoneControls = useRef<HTMLDivElement>(null);
+  const parents = useMemo(() => compare ? phoneParents(map.threads, map.thoughts) : new Map(), [compare, map.threads, map.thoughts]);
+  useLayoutEffect(() => {
+    if (!compare) { setTreatment("spatial"); setInspected(null); return; }
+    const measure = () => {
+      const a = phoneUsableArea(frame.current, dock);
+      setPhoneArea(was => Object.keys(a).every(k => a[k as keyof Area] === was[k as keyof Area]) ? was : a);
+      setTextScale((parseFloat(getComputedStyle(document.body).fontSize) || 15) / 15);
+    };
+    measure();
+    const resize = new ResizeObserver(measure);
+    const styles = new MutationObserver(measure);
+    styles.observe(document.body, { attributes: true, attributeFilter: ["style"] });
+    document.querySelectorAll('.phone-controls, .spine-corner, [data-slot], .shell-composer, body').forEach(e => resize.observe(e));
+    window.visualViewport?.addEventListener("resize", measure);
+    window.visualViewport?.addEventListener("scroll", measure);
+    window.addEventListener("resize", measure);
+    return () => { resize.disconnect(); styles.disconnect(); window.visualViewport?.removeEventListener("resize", measure); window.visualViewport?.removeEventListener("scroll", measure); window.removeEventListener("resize", measure); };
+  }, [compare, dock, top, inline]);
+  const inspect = (threadId: string, thoughtId: string | null) => {
+    if (!compare) return;
+    setInspected(threadId);
+    actions.openPoint(threadId, thoughtId);
+  };
   // Once the canvas has its height, the page scrolls (once) so it starts right under what's pinned: an open Apps panel
   // above it goes up out of the way, as it would over the map.
   useLayoutEffect(() => {
@@ -285,6 +318,7 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
 
   /** The part of the canvas nothing covers, in its own pixels: above the stage (or the dock), left of a rail. */
   const area = useCallback((): Area => {
+    if (compare) return phoneUsableArea(frame.current, dock);
     const frameBox = frame.current?.getBoundingClientRect();
     const w = frameBox?.width ?? innerWidth, h = frameBox?.height ?? innerHeight;
     const chrome = chromeOf(frameBox);
@@ -297,7 +331,7 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
     const y1 = chrome.stage?.height ? Math.min(h, chrome.stage.top - (frameBox?.top ?? 0) - 8) : h - dock;
     const x1 = rail && rail.width && rail.left > (frameBox?.left ?? 0) + w / 2 ? rail.left - (frameBox?.left ?? 0) - 8 : w;
     return { x0: 0, y0, x1: Math.max(160, x1), y1: Math.max(y0 + 120, y1) };
-  }, [dock]);
+  }, [dock, compare]);
 
   /** What floats over the canvas, in its pixels: the shell's corners (Find, Catalog, the people in a call), the Talk
    *  pill, the held questions, and this canvas's own corners (Follow, the views, the shelf). An edge chip under any of
@@ -334,15 +368,15 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
   const slots = useMemo(() => map.thoughts.filter((t) => !t.placed && !t.thread_id && t.speaker === map.me).slice(-SLOTS_MAX).map((t) => t.id), [map.thoughts, map.me]);
   const slotKey = slots.join("|");
   const threads = useMemo(() => {
-    const shown = notes.anchored.size ? map.threads.filter((t) => !notes.anchored.has(t.id)) : map.threads;
+    const shown = !compare && notes.anchored.size ? map.threads.filter((t) => !notes.anchored.has(t.id)) : map.threads;
     return Object.keys(moving).length ? shown.map((t) => (moving[t.id] && t.topic !== moving[t.id] ? { ...t, topic: moving[t.id] } : t)) : shown;
-  }, [map.threads, notes.anchored, moving]);
+  }, [map.threads, notes.anchored, moving, compare]);
   const topicNames = useMemo(() => map.topics.map((topic) => topic.name), [map.topics]);
   const pauses = useMemo(() => (map.pauses??[]).filter(p=>p.speaker===map.me&&!p.resolved),[map.pauses,map.me]);
   const pauseCounts = useMemo(()=>{const counts=new Map<string,number>();for(const pause of pauses)counts.set(pause.thought_id,(counts.get(pause.thought_id)??0)+1);return counts;},[pauses]);
-  const layout = useMemo(() => (conversation ? conversationLayout : place)({ threads: conversation ? map.threads : threads, thoughts: map.thoughts, notes: map.notes, rooms: map.rooms, positions, shelf: shelf.items, open: open?.id ?? null,
-    me: map.me, speakers: map.speakers, active: staying ?? map.active, slots, paused: pauseCounts, landing, margins: notes.margins, opened, narrow, topics: topicNames, staying, originals }),
-  [pauseCounts, conversation, map.threads, threads, map.thoughts, map.notes, map.rooms, positions, shelf.items, open?.id, map.me, map.speakers, map.active, slotKey, landing, notes.margins, opened, narrow, topicNames, staying, originals]);
+  const layout = useMemo(() => (conversation && !compare ? conversationLayout : place)({ threads: conversation ? map.threads : threads, thoughts: map.thoughts, notes: map.notes, rooms: map.rooms, positions, shelf: shelf.items, open: open?.id ?? null,
+    me: map.me, speakers: map.speakers, active: staying ?? map.active, slots, paused: pauseCounts, landing, opened, narrow, topics: topicNames, staying, originals, comparePhone: compare, textScale, margins: compare ? [] : notes.margins }),
+  [compare, textScale, pauseCounts, conversation, map.threads, threads, map.thoughts, map.notes, map.rooms, positions, shelf.items, open?.id, map.me, map.speakers, map.active, slotKey, landing, notes.margins, opened, narrow, topicNames, staying, originals]);
   // A move the map now shows, or one that never came (refused, or the core away), stops being held.
   useEffect(() => {
     const ids = Object.keys(moving);
@@ -402,12 +436,22 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
   const fadeIn = useCallback((keys: string[]) => requestAnimationFrame(() => {
     for (const key of keys) frame.current?.querySelector<HTMLElement>(`.react-flow__node[data-id="${CSS.escape(key)}"]`)?.animate?.([{ opacity: 0 }, { opacity: 1 }], { duration: FADE_MS, easing: "ease-out" });
   }), []);
-  const shown = useGlide(layout, reduced, held, fadeIn);
+  const shown = useGlide(layout, reduced || compare, held, keys => { if (!compare) fadeIn(keys); });
   const at = (item: Item) => held?.get(item.key) ?? shown.get(item.key) ?? item.box;
 
   // The camera.
   const pane = useCallback(() => frame.current?.querySelector<HTMLElement>(".spine-flow") ?? null, []);
-  const camera = useCamera(flow, area, reduced, pane, (key) => layout.byKey.get(key)?.box);
+  const camera = useCamera(flow, area, reduced || compare, pane, (key) => layout.byKey.get(key)?.box, !inline, compare);
+  const savedCamera = useRef<ReturnType<typeof flow.getViewport> | null>(null);
+  const wasInline = useRef(false);
+  useLayoutEffect(() => {
+    if (inline && !wasInline.current) { savedCamera.current = flow.getViewport(); camera.hold(); }
+    if (!inline && wasInline.current && savedCamera.current) {
+      void flow.setViewport(savedCamera.current, { duration: 0 });
+      reached.current = destination; // Returning to A keeps its camera, including zoom.
+    }
+    wasInline.current = inline;
+  }, [inline]);
   const all = () => bounds(layout.items.map((item) => item.box));
   const minZoom = useMemo(() => {
     const everything = all();
@@ -455,7 +499,7 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
   // The canvas itself getting wider or narrower (a lane taking the page's right side, or giving it back) is a reason to
   // look again: what you're on may no longer be in the comfortable middle.
   useEffect(() => {
-    if (ready && following && here && !drag) camera.follow(() => goalNow.current());
+    if (!inline && ready && following && here && !drag) camera.follow(() => goalNow.current());
   }, [ready, following, here?.key, followBox?.x, followBox?.y, followBox?.w, followBox?.h, slotsHere.join("|"), box?.left, box?.right]);
 
   // A tangent you opened comes into view if it's out of it (on a phone, a tucked one opens beside its topic).
@@ -469,7 +513,7 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
   // a lazy mount, wait for its layout, and cancel any queued follow so a held camera still goes exactly there.
   const reached = useRef<BrickProps["destination"]>(null);
   useEffect(() => {
-    if (!ready || !destination || reached.current === destination) return;
+    if (inline || !ready || !destination || reached.current === destination) return;
     const { thoughtId, threadId } = destination;
     const point = thoughtId ? layout.items.find((item) => item.thoughts?.includes(thoughtId)) : undefined;
     const thread = map.threads.find((thread) => thread.id === threadId);
@@ -481,13 +525,14 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
     if (!item) return;
     setFollowing(false);
     camera.hold();
-    if (point && !originals.has(point.id)) {
+    if (point && !compare && !originals.has(point.id)) {
       setOriginals((was) => new Set([...was, point.id]));
       return; // Aim after the original words have their measured space.
     }
     reached.current = destination;
-    camera.aim(item.box, { ring: item.key });
-  }, [ready, destination, layout, map.threads, open?.id, originals, camera.aim]);
+    camera.aim(item.box, { ring: item.key, instant: compare });
+    if (compare) requestAnimationFrame(() => frame.current?.querySelector<HTMLElement>(`[data-id="${CSS.escape(item.key)}"] .spine-text, [data-id="${CSS.escape(item.key)}"] .spine-title`)?.focus({ preventScroll: true }));
+  }, [inline, ready, destination, layout, map.threads, open?.id, originals, camera.aim]);
 
   const stopFollowing = () => { setFollowing(false); camera.hold(); };
   const startFollowing = () => {
@@ -616,7 +661,7 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
     },
     resume: (id,keyboard) => { actions.resume?.(id,keyboard); },
     toggle: (thread) => { stopFollowing(); setOpen((was) => (was?.id === thread ? null : { id: thread, by: "you" })); },
-    pick: (item) => { setPicked(item.key); if (item.thread) actions.select(item.thread); },
+    pick: (item) => { setPicked(item.key); if (!compare && item.thread) actions.select(item.thread); },
     words: (item) => { stopFollowing(); setOriginals((was) => { const next = new Set(was); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; }); },
     // Reached by Tab: brought into view, as a pointer would have to go there.
     focus: (item) => { if (!onScreen(item, transform(), area()).inside) { stopFollowing(); camera.aim(item.box, { ring: item.key }); } },
@@ -649,7 +694,7 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
     },
     reply: (item, quote) => {
       const frameBox = frame.current?.getBoundingClientRect();
-      const element = frame.current?.querySelector(`.react-flow__node[data-id="${CSS.escape(item.key)}"]`)?.getBoundingClientRect();
+      const element = frame.current?.querySelector(inline ? `.inline-phone [data-heads~="${CSS.escape(item.id)}"] .inline-words` : `.react-flow__node[data-id="${CSS.escape(item.key)}"]`)?.getBoundingClientRect();
       if (!frameBox || !element) return;
       if (item.kind === "margin") {
         const note = notes.margins.find((m) => m.id === item.margin);
@@ -661,13 +706,13 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
       const thoughtId = item.thoughts?.at(-1);
       if (!thoughtId) return;
       camera.hold();
-      setPicking({ key: item.key, thoughtId, quote: quote ?? item.text ?? "", x: element.left - frameBox.left + G.textX, y: element.top - frameBox.top + (item.lines?.length ?? 1) * (item.look?.line ?? G.pointLine), typing: true });
+      setPicking({ key: item.key, thoughtId, quote: quote ?? item.text ?? "", x: element.left - frameBox.left + (inline ? 0 : G.textX), y: inline ? Math.min(element.bottom - frameBox.top, area().y1 - 48) : element.top - frameBox.top + (item.lines?.length ?? 1) * (item.look?.line ?? G.pointLine), typing: true });
     },
     unfold: (margin) => setOpened((was) => { const next = new Set(was); if (next.has(margin)) next.delete(margin); else next.add(margin); return next; }),
     topics: topicNames,
     renameTopic: (from, to) => { actions.renameTopic(from, to); },
     moveToTopic: (thread, topic) => { if (actions.moveToTopic(thread, topic)) setMoving((was) => ({ ...was, [thread]: topic })); },
-  }), [actions, put, shelf.items, notes.margins, layout, area, topicNames]);
+  }), [inline, compare, actions, put, shelf.items, notes.margins, layout, area, topicNames]);
 
   // One dim (78%): what isn't the topic you're on while the view follows your talk, or what the Friend isn't pointing at.
   const focusTopic = pointing ? null : following && here && new Set(layout.items.map((item) => item.topic)).size > 1 ? here.topic : null;
@@ -787,18 +832,40 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
     event.preventDefault();
   };
   useEffect(() => {
+    if (inline) return;
     const keydown = (event: KeyboardEvent) => keyed.current(event);
     document.addEventListener("keydown", keydown);
     return () => document.removeEventListener("keydown", keydown);
-  }, []);
+  }, [inline]);
 
   const ready_ = ready && top !== null;
   const rowStyle = { bottom: corner.row };
   return <div className="spine">
     <div ref={anchor} className="spine-anchor" style={{ height: box?.tall ?? 0 }} />
-    <div ref={frame} className={cls("spine-frame", ready_ && "spine-ready", !semantic && shownStop === "pictures" && "spine-stop-pictures", narrow && "spine-narrow")} style={{ top: top ?? 0, left: box?.left ?? 0, right: box?.right ?? 0 }}>
+    <div ref={frame} className={cls("spine-frame", ready_ && "spine-ready", !semantic && shownStop === "pictures" && "spine-stop-pictures", narrow && "spine-narrow", compare && "spine-phone-compare")} data-phone-bounds={compare ? JSON.stringify(phoneArea) : undefined} data-phone-treatment={compare ? inline ? "inline" : "spatial" : undefined} style={{ "--phone-text-scale": textScale, top: top ?? 0, left: box?.left ?? 0, right: box?.right ?? 0 } as React.CSSProperties}>
+      {compare && <div ref={phoneControls} className="phone-controls" style={{ "--phone-text-scale": textScale } as React.CSSProperties}>
+        <div role="group" aria-label="Compare phone reading">
+          <button type="button" aria-pressed={!inline} onClick={() => setTreatment("spatial")}>Spatial</button>
+          <button type="button" aria-pressed={inline} onClick={() => setTreatment("inline")}>Inline</button>
+          <details><summary>Topics</summary><div className="phone-topic-list">
+            <button type="button" onClick={() => { if (!inline) seeAll(); else frame.current?.querySelector('.inline-phone')?.scrollTo({ top: 0 }); }}>See all</button>
+            {map.threads.map(t => <button type="button" key={t.id} data-phone-open={t.id} onClick={event => {
+              const first = map.thoughts.find(p => p.thread_id === t.id && p.placed);
+              inspect(t.id, first?.id ?? null);
+              event.currentTarget.closest('details')?.removeAttribute('open');
+            }}>{t.title}</button>)}
+            {map.thoughts.filter(p => p.placed && p.thread_id).map(p => <button type="button" key={p.id} data-phone-point={p.id} onClick={event => { inspect(p.thread_id!, p.id); event.currentTarget.closest("details")?.removeAttribute("open"); }}>{p.point || p.text} [{p.id}]</button>)}
+          </div></details>
+        </div>
+        {inspected && parents.get(inspected)?.label && <button type="button" className="phone-back" data-source-id={parents.get(inspected)?.thoughtId ?? undefined}
+          disabled={!parents.get(inspected)?.threadId || parents.get(inspected)?.missing}
+          onClick={() => { const p = parents.get(inspected); if (p?.threadId) inspect(p.threadId, p.thoughtId); }}>Back to {parents.get(inspected)?.label}</button>}
+      </div>}
+      {compare && <div className="phone-safe" aria-hidden="true" />}
       <ActsContext.Provider value={acts}>
       <NowContext.Provider value={now}>
+      {inline && <InlinePhone map={map} destination={destination} layout={layout} data={datas} area={phoneArea} visit={inspect} />}
+      <div className="spatial-treatment" inert={inline} aria-hidden={inline || undefined} style={{ visibility: inline ? "hidden" : undefined }}>
       <ReactFlow<ItemNode>
         className={cls("spine-flow", semantic && "spine-semantic")} nodes={nodes} edges={[]} nodeTypes={NODE_TYPES} onNodesChange={onNodesChange}
         onNodeDragStart={() => { stopFollowing(); unpick(); }}
@@ -853,6 +920,7 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
           </svg>
         </EdgeLabelRenderer>
       </ReactFlow>
+      </div>
       {!narrow && <Cues cues={cues} layout={layout} area={area} avoid={avoid} width={width} narrow={false} go={goTo} seen={seenCues} />}
       </NowContext.Provider>
       </ActsContext.Provider>

@@ -333,7 +333,7 @@ function Point({ data }: { data: ItemData }) {
     {pulse > 0 && !arriving && <span key={pulse} className="spine-ring" style={{ left: look.lineX, top: look.line / 2 }} aria-hidden="true" />}
     {arriving && <span className="spine-slot-box" style={{ left: look.textX - 9, width: look.textW - 6, top: -3, height: textH + 6 }} aria-hidden="true" />}
     {zoomedOut ? <Bars lines={lines} line={look.line} x={look.textX} />
-      : <span role="button" tabIndex={0} className={cls("spine-text", data.selecting && "nodrag nopan")} style={{ left: look.textX, width: look.textW, WebkitLineClamp: lines.length, lineHeight: `${look.line}px` }}
+      : <span role="button" tabIndex={0} className={cls("spine-text", data.selecting && "nodrag nopan")} style={{ left: look.textX, width: look.textW, WebkitLineClamp: lines.length, fontSize: look.font === "phone" ? `${look.line * 2 / 3}px` : undefined, lineHeight: `${look.line}px` }}
         title={item.text} aria-label={label} onClick={(event) => { if (!data.selecting && !(event.target as Element).closest(".spine-fold")) acts.pick(item); }}
         onKeyDown={keys} onFocus={() => acts.focus(item)} onDoubleClick={(event: MouseEvent) => { if (!data.selecting) acts.select(item, event.clientX, event.clientY); }}>
         <span className="spine-speaker">{item.who?.name ?? "you"}</span><Words item={item} />
@@ -355,6 +355,21 @@ function Point({ data }: { data: ItemData }) {
     </span>}
     <PausedSources data={data} />
     <Tools item={item} />
+  </div>;
+}
+
+/** Inline uses the same live Item, words, roles and tools as the spatial renderer. */
+export function InlinePoint({ data }: { data: ItemData }) {
+  const acts = useContext(ActsContext)!;
+  const { item } = data;
+  return <div className="inline-point" data-thought={item.id} data-thread={item.thread} data-heads={item.thoughts?.join(" ")}>
+    <span role="button" tabIndex={0} className="inline-words" onClick={() => acts.pick(item)} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); acts.pick(item); } else if (event.key.toLowerCase() === "r" && !event.metaKey && !event.ctrlKey) { event.preventDefault(); acts.reply(item); } }}>
+      <span className="spine-speaker">{item.who?.name ?? "you"}{item.who?.ai ? " ✦" : ""}</span><Words item={item} />
+    </span>
+    {item.wordsOpen !== undefined && <button type="button" aria-expanded={item.wordsOpen} onClick={() => acts.words(item)}>{item.wordsOpen ? "Show less" : "Words said"}</button>}
+    {item.decided && <span>{item.agreed ? "Agreed" : "Decided"}</span>}{item.left && <span>Left off</span>}
+    {item.landing && <span>{item.landing}</span>}
+    <PausedSources data={data} /><Tools item={item} />
   </div>;
 }
 

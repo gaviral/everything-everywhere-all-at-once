@@ -2,6 +2,8 @@
 // shows; those not fit to switch on in front of people fold away under "Not for the demo". Opened from the Apps panel,
 // or by a brick (`openCatalog`, at a brick's row: shown, marked and its switch focused), a modal sheet as Recap is (Esc,
 // ×, or a click outside closes it). A switch acts at once, and only in this browser.
+import { BUILT_INS, switchBuiltIn, useBuiltInsOn } from "./shell/features";
+import { FEATURE_NAMES } from "./shell/names";
 import { useEffect, useRef } from "react";
 import type { BrickKind } from "./bricks/contract";
 import { BRICKS, closeCatalog, KINDS, switchBrick, useBricksOn, useCatalogAt, useCatalogOpen, type Brick } from "./bricks-core";
@@ -24,6 +26,7 @@ export function Catalog({ apps, state }: { apps: readonly MiniApp[]; state: AppP
 
 function CatalogSheet({ apps, state }: { apps: readonly MiniApp[]; state: AppPartsState }) {
   const on = useBricksOn();
+  const builtIns = useBuiltInsOn();
   const at = useCatalogAt();
   const sheet = useRef<HTMLDialogElement>(null);
   // Modal from its first frame, as Recap is: the page behind holds still, × rings only when the focus before it did
@@ -55,13 +58,13 @@ function CatalogSheet({ apps, state }: { apps: readonly MiniApp[]; state: AppPar
   }, [at]);
   const ready = BRICKS.filter((brick) => brick.info.demoSafe);
   const more = BRICKS.filter((brick) => !brick.info.demoSafe);
-  const count = BRICKS.filter((brick) => on.has(brick.info.id)).length;
+  const count = BRICKS.filter((brick) => on.has(brick.info.id)).length + Number(builtIns.has("compare-phone-reading"));
   return <dialog ref={sheet} className="catalog" aria-labelledby="catalog-title" onCancel={(event) => { event.preventDefault(); closeCatalog(); }}
     onClick={(event) => { if (event.target === event.currentTarget) closeCatalog(); }}>
     <div className="catalog-top">
       <div>
         <h2 id="catalog-title">Features</h2>
-        <p>Features you can switch on or off · {count} of {BRICKS.length} on</p>
+        <p>Features you can switch on or off · {count} of {BRICKS.length + 1} on</p>
       </div>
       <button type="button" className="catalog-close" onClick={closeCatalog} aria-label="Close">×</button>
     </div>
@@ -71,6 +74,12 @@ function CatalogSheet({ apps, state }: { apps: readonly MiniApp[]; state: AppPar
         <AppParts app={app} apps={apps} state={state} />
       </article>)}
     </section>}
+    <section className="catalog-group" aria-label="Built in"><h3>Built in</h3><ul>
+      {BUILT_INS.filter(b => b.id === "compare-phone-reading").map(b => <li className="catalog-row" data-row={b.id} key={b.id}>
+        <div><strong>{FEATURE_NAMES[b.id].name}</strong><p>{FEATURE_NAMES[b.id].does}</p></div>
+        <button type="button" className="apps-switch" role="switch" aria-label={FEATURE_NAMES[b.id].name} aria-checked={builtIns.has(b.id)} onClick={() => switchBuiltIn(b.id, !builtIns.has(b.id))}>{builtIns.has(b.id) ? "On" : "Off"}</button>
+      </li>)}
+    </ul></section>
     <Groups bricks={ready} on={on} at={at?.id ?? null} />
     {more.length > 0 && <details className="catalog-more">
       <summary>Not for the demo · {more.length}</summary>
