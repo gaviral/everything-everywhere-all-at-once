@@ -17,8 +17,9 @@ try {
   assert.equal(sketchExchangeFeature.defaultEnabled,false);
   assert.equal(sketchExchangeFeature.imageCapability.available,false);
   const identities = ['tablet','tv','other'].map(id=>({id,label:id}));
-  const listeners = new Map(); let sent=[];
+  const listeners = new Map(); const switches = new Map(); let sent=[];
   const adapters = identities.map(self=>({self,targets:identities.filter(s=>s.id!==self.id),
+    setEnabled:on=>switches.set(self.id,on),
     subscribe:hear=>{listeners.set(self.id,hear);return()=>listeners.delete(self.id);},
     send:m=>{sent.push(structuredClone(m));listeners.get(m.to)?.(structuredClone(m));},
   }));
@@ -26,6 +27,7 @@ try {
   const drawing = [[[10,20],[30,40]]];
   assert.throws(()=>source.send('tv',drawing));
   for(const s of [source,tv,other])s.setEnabled(true);
+  assert.ok(identities.every(s=>switches.get(s.id)===true));
   assert.throws(()=>source.send('',drawing));
   const id=source.send('tv',drawing);
   drawing[0][0][0]=999;
@@ -43,11 +45,14 @@ try {
   assert.equal(source.exchanges[1].received,false);
   tv.setEnabled(true);assert.equal(tv.exchanges.length,1,'no reconnect replay');
   source.setEnabled(false);const count=sent.length;assert.throws(()=>source.send('tv',drawing));assert.equal(sent.length,count);
-  assert.equal(validDrawing([[[NaN,0]]]),false);assert.equal(validDrawing([[[1001,0]]]),false);
+  assert.equal(validDrawing([[[NaN,0]]]),false);assert.equal(validDrawing([[[1001,0]]]),false);assert.equal(validDrawing([[[0,601]]]),false);
   assert.equal(validDrawing([Array.from({length:2049},()=>[1,1])]),false);
+  const cannotEnable=new SketchTransport({...adapters[0],setEnabled:()=>{throw Error('offline');}});
+  cannotEnable.setEnabled(true);assert.equal(cannotEnable.enabled,false);assert.match(cannotEnable.notice,/stays off/);cannotEnable.dispose();
   const broken=new SketchTransport({...adapters[0],send:()=>{throw Error('offline');}});
   broken.setEnabled(true);broken.send('tv',[[[1,2]]]);assert.equal(broken.exchanges.length,1);assert.match(broken.notice,/unavailable/);
   for(const s of [source,tv,other,broken])s.dispose();
+  assert.ok(identities.every(s=>switches.get(s.id)===false));
   console.log('PASS routing: opt-in, exact target, original snapshot, reply correlation, bounds, disconnect, failed queue');
   await server.listen();
   const port=server.httpServer.address().port;

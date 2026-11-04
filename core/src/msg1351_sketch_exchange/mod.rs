@@ -7,7 +7,7 @@ impl Drawing {
     fn valid(&self) -> bool {
         !self.0.is_empty() && self.0.len() <= 128
             && self.0.iter().map(Vec::len).sum::<usize>() <= 2048
-            && self.0.iter().all(|s| !s.is_empty() && s.iter().all(|p| p[0] <= 1000 && p[1] <= 1000))
+            && self.0.iter().all(|s| !s.is_empty() && s.iter().all(|p| p[0] <= 1000 && p[1] <= 600))
     }
 }
 #[derive(Clone, Debug, PartialEq)]
@@ -90,7 +90,7 @@ mod tests {
     fn bounds_and_switch_are_enforced() {
         let mut relay = Relay::default();
         for id in ["tablet", "tv"] { relay.set_enabled(id, true); }
-        for bad in [Drawing(vec![]), Drawing(vec![vec![]]), Drawing(vec![vec![[1001,0]]]), Drawing(vec![vec![[0,0];2049]])] {
+        for bad in [Drawing(vec![]), Drawing(vec![vec![]]), Drawing(vec![vec![[1001,0]]]), Drawing(vec![vec![[0,601]]]), Drawing(vec![vec![[0,0];2049]])] {
             assert!(relay.route("tablet", message("tablet", "tv", Content::Sketch(bad))).is_err());
         }
         relay.set_enabled("tv", false);

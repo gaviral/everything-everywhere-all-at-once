@@ -10,6 +10,7 @@ export type Envelope = {
 export interface HostAdapter {
   self: Session;
   targets: readonly Session[];
+  setEnabled(enabled: boolean): void;
   send(message: Envelope): void;
   subscribe(hear: (message: unknown) => void): () => void;
 }
@@ -18,7 +19,7 @@ export function validDrawing(value: unknown): value is Drawing {
   let points = 0;
   return value.every(stroke => Array.isArray(stroke) && stroke.length > 0 &&
     (points += stroke.length) <= 2048 && stroke.every(p => Array.isArray(p) && p.length === 2 &&
-      p.every(n => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 1000)));
+      p.every(n => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 1000) && p[1] <= 600));
 }
 export function validEnvelope(value: unknown): value is Envelope {
   if (!value || typeof value !== 'object') return false;
