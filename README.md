@@ -25,6 +25,9 @@ Say it. **Ask about words** questions a word right where it was used. Draw it: M
 | Request an app | Muse Spark 1.3 | [apps.rs](core/src/apps.rs) | [composer](docs/trace.md#composer) |
 | Ask for a recap | Muse Spark 1.3 | [recap.rs](core/src/recap.rs) | [recap](docs/trace.md#recap) |
 | Let a topic settle | Muse Image 1.0 | [pictures.rs](core/src/pictures.rs) | [pictures](docs/trace.md#pictures) |
+| Use a word it can't place | Muse Spark 1.3 | [clarify.rs](core/src/clarify.rs) | none yet |
+| Sketch an idea | Muse Spark 1.3 reads it; Muse Image 1.0 draws it back | [draw.rs](core/src/draw.rs) | none yet |
+| Tell Crew what to build | Muse Spark 1.3 splits, builds and repairs parts on Git branches | [crew.rs](core/src/crew.rs) | none yet |
 | Ask “where was I?” | no model | [spoken.rs](core/src/spoken.rs) | [rules](docs/trace.md#rules) |
 
 <!-- end of the first screen -->
