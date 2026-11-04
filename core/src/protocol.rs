@@ -166,6 +166,8 @@ pub enum ServerMsg {
     /// requested children and outcome). IDs stay stable through preparing/queued/running/terminal states.
     /// Provider, call IDs, PIDs and raw CLI events remain in the private trace, never this message.
     Job {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        result_id: Option<String>,
         #[serde(flatten)]
         job: crate::guide::Job,
         by: String,

@@ -155,6 +155,8 @@ export type JobOutcome = "done" | "failed" | "stopped" | "partial" | "no_change"
 /** One piece of work an AI helper reports (the core relays it as it comes: core/src/guide.rs `Job`). The same `id` again
  *  is the same job in a new state, and the last state wins. It lives only as long as the core runs, never on the map. */
 export interface Job {
+  /** Opaque, server-owned proposal identity. Only host reads may resolve it. */
+  readonly result_id?: string;
   readonly id: string;
   /** What it is, one line (80 characters at most). */
   readonly title: string;

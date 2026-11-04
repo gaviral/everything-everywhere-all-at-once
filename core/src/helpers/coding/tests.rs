@@ -133,7 +133,9 @@ async fn assert_retained(
     let records = core.helpers.coding.results.lock().unwrap().clone();
     assert_eq!(records.len(), 3);
     for (id, record) in &records {
-        assert!(jobs(core).iter().any(|job| &job.id == id));
+        assert_ne!(id, &record.child_id, "result identity is opaque and separate from the child");
+        assert!(core.guide.subscribe(core).1.iter().any(|message| matches!(message,
+            ServerMsg::Job { job, result_id: Some(result_id), .. } if job.id == record.child_id && result_id == id)));
         assert!(record.worktree.is_dir());
         assert_eq!(record.validation, ValidationStatus::NotRun);
         assert_eq!(
