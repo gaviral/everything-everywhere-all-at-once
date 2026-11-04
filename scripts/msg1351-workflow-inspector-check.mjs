@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { uiServer } from "./ui-server.mjs";
 import { openPage } from "./headless.mjs";
 
-const server = await uiServer({ configFile: false }, { port: 0 });
+const server = await uiServer({ configFile: false, appType: "spa" }, { port: 0 });
 const shots = process.env.SHOTS;
 if (shots) mkdirSync(shots, { recursive: true });
 let browser;

@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
-import { buildUi as build } from './ui-server.mjs';
+import { buildUi } from './ui-server.mjs';
 import react from '../ui/node_modules/@vitejs/plugin-react/dist/index.js';
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -28,7 +28,7 @@ assert.ok(chrome, 'Chrome is needed for the focused phone check');
 const output = join(repo, 'core/target/correction-check', randomUUID());
 const site = join(output, 'site');
 mkdirSync(site, { recursive: true });
-await build({ configFile: false, root: join(repo, 'ui'), plugins: [react()], logLevel: 'warn',
+await buildUi({ configFile: false, root: join(repo, 'ui'), plugins: [react()], logLevel: 'warn',
   resolve: { alias: { 'react-dom': join(repo, 'ui/node_modules/react-dom'), react: join(repo, 'ui/node_modules/react') } }, build: {
   outDir: site, emptyOutDir: false, minify: false,
   rollupOptions: { input: join(repo, 'scripts/correction/phone-check.js'), output: { entryFileNames: 'check.js' } },

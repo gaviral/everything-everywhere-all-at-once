@@ -5,6 +5,7 @@ import { openPage } from "./headless.mjs";
 
 let lateRequests = 0;
 const server = await uiServer({
+  appType: "spa",
   plugins: [{ name: "self-heal-fixture", configureServer(vite) {
     vite.middlewares.use((req, res, next) => {
       if (req.url?.includes("/checks/self-heal/missing-feature.tsx") || (req.url?.includes("/checks/self-heal/late-feature.tsx") && ++lateRequests === 1)) {

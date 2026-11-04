@@ -1,6 +1,5 @@
 // Focused visible acceptance; synthetic host, real feature, no model or microphone.
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,10 +8,9 @@ import react from '../ui/node_modules/@vitejs/plugin-react/dist/index.js';
 import { openPage } from './headless.mjs';
 
 const artifacts = mkdtempSync(join(tmpdir(), 'research-reopen-'));
-const vite = await uiServer({ configFile: false, plugins: [react()], appType: 'mpa', optimizeDeps: {} });
-const server = createServer(vite.middlewares);
-await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-const port = server.address().port;
+const server = await uiServer({ configFile: false, appType: 'spa', plugins: [react()] }, { port: 0 });
+await server.listen();
+const port = server.httpServer.address().port;
 assert.ok(![4360, 4399].includes(port));
 const origin = `http://127.0.0.1:${port}`;
 let browser;
@@ -100,6 +98,5 @@ try {
   console.error(`Retained failure artifacts: ${artifacts}`); throw error;
 } finally {
   await browser?.close();
-  await vite.close();
-  server.closeAllConnections(); await new Promise(resolve => server.close(resolve));
+  await server.close();
 }

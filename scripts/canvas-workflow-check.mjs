@@ -9,7 +9,7 @@ import { openPage } from "./headless.mjs";
 
 const artifacts = mkdtempSync(join(tmpdir(), "canvas-workflow-check-"));
 const server = await uiServer({
-  configFile: false, plugins: [react()],
+  configFile: false, appType: "spa", plugins: [react()],
   server: { fs: { allow: [new URL("..", import.meta.url).pathname] } },
 }, { port: 0 });
 let browser;

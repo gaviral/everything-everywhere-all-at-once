@@ -5,7 +5,7 @@ import { uiServer } from './ui-server.mjs';
 import { openPage } from './headless.mjs';
 
 // Scoped Vite preview: loads only the lane component and synthetic references.
-const server = await uiServer({ configFile: false }, { port: 0 });
+const server = await uiServer({ configFile: false, appType: 'spa' }, { port: 0 });
 await server.listen();
 const address = server.httpServer.address();
 const url = `http://127.0.0.1:${address.port}/src/msg1351/part-dimensions/preview.html`;

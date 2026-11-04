@@ -1,12 +1,11 @@
 // Synthetic browser and routing proof. No shared application, microphone or model calls.
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { uiServer } from './ui-server.mjs';
 import react from '../ui/node_modules/@vitejs/plugin-react/dist/index.js';
 import { openPage } from './headless.mjs';
-const server = await uiServer({ configFile: false, plugins: [react()] }, { port: 0 });
+const server = await uiServer({ configFile: false, appType: 'spa', plugins: [react()] }, { port: 0 });
 let browser;
 try {
   const { SketchTransport } = await server.ssrLoadModule('/src/msg1351/sketch-exchange/SketchTransport.ts');

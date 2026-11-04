@@ -2,7 +2,9 @@
 import assert from 'node:assert/strict';
 import { uiServer } from './ui-server.mjs';
 import { createServer as freePortServer } from 'node:net';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { openPage } from './headless.mjs';
 
 const portReservation = freePortServer();
@@ -96,14 +98,13 @@ try {
   await click('Set aside');
   await click('Restore previous review');
   assert.ok(await until(`document.querySelector('.speech-review textarea')?.value==='We meet at the pier.'`), 'set aside is reversible');
-  const evidence = new URL('../artifacts/speech-review/', import.meta.url);
-  mkdirSync(evidence, { recursive: true });
+  const evidence = mkdtempSync(join(tmpdir(), 'speech-review-check-'));
   for (const width of [1440,390]) {
     await page('Emulation.setDeviceMetricsOverride',{width,height:900,deviceScaleFactor:1,mobile:false});
     assert.ok(await until(`document.querySelector('.speech-review').getBoundingClientRect().right<=innerWidth`));
     assert.equal(await evaluate('document.documentElement.scrollWidth>innerWidth'), false, 'no horizontal overflow');
     const shot = await page('Page.captureScreenshot',{format:'png'});
-    writeFileSync(new URL(`review-${width}.png`, evidence), Buffer.from(shot.data,'base64'));
+    writeFileSync(join(evidence, `review-${width}.png`), Buffer.from(shot.data,'base64'));
   }
   assert.deepEqual(await evaluate('errors'), [], 'no browser errors');
   console.log('PASS speech-review: exact reviewed release, no pre-release dispatch, duplicate guard, refusal/retry, disconnect, original, focus, close, restore, map scope, bounds, desktop/phone. Live microphone hold is outside this feature.');
