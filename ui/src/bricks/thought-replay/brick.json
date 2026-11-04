@@ -1,0 +1,8 @@
+{
+  "id": "thought-replay",
+  "name": "Thought replay",
+  "does": "Walk the trail of thoughts at reading pace, then return to an exact original.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": true
+}
