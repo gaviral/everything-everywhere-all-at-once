@@ -76,7 +76,7 @@ export function SendCard({ card, onStop, onGone }: { card: Card | null; onStop: 
       <div className="send-card-foot">
         <span className="send-card-status" aria-hidden="true">{words.status}</span>
         {words.stop && (
-          <button type="button" className="send-card-stop" onClick={() => onStop(card.id)} aria-label={`Stop: don't send to ${card.to}`}>
+          <button type="button" className="send-card-stop" onClick={() => onStop(card.id)} aria-label={card.purpose === "helpers" ? "Stop helpers" : `Stop: don't send to ${card.to}`}>
             Stop <kbd>esc</kbd>
           </button>
         )}

@@ -5,9 +5,10 @@ import { useSyncExternalStore } from "react";
 import { talkOn, watchTalk } from "../talk-preset";
 import type { BrickKind } from "../bricks/contract";
 
-export type BuiltIn = { id: "partner" | "listening" | "recap" | "import" | "export" | "cards" | "pictures"; kind: BrickKind; defaultOn: boolean };
+export type BuiltIn = { id: "helpers" | "partner" | "listening" | "recap" | "import" | "export" | "cards" | "pictures"; kind: BrickKind; defaultOn: boolean };
 
 export const BUILT_INS: readonly BuiltIn[] = [
+  { id: "helpers", kind: "input", defaultOn: true },
   { id: "partner", kind: "input", defaultOn: false },
   // The views beside the Canvas: off until switched on; each then has its Show.
   { id: "cards", kind: "view", defaultOn: false },
@@ -17,6 +18,10 @@ export const BUILT_INS: readonly BuiltIn[] = [
   { id: "recap", kind: "panel", defaultOn: true },
   { id: "export", kind: "panel", defaultOn: false },
 ];
+
+let helpersAvailable = false;
+export const featureAvailable = (id: string) => id !== "helpers" || helpersAvailable;
+export function setHelpersAvailable(value: boolean) { if (helpersAvailable !== value) { helpersAvailable = value; changed(); } }
 
 const STORE = "e2a2o.features";
 type Switches = Partial<Record<BuiltIn["id"], boolean>>;
@@ -40,7 +45,7 @@ watchTalk(changed);
 
 function onOf(kept: Switches): ReadonlySet<BuiltIn["id"]> {
   if (talkOn()) return new Set(["listening"]);
-  return new Set(BUILT_INS.filter((b) => kept[b.id] ?? b.defaultOn).map((b) => b.id));
+  return new Set(BUILT_INS.filter((b) => featureAvailable(b.id) && (kept[b.id] ?? b.defaultOn)).map((b) => b.id));
 }
 
 /** The built-ins on now; a new set only when one is switched. */

@@ -279,7 +279,7 @@ pub fn read(text: &str, settings: &Settings) -> Option<Ask> {
 /// are never part of a message. A clause ends where speech-to-text punctuates a pause (main.rs `PAUSE`); a closing
 /// "please" or "thanks" is said to the app, so the clause before it counts ("…, stop, please"). A stop word inside a
 /// clause ("tell Mia the answer is no") is words.
-fn withdrawn(text: &str) -> bool {
+pub(crate) fn withdrawn(text: &str) -> bool {
     let pause = |c: char| crate::PAUSE.contains(&c);
     let mut said = text;
     loop {
@@ -346,7 +346,7 @@ pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> Option<Done> {
     let live = core.messages.live();
     let id = {
         let mut state = core.messages.state.lock().unwrap();
-        if state.counting.is_some() || state.sending.is_some() {
+        if state.counting.is_some() || state.sending.is_some() || crate::helpers::counting(core) {
             drop(state);
             core.send_to(speaker, ServerMsg::Notice { message: "One message at a time: say “stop”, or wait for it to send.".into() });
             return Some(Done::missed(Act::Message));
@@ -406,7 +406,7 @@ impl Drop for Window {
 }
 
 /// A card's end: to the speaker's windows, and kept for one that reconnects (`card_for`).
-fn end(core: &Core, speaker: &str, message: ServerMsg) {
+pub(crate) fn end(core: &Core, speaker: &str, message: ServerMsg) {
     core.messages.state.lock().unwrap().ended.insert(speaker.to_string(), message.clone());
     core.send_to(speaker, message);
 }
@@ -417,7 +417,7 @@ pub fn is_counting(core: &Core, id: u64) -> bool {
 }
 
 fn card(id: u64, to: &str, text: &str, state: SendState, in_ms: u64, live: bool, message: &str) -> ServerMsg {
-    ServerMsg::SendCard { id, to: to.into(), text: text.into(), state, in_ms, live, message: message.into() }
+    ServerMsg::SendCard { purpose: None, id, to: to.into(), text: text.into(), state, in_ms, live, message: message.into() }
 }
 
 /// The countdown ended: the message goes, unless it was stopped (then it's no longer counting, and nothing happens),

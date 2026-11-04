@@ -307,12 +307,14 @@ fn handle(core: &Arc<Core>, speaker: &str, primer: &mut Primer, text: &str, wind
             if !words.trim().is_empty() { primer.draft(speaker, turn, &words, true, core); }
             // "Stop" stops a message counting down as it's said, not a turn's end later (messages.rs).
             crate::messages::heard(core, speaker, &words);
+            crate::helpers::heard(core, speaker, &words);
             // The call's other windows learn that they have the floor, never the words (call.rs `speaking`).
             if !words.trim().is_empty() {
                 crate::call::speaking(core, speaker, true);
             }
             core.send_to(speaker, ServerMsg::Partial { text: words });
         }
+        Some("speechEnd") => crate::helpers::speech_end(core, speaker),
         Some("speechComplete") => {
             let raw = event["transcript"].as_str().unwrap_or_default();
             let words = sentence_case(raw.trim());
