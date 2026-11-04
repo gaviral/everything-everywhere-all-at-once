@@ -985,6 +985,25 @@ impl World {
     }
 }
 
+#[derive(Clone, Default)]
+pub(crate) struct SourceStatus { pub accepted: bool, pub failed: bool }
+#[derive(Clone)]
+struct Source { speaker: String, id: String, status: SourceStatus }
+thread_local! { static SOURCE: std::cell::RefCell<Option<Source>> = const { std::cell::RefCell::new(None) }; }
+pub(crate) fn source_active() -> bool { SOURCE.with(|source| source.borrow().is_some()) }
+pub(crate) fn source_failed() -> bool { SOURCE.with(|source| source.borrow().as_ref().is_some_and(|source| source.status.failed)) }
+
+/// A synchronous accepted turn: only this thread's writes receive its source ID, never unrelated background work.
+pub(crate) fn with_source<T>(speaker: &str, id: &str, work: impl FnOnce() -> T) -> (T, SourceStatus) {
+    struct Restore(Option<Source>);
+    impl Drop for Restore { fn drop(&mut self) { SOURCE.with(|source| { source.replace(self.0.take()); }); } }
+    let old = SOURCE.with(|source| source.replace(Some(Source { speaker: speaker.into(), id: id.into(), status: SourceStatus::default() })));
+    let _restore = Restore(old);
+    let result = work();
+    let status = SOURCE.with(|source| source.borrow().as_ref().unwrap().status.clone());
+    (result, status)
+}
+
 /// A companion identity belongs to the journal, never to its address or current contents.
 fn map_identity(path: &Path) -> anyhow::Result<String> {
     let identity = path.with_file_name(format!("{}.map-id", path.file_name().unwrap().to_string_lossy()));
@@ -1048,7 +1067,15 @@ impl Journal {
                     continue;
                 }
                 match serde_json::from_str::<Change>(&line) {
-                    Ok(change) => world.apply(&change),
+                    Ok(change) => {
+                        world.apply(&change);
+                        // The source is in the same durable record as its effect, so a missing later receipt is safe.
+                        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) {
+                            if let (Some(speaker), Some(id)) = (value["source"]["speaker"].as_str(), value["source"]["id"].as_str()) {
+                                if uuid::Uuid::parse_str(id).is_ok() { world.received_text.insert((speaker.into(), id.into())); }
+                            }
+                        }
+                    }
                     Err(e) => tracing::warn!("skipping journal line {} that I can't read: {e}", n),
                 }
             }
@@ -1070,11 +1097,24 @@ impl Journal {
     pub fn map_id(&self) -> &str { &self.map_id }
 
     pub fn append(&mut self, change: &Change) -> anyhow::Result<()> {
-        let mut line = serde_json::to_string(change)?;
-        line.push('\n');
-        self.file.write_all(line.as_bytes())?;
-        self.file.flush()?;
-        Ok(())
+        let source = SOURCE.with(|source| source.borrow().clone());
+        let result = (|| {
+            let mut value = serde_json::to_value(change)?;
+            if let Some(source) = &source {
+                value["source"] = serde_json::json!({ "speaker": source.speaker, "id": source.id });
+            }
+            let mut line = serde_json::to_string(&value)?;
+            line.push('\n');
+            self.file.write_all(line.as_bytes())?;
+            self.file.flush()?;
+            if source.is_some() { self.file.sync_data()?; }
+            Ok(())
+        })();
+        SOURCE.with(|source| { if let Some(source) = source.borrow_mut().as_mut() {
+            source.status.accepted |= result.is_ok();
+            source.status.failed |= result.is_err();
+        } });
+        result
     }
 }
 

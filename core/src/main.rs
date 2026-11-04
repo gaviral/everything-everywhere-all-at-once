@@ -164,10 +164,14 @@ impl Core {
             }
             let mut journal = self.journal.lock().unwrap();
             for change in &changes {
+                // Accepted deliveries must reach disk before they can affect the map.
+                if world::source_active() {
+                    if let Err(error) = journal.append(change) { self.journal_save_failed(&error); return false; }
+                }
                 Arc::make_mut(&mut world).apply(change);
                 positions::settle(self, &world);
-                if let Err(e) = journal.append(change) {
-                    self.journal_save_failed(&e);
+                if !world::source_active() {
+                    if let Err(e) = journal.append(change) { self.journal_save_failed(&e); }
                 }
             }
             // Under the same lock, so every window gets changes in the journal's order (a broadcast send never waits).
@@ -409,17 +413,27 @@ impl Core {
         }
     }
 
+    fn source_work(&self, speaker: &str, id: &str, work: impl FnOnce()) -> bool {
+        let (_, status) = world::with_source(speaker, id, work);
+        if status.accepted { Arc::make_mut(&mut self.world.lock().unwrap()).received_text.insert((speaker.into(), id.into())); }
+        !status.failed
+    }
+
     fn finish_speech(self: &Arc<Self>, speaker: &str, id: &str, text: &str, window: Option<u64>) {
         let _receipt = self.typed_receipts.lock().unwrap();
         if self.snapshot().speech_resolved.contains(id) { return; }
-        if !text.is_empty() { self.take_turn(speaker, text, true, false, false, window); }
+        if !text.is_empty() && !self.snapshot().received_text.contains(&(speaker.into(), id.into())) {
+            if !self.source_work(speaker, id, || self.take_turn(speaker, text, true, false, false, window)) { return; }
+        }
         self.resolve_speech(speaker, id);
     }
 
     fn recover_speech(self: &Arc<Self>, speaker: &str, id: &str, keep: bool) {
         let _receipt = self.typed_receipts.lock().unwrap();
         let Some(draft) = self.snapshot().speech_drafts.get(id).filter(|draft| draft.speaker == speaker).cloned() else { return };
-        if keep { self.keep_complete(speaker, &draft.text, false, false); }
+        if keep && !self.snapshot().received_text.contains(&(speaker.into(), id.into())) {
+            if !self.source_work(speaker, id, || { self.keep_complete(speaker, &draft.text, false, false); }) { return; }
+        }
         self.resolve_speech(speaker, id);
     }
 
@@ -429,7 +443,7 @@ impl Core {
         let _receipt = self.typed_receipts.lock().unwrap();
         let key = (speaker.to_string(), id.to_string());
         if !self.snapshot().received_text.contains(&key) {
-            self.take_turn(speaker, text, true, true, speak, window);
+            if !self.source_work(speaker, id, || self.take_turn(speaker, text, true, true, speak, window)) { return; }
             let change = Change::TextReceived { speaker: speaker.into(), id: id.into() };
             let mut world = self.world.lock().unwrap();
             if let Err(e) = self.journal.lock().unwrap().append(&change) {
@@ -620,6 +634,7 @@ impl Core {
             if self.commit_speaking(|w| w.stay_here == world.stay_here, changes, speak) {
                 break pinned;
             }
+            if world::source_failed() { return id; }
         };
         if pinned {
             self.new_threads.cancel(speaker);
@@ -2140,6 +2155,55 @@ mod tests {
         assert_eq!(first["id"], core.journal.lock().unwrap().map_id());
         assert_eq!(received(&mut window).await["type"], "snapshot");
         server.abort();
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn delivery_persisted_effect_survives_a_missing_receipt() {
+        for kind in ["typed", "speech", "keep"] {
+            let (core, _queue, path) = keyless(World::default());
+            let id = uuid::Uuid::new_v4().to_string();
+            let text = "Keep the original words after a crash";
+            match kind {
+                "typed" => core.receive_typed("you", &id, text, false, None),
+                "speech" => core.finish_speech("you", &id, text, None),
+                _ => {
+                    core.remember_speech(crate::world::SpeechDraft { id: id.clone(), speaker: "you".into(), text: text.into() });
+                    core.recover_speech("you", &id, true);
+                }
+            }
+            // Crash boundary: the effect was persisted, its separate receipt/resolution was not.
+            let records = std::fs::read_to_string(&path).unwrap();
+            let prefix = records.lines().filter(|line| {
+                let value: serde_json::Value = serde_json::from_str(line).unwrap();
+                value["type"] != "text_received" && value["type"] != "speech_resolved"
+            }).collect::<Vec<_>>().join("\n") + "\n";
+            assert!(prefix.contains("\"source\""));
+            std::fs::write(&path, prefix).unwrap();
+            let (journal, world) = crate::Journal::open(&path).unwrap();
+            let reopened = Arc::new(Core::test(journal, world));
+            match kind {
+                "typed" => reopened.receive_typed("you", &id, text, false, None),
+                "speech" => reopened.finish_speech("you", &id, text, None),
+                _ => reopened.recover_speech("you", &id, true),
+            }
+            assert_eq!(reopened.snapshot().thoughts.len(), 1, "{kind}: replay cannot duplicate the persisted effect");
+            assert_eq!(reopened.snapshot().thoughts[0].text, text);
+            std::fs::remove_file(path).unwrap();
+        }
+    }
+
+    #[test]
+    fn delivery_failed_journal_does_not_acknowledge_or_insert() {
+        let path = std::env::temp_dir().join(format!("e2a2o-delivery-failure-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, world) = crate::Journal::open(&path).unwrap();
+        drop(journal);
+        let journal = crate::Journal::read_only(&path).unwrap();
+        let core = Arc::new(Core::test(journal, world));
+        let mut updates = core.updates.subscribe();
+        core.receive_typed("you", &uuid::Uuid::new_v4().to_string(), "Keep my unsaved words", false, None);
+        assert!(core.snapshot().thoughts.is_empty());
+        assert!(std::iter::from_fn(|| updates.try_recv().ok()).all(|out| !matches!(out.message, ServerMsg::TextReceived { .. })));
         std::fs::remove_file(path).unwrap();
     }
 
