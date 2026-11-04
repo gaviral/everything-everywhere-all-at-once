@@ -8,6 +8,8 @@ import { fileURLToPath } from "node:url";
 import { parseArgs, validateFixture, connectionURL, nextDelay, schedulePlayback, startFeed } from "./demo-jobs.mjs";
 
 const cli = fileURLToPath(new URL("./demo-jobs.mjs", import.meta.url));
+// Allow process startup during parallel gate builds; this is not a playback/pacing deadline.
+const cliStartupTimeout = 30_000;
 const fixture = JSON.parse(readFileSync(new URL("../samples/demo-jobs.json", import.meta.url), "utf8"));
 const copy = (value) => structuredClone(value);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -106,10 +108,12 @@ function checkFixtureAndArguments() {
   }
   assert.equal(constructions, 0);
   // Each invocation exits without a server, including help; import above also had no side effects.
-  const help = spawnSync(process.execPath, [cli, "--help"], { encoding: "utf8", timeout: 3000 });
+  const help = spawnSync(process.execPath, [cli, "--help"], { encoding: "utf8", timeout: cliStartupTimeout });
+  assert.ifError(help.error);
   assert.equal(help.status, 0); assert.match(help.stdout, /Usage:/); assert.match(help.stdout, /simulated/); assert.match(help.stdout, /Ctrl\+C/);
   for (const args of badArgs) {
-    const child = spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", timeout: 3000 });
+    const child = spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", timeout: cliStartupTimeout });
+    assert.ifError(child.error);
     assert.equal(child.status, 1, JSON.stringify(args));
     assert.ok(child.stderr.trim());
     assert.doesNotMatch(child.stdout + child.stderr, /Connection failed|Connected as/);

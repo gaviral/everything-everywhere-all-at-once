@@ -63,7 +63,7 @@ Browser, one page per window (ui/src)
   Catalog.tsx    the Features page (Features in the top bar): every feature with its line and switch
   shell/         the default layout; `?shell=1` opens the classic header and bottom bar instead
     flag.ts      SHELL2 (true unless `?shell=1` or `?cards`), CARDS_FLAG, CORE_BRICKS, DEMO and SAMPLE_FLAG, read once from the URL; adds html.shell2; the shell's core features are built in
-    Shell.tsx    TopLeft, TopRight, Find and CornerButton; StatusLine, StatusState and micWords; HeldStack; Rail, RailTab and RAIL_KEYS; HistoryTab, CatalogTab and CatalogRow, TalkTurns, SettingsTab and Welcome; FEATURE resolves Features page wording
+    Shell.tsx    TopLeft, TopRight, Find and CornerButton; StatusLine, StatusState and micWords; HeldStack; Rail, RailTab and RAIL_KEYS; HistoryTab, CatalogTab and CatalogRow, TalkTurns, SettingsTab and Welcome
     parts.tsx    Icon, Keycap, Stamp and Mode; mod and modAria for platform-specific key labels
     names.ts     NAMES, FEATURE_NAMES, KIND_NAMES and FeatureName: shell labels, stamps and feature descriptions
     features.ts  BUILT_INS and BuiltIn; useBuiltInsOn and switchBuiltIn, browser-local switches in e2a2o.features, shared through storage events
@@ -79,7 +79,6 @@ Browser, one page per window (ui/src)
     TalkRail.tsx the current call rail or phone sheet, mounted separately from the shell's Rail; hosts Talk, join-code copying and Leave, or a closed pill with unread turns; remembers open/closed in sessionStorage
   bricks/        one folder per feature, and contract.ts, the one file a feature imports; held by `scripts/bricks-check.mjs`
     level/       `?level` in the address: every loudness reading the core receives, to set a volume app's level (stretches.ts: stretches of talk and each one's typical reading)
-    bubbles/     a view: every topic as a bubble in a place of its own, sized by its points
     bubble-flight/ a panel: your thought lifts out of the box as a glass bubble, drifts toward your topic while it's placed and flies into its slot (`data-slot="slot:<id>"`) or point
     keys/        an input: the map from the keyboard (j k h l and arrows, Enter, Esc, ?), and ⌘D for the mic, through contract.ts's `listen`
     tiny-transcript/ a panel: your words as you say them (`map.partial`), 11 px inside the input box (the status line once there is one), in place of the bottom bar's big line

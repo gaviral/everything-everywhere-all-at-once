@@ -53,12 +53,34 @@ All nine reported failures reproduced when run individually on the merged main t
 | first-landing | Product bug: fly-in searched the now-empty stage instead of the actual input box and immediately removed the bubble. Use the named composer; align the fixture's origin with that same visible element. Frame coverage, timing, and slow-view assertions remain. |
 | history-key-once | Product bug: hidden key notices blocked visible answers. Retire those cards when the status line represents them; keep the latest turn's Undo independently of the current queue card for History. The fixture reads ordinary answers and marks the unrelated install hint already seen; retention, coalescing, and Undo assertions remain. |
 | lane | Stale stack fixture. Check each queued long card's geometry, controls and body, then verify focus holds a note while later cards wait and each subsequent card expires in turn. |
-| live-page | Product bugs: removing or reflowing the Stop button could leave focus/hover state stale and reading time paused, and offline Stop feedback waited invisibly behind its own card. Recheck focus and hover when controls disappear and show the pending Stop on the current card. Also read completed cards between independent count scenarios. Modal closing, reachable Stop, reconnect and replay assertions remain. |
+| live-page | Product bugs: removing or reflowing the Stop button could leave focus/hover state stale and reading time paused, and offline Stop feedback waited invisibly behind its own card. Recheck focus and hover when controls disappear and show the pending Stop on the current card. A later independent review found that the added waits wrongly excluded valid overlapping counts; see the correction below. |
 | phone | Stale three-simultaneous-notices fixture. Check each queue turn at the same sizes, scroll offsets and open panels; retain a notice during point-control checks. The long/short message geometry uses updates to one card, since a new queued request no longer replaces an unread card. |
 | unfinished-quote-place | Stale fixture isolation: shell and legacy scenes reused saved dismissals on the same synthetic map. Reset only those fixture choices between scenes, mark the unrelated Tiny Transcript first-use hint already seen, and remeasure the hovered card after its height changes; retain all quote, move, Undo and reading-time assertions. Persistence remains covered by phone-walk. |
 
-Final page validation: all nine named checks passed whole, with no case splitting and no reduced timing bounds. The full bricks run covered all 14 features; first-landing covered six runs; History and dock covered all four page configurations. The intermittent live-card path passed three consecutive whole runs after reconciling hover from the actual pointer target. The final unfinished-card run covered both renderers, sizes, and themes. Build, socket, notice, and send-card checks also passed.
+Validation at 7443c69: all nine revised checks passed whole, with no case splitting and no reduced timing bounds. The full bricks run covered all 14 features; first-landing covered six runs; History and dock covered all four page configurations. The intermittent live-card path passed three consecutive whole runs after reconciling hover from the actual pointer target. The final unfinished-card run covered both renderers, sizes, and themes. Build, socket, notice, and send-card checks also passed.
 
 No original failure was classified as load-only: each reproduced in isolation. Earlier externally terminated verification attempts were not counted as passes; the affected checks were rerun to successful completion.
 
-Final gate: `PRECHECK_PAGES=0 sh scripts/precheck.sh` exited 0 with no FAIL lines after the whole page runs. The gate's build, Rust tests, static checks, and source-level UI checks passed. Its browser phases were deliberately skipped because each of the nine requested page checks had been run separately and whole. Existing release-content warnings remain unchanged. No C0 feature cuts are included in this repair.
+Gate at 7443c69: `PRECHECK_PAGES=0 sh scripts/precheck.sh` exited 0 with no FAIL lines after the whole page runs. The gate's build, Rust tests, static checks, and source-level UI checks passed. Its browser phases were deliberately skipped because each of the nine requested page checks had been run separately and whole. Existing release-content warnings remain unchanged. No C0 feature cuts are included in this repair.
+
+
+## Overlapping-countdown review correction
+
+The prior live-page wait was wrong: another valid countdown can arrive while an older completion is unread. The old test case reproduced Import remaining modal and hiding Stop. The earlier revised-check passes did not prove that case.
+
+Active send countdowns now interrupt the reading queue. The latest count stays in front of ordinary cards; its completion keeps that turn, then preserved unread cards resume in order. A superseded active count is retired. Import also closes if opened while a count is already active. Explicit per-kind notice preferences remain unchanged.
+
+Removed both waits that hid the overlap from live-page-check. The original overlap is asserted directly, with extra checks that the old completion is still present before the new count arrives and that Stop receives input. The completed-card expiry regression is tested separately, after the overlap cases. Queue, notice-page, lane, and phone checks require active-count priority while retaining ordinary-card order, geometry, reading, focus, and preference coverage.
+
+Targeted validation for this correction: the original unmodified overlap replay first failed at Import closing, then passed with countdown priority. The strengthened whole live-page check, notice priority rules, notices-page, lane, and phone checks passed. After concurrent main advanced to `2c66c1e` (i-partner), the UI build, whole live-page check, notice rules, and unchanged find-page recheck passed again. The broader gate began at `f670282` and encountered one Chrome-startup failure before find-page assertions; its unchanged recheck passed. The gate was still building the concurrently updated core when this correction was committed, so it is not recorded as a clean single-snapshot gate here. Other workers' changes were preserved.
+
+
+## Conversation-spine gate repair
+
+Integrated main at `6b0dbc5` without conflicts, preserving the conversation projection and main's notice and view changes. The merge is left uncommitted.
+
+The first gate reproduced `demo-jobs-check` receiving a null child exit status under its three-second CLI deadline. Allow 30 seconds for process startup and report child-process errors explicitly; keep every exit-code, validation, no-connection, payload, pacing and shutdown assertion. No runtime behavior changed.
+
+Validation: 670 Rust tests passed (13 ignored); the reported core failure did not reproduce. Both UI build modes, the projection invariants, and the whole projection, conversation-spine and all-threads Chrome checks passed. Brick contract rules passed. Live model calls were not exercised.
+
+Final `PRECHECK_PAGES=0 sh scripts/precheck.sh` passed: all 54 enabled Node checks, core tests, builds and static guards. Browser phases ran separately as listed above. Existing release-content warnings remain; no running app was available for live probes. No commit or push.

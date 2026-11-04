@@ -11,7 +11,7 @@ import type { MicState } from "../MicButton";
 import type { Thread, Thought } from "../core";
 import { canUndo, type Entry } from "./history";
 import { dropHeld, useHeld } from "./held";
-import { FEATURE_NAMES, KIND_NAMES, NAMES } from "./names";
+import { KIND_NAMES, NAMES } from "./names";
 import { shown } from "../talk/call-core";
 import { Icon, Keycap, mod, modAria, Stamp, type Mode } from "./parts";
 
@@ -373,8 +373,3 @@ export function Welcome({ models, sample }: { models: string; sample: ReactNode 
     {models && <p className="shell-welcome-models">{models}</p>}
   </section>;
 }
-
-export const FEATURE = (id: string, fallback: { name: string; does: string }) => {
-  const named = FEATURE_NAMES[id];
-  return { name: named?.name ?? fallback.name, aka: named?.aka, does: named?.does ?? fallback.does, lives: named?.lives };
-};
