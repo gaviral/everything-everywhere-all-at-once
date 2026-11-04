@@ -1,0 +1,36 @@
+services:
+  app:
+    build:
+      context: .
+      target: app
+    init: true
+    environment:
+      MODEL_API_KEY: ${MODEL_API_KEY:-}
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - sample-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:4321/room"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 10s
+
+  gateway:
+    build:
+      context: .
+      target: gateway
+    init: true
+    network_mode: service:app
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/room"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+volumes:
+  sample-data:
