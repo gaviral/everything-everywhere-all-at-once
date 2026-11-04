@@ -87,7 +87,7 @@ node scripts/demo.mjs scripts/demo-talk.jsonl  # in a second terminal, same fold
 7. `What did I decide today?` → the recap shows at once, decisions first (kept current in the background as thoughts land; anything newer is added in place a few seconds later); it covers today's thoughts. Say `pictures` (or `cards`) and it closes on that view.
 8. In Apps, ask `Make an app that shows a card when I mention the demo.` Keep it, then say `demo` in a new thought → the app may take several seconds to build; the card appears when its phrase watcher fires.
 9. Switch away for 30 seconds after adding a thought, then return (see [What you'll see](#what-youll-see)).
-10. Click **Pictures** → the topic pictures appear in a grid.
+10. Open **Features** (`C`), switch on **Pictures**, then choose **Show** → the topic pictures appear in a grid. Pictures starts off.
 11. `What can I say?` → Help, the list of what you can say, opens; your next turn closes it.
 12. `Add oat milk to the shopping list.` → a Shopping list topic appears with “Oat milk” at once, with no model call; `Expand everything` opens every topic and its tangents, and `Stop listening` turns the mic off until you tap it.
 
@@ -122,7 +122,7 @@ The page that opens is the shell: the wordmark and the map's name top left; Find
 
 ### Conversation partner (off by default)
 
-Open Features (`C`) and switch on **Conversation partner**. Ask an explicit question, or say “Partner, make that shorter” to continue. Ordinary thoughts still go to the map; existing commands such as “where was I?” take precedence. E2A2O appears as an AI participant, shows **Thinking…**, and replies through the existing captions and browser speech voice. **Cancel reply** stops thinking or speech; a new question replaces a pending reply. Switching off the last enabled window or closing it cancels pending work and forgets its conversation context. Spoken replies begin when the feature is enabled.
+Open Features (`C`) and switch on **Conversation partner**. Ask an explicit question, or say “Partner, make that shorter” to continue. Ordinary thoughts still go to the map; existing commands such as “where was I?” take precedence. E2A2O appears as an AI participant, shows **Thinking…**, and replies through the existing captions and browser speech voice. **Cancel reply** stops thinking or speech; a new question replaces a pending reply. Switching off the last enabled window or closing it cancels pending work and forgets its conversation context. Reply playback also needs **Built-in speech**, on by default when a browser/OS voice reports `localService === true`. Remote and unknown-locality voices are excluded; without a usable local voice, replies remain text. Enabling the partner starts no microphone.
 
 With the same switch on, “where was I?” speaks a short topic anchor and the unfinished or latest relevant original words, and moves the canvas to that thought. These recovery replies need no key or model. Completed requested recaps speak only their summary; next/previous topic and new-topic outcomes give a short acknowledgement. Routine notifications and background recap drafts stay silent. Command speech is private to the requesting speaker, limited to 60 words and 400 characters. Its completed captions are saved for that speaker's Talk history; catch-up never replays their audio. Switching the feature off stops playback and rejects late command replies in that browser. Verify the keyless recovery path with `node scripts/recovery-speech-check.mjs` (after building the UI).
 
@@ -285,7 +285,7 @@ A deploy that runs one core per signed-in person sets `E2A2O_HOSTED=1` for each 
 
 ## Privacy and data
 
-- The core runs on your laptop (hosted, on the site's server: one core and map folder per person). The model key stays in the core. Optional browser/OS speech synthesis may use a remote voice service; the app does not enforce `localService`. Enabled connectors and optional tunnels have separate network paths.
+- The core runs on your laptop (hosted, on the site's server: one core and map folder per person). The model key stays in the core. Built-in speech is on by default when a browser/OS voice reports `localService === true`; remote and unknown-locality voices are excluded. Without a usable local voice, replies remain text. This browser flag is not proof of network isolation. Enabled connectors and optional tunnels have separate network paths.
 - Model inputs go to `api.meta.ai`:
   - **Speech:** while the mic is on, raw 24 kHz audio and setup data (session id, model, audio format, endpointing mode, English bias and keywords). The client sends no transcript as input.
   - **Placing:** the full new thought; every topic's id, title, status and last point (the last 3 points on the 20 topics touched last); the active topic id; and up to 30 names found in placed thoughts. If the most recent thought by anyone ended in `?` and this thought has at most 8 words, it also sends that previous thought's full text. It also sends your own previous thought's full text and its topic id, if you said it in the last 2 minutes and it isn't that question.

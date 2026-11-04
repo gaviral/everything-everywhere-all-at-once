@@ -212,7 +212,16 @@ for (const text of [readme, read("docs/FEATURES.md")]) boundedClaims(text);
 for (const stale of ["a point of 12 words or fewer", "The browser talks only to it", "Nothing else at runtime"])
   assert.throws(() => boundedClaims(stale), "stale claims must be rejected");
 assert.match(readme, /commitments.*conditions.*negations.*uncertainty/);
-assert.match(readme, /does not enforce `localService`/);
+for (const text of [readme, read("docs/FEATURES.md")]) {
+  assert.match(text, /voices? reports? `localService === true`/,
+    "reply playback requires a browser-reported local voice");
+  assert.match(text, /remote and unknown-locality voices are excluded/i);
+  assert.match(text, /Without a usable local voice, replies remain text/);
+  assert.match(text, /(?:browser|This browser) flag is not proof of network isolation/);
+  assert.doesNotMatch(text, /does not enforce (?:`localService`|voice locality)/);
+}
+assert.match(read("docs/FEATURES.md"), /Open \*\*Features\*\*.*switch on \*\*Pictures\*\*.*choose \*\*Show\*\*/,
+  "the Pictures route includes its initially off feature switch");
 assert.match(readme, /no GPT runtime dependency/);
 const story = readme.slice(readme.indexOf("## One minute of talk"), readme.indexOf("## How it works"));
 assert.doesNotMatch(story, /tune plays|plays a silly tune|loudly/i,
