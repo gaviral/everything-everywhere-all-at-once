@@ -1,0 +1,34 @@
+.workflow-inspector { color: #22352c; background: #f6f8f3; font: 16px/1.5 system-ui, sans-serif; padding: clamp(16px, 4vw, 40px); max-width: 960px; margin: 16px auto; border: 1px solid #bdcbbb; border-radius: 20px; box-sizing: border-box; overflow-wrap: anywhere; }
+.workflow-inspector * { box-sizing: border-box; }
+.workflow-inspector h1 { font-size: clamp(24px, 4vw, 34px); line-height: 1.2; margin: 0; }
+.workflow-inspector h2, .workflow-inspector h3 { font-size: 18px; margin: 0; }
+.workflow-inspector h4, .workflow-inspector p { margin: 8px 0; }
+.wi-heading { display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; align-items: center; }
+.wi-eyebrow { text-transform: uppercase; font-size: 12px; letter-spacing: .12em; }
+.wi-switch { display: flex; gap: 8px; align-items: center; min-height: 44px; cursor: pointer; }
+.wi-switch input { width: 22px; height: 22px; accent-color: #24593f; }
+.wi-provenance { color: #3f5849; border-bottom: 1px solid #bdcbbb; padding: 16px 0; }
+.wi-controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 12px 0 24px; }
+.wi-controls [role=alert] { flex-basis: 100%; }
+.workflow-inspector button, .workflow-inspector input:not([type=checkbox]) { font: inherit; min-height: 44px; padding: 10px 14px; border: 1px solid #8b9e8c; border-radius: 8px; max-width: 100%; }
+.workflow-inspector button { background: #24593f; color: white; cursor: pointer; }
+.workflow-inspector button:disabled { background: #e0e6df; color: #526052; cursor: default; }
+.workflow-inspector :focus-visible { outline: 3px solid #a4430d; outline-offset: 3px; }
+.wi-trigger, .wi-step, .wi-handoff { padding: 20px; border: 1px solid #bdcbbb; border-radius: 12px; background: #fff; min-width: 0; }
+.wi-trace { display: grid; gap: 16px; }
+.wi-step header { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.wi-number { background: #e7eee4; border-radius: 50%; width: 30px; height: 30px; text-align: center; line-height: 30px; flex-shrink: 0; }
+.wi-status { font-size: 14px; border: 1px solid #9aaa99; padding: 2px 8px; border-radius: 20px; display: inline-block; }
+.wi-ref { color: #526052; font-size: 13px; }
+.wi-handoff { border-left: 4px solid #916327; background: #fffaf0; }
+.wi-handoff form { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+.wi-handoff label { display: grid; gap: 6px; flex: 1 1 220px; min-width: 0; }
+.wi-handoff input { width: 100%; }
+.workflow-inspector summary { cursor: pointer; min-height: 44px; padding: 10px 0; }
+.wi-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 16px; }
+.wi-data dl { margin: 0; }
+.wi-data dt { font-size: 13px; color: #526052; }
+.wi-data dd { margin: 0 0 12px; white-space: pre-wrap; }
+.workflow-inspector [role=alert] { color: #922f15; }
+.wi-preview-mode { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; max-width: 960px; margin: 20px auto; font: 16px system-ui, sans-serif; }
+.wi-preview-mode select { font: inherit; min-height: 44px; max-width: 100%; }
