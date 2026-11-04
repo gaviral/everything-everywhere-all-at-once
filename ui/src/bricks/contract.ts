@@ -11,6 +11,10 @@ import type { Position } from "../positions-core";
 
 /** The app's existing speech-correction controls, attached to a thought by a view. */
 /** This browser's optional readable Canvas overview; the playground keeps the default. */
+/** A local inspector request; never changes the World or source layout. */
+export type FullContentRequest = { threadId: string; thoughtIds?: readonly string[]; displayedPoint?: string; restoreCamera: () => void };
+export const FullContentContext = createContext<((request: FullContentRequest, source: HTMLElement) => void) | null>(null);
+
 export const SemanticZoomContext = createContext(false);
 
 export const SpeechFixesContext = createContext<((thought: Thought) => ReactNode) | null>(null);

@@ -1,3 +1,4 @@
+import { FullContentProvider } from "./FullContent";
 import { cancelPageReply, usePlayback } from "./page-speech";
 import RecoveryPanel from "./RecoveryPanel";
 import { PartnerStatus } from "./PartnerStatus";
@@ -1271,6 +1272,7 @@ export default function App() {
     <WhyContext.Provider value={whyAsk}>
     <SpeechFixesContext.Provider value={speechFixes}>
     <SemanticZoomContext.Provider value={builtIns.has("semantic-zoom")}>
+    <FullContentProvider enabled={builtIns.has("full-content")} threads={world.threads} thoughts={world.thoughts}>
     <StayProvider thread={world.stay_here ?? null} connected={core.connected} stay={core.stay}>
     <div className="app" onClickCapture={(event) => {
       const target = event.target as HTMLElement;
@@ -1532,6 +1534,7 @@ export default function App() {
       }} />
     </div>
     </StayProvider>
+    </FullContentProvider>
     </SemanticZoomContext.Provider>
     </SpeechFixesContext.Provider>
     </WhyContext.Provider>
@@ -1605,6 +1608,7 @@ export default function App() {
     <WhyContext.Provider value={whyAsk}>
     <SpeechFixesContext.Provider value={speechFixes}>
     <SemanticZoomContext.Provider value={builtIns.has("semantic-zoom")}>
+    <FullContentProvider enabled={builtIns.has("full-content")} threads={world.threads} thoughts={world.thoughts}>
     <StayProvider thread={world.stay_here ?? null} connected={core.connected} stay={core.stay}>
     <div className="app shell" onClickCapture={(event) => {
       const target = event.target as HTMLElement;
@@ -1770,6 +1774,7 @@ export default function App() {
       }} />
     </div>
     </StayProvider>
+    </FullContentProvider>
     </SemanticZoomContext.Provider>
     </SpeechFixesContext.Provider>
     </WhyContext.Provider>
