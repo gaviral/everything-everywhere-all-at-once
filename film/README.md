@@ -109,7 +109,9 @@ without partial rows. Related activity states remain together. Its opening
 retains the original finished Repair Night frame, then crops naturally into
 the first square during a single smooth pull-back. The field holds for one
 second and lifts to white, retaining “Recorded demonstrations”. All movement
-and video seeking are evaluated at frame time. `wall-field-check.mjs` checks
+and video seeking are evaluated at frame time. A fixed-resolution software
+canvas keeps image resampling independent of earlier camera frames.
+`wall-field-check.mjs` checks
 complete square coverage and writes eight actual review frames; review those
 at film size before accepting a take.
 

@@ -34,9 +34,14 @@ export function fieldFrame(shot, local) {
 export async function createField(shot,camera,videos,bounded) {
   const {w,gap}=fieldFrame(shot,0), slots=mosaicCells(shot.tiles.length);
   const nodes=[];
+  const canvas=document.createElement('canvas');canvas.width=1920;canvas.height=1080;
+  Object.assign(canvas.style,{position:'absolute',inset:'0',width:'1920px',height:'1080px'});
+  camera.append(canvas);
+  nodes.surface={canvas,context:canvas.getContext('2d',{alpha:false,willReadFrequently:true})};
   for(let i=0;i<shot.tiles.length;i++) {
     const spec=shot.tiles[i],node=document.createElement('div'),[x,y,span]=slots[i];
     node.className='wall-field-tile';
+    node.style.display='none';
     Object.assign(node.style,{left:`${x*120+gap/2}px`,top:`${y*120+gap/2}px`,width:`${span*120-gap}px`,height:`${span*120-gap}px`});
     const media=document.createElement(spec.clip?'video':'img');
     node.append(media);camera.append(node);
@@ -59,10 +64,27 @@ export async function createField(shot,camera,videos,bounded) {
 export function drawField(shot,local,camera,nodes) {
   const frame=fieldFrame(shot,local);
   camera.style.transformOrigin='0 0';
-  camera.style.transform=`translate(960px,540px) scale(${frame.scale}) translate(${-frame.x}px,${-frame.y}px)`;
-  camera.style.opacity=String(1-frame.white);
-  nodes.forEach((node,i)=>{node.style.opacity=String(Math.max(0,Math.min(1,frame.visible-i)));});
-  const [x,y,s]=shot.opening.crop,k=1-frame.crop,w=frame.w;
-  nodes[0].style.clipPath=`inset(${-y/s*w*k}px ${-(1920-x-s)/s*w*k}px ${-(1080-y-s)/s*w*k}px ${-x/s*w*k}px)`;
+  camera.style.transform='none';camera.style.opacity='1';
   return frame;
+}
+
+// Paint only after all video seeks finish. A software-backed canvas avoids
+// Chromium changing CSS image mip levels according to earlier camera frames.
+export function paintField(shot,local,nodes) {
+  const f=fieldFrame(shot,local),ctx=nodes.surface.context,cells=mosaicCells(nodes.length);
+  ctx.resetTransform();ctx.globalAlpha=1;ctx.fillStyle='#fff';ctx.fillRect(0,0,1920,1080);
+  ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
+  ctx.translate(960,540);ctx.scale(f.scale,f.scale);ctx.translate(-f.x,-f.y);
+  nodes.forEach((node,i)=>{
+    const opacity=Math.max(0,Math.min(1,f.visible-i))*(1-f.white);
+    if(!opacity)return;
+    const [x,y,span]=cells[i],left=x*120+f.gap/2,top=y*120+f.gap/2,size=span*120-f.gap;
+    ctx.save();ctx.globalAlpha=opacity;
+    if(i===0) {
+      const [cx,cy,side]=shot.opening.crop,k=1-f.crop,w=f.w;
+      ctx.beginPath();ctx.rect(left-cx/side*w*k,top-cy/side*w*k,w+(1920-side)/side*w*k,w+(1080-side)/side*w*k);ctx.clip();
+      ctx.drawImage(node.firstChild,left-cx/side*w,top-cy/side*w,1920/side*w,1080/side*w);
+    } else ctx.drawImage(node.firstChild,left,top,size,size);
+    ctx.restore();
+  });
 }

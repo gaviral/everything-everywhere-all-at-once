@@ -32,6 +32,10 @@ try {
     await writeFile(join(output,`${i}.png`),await stage.screenshot());
     if(i===0){await stage.frame(shot,3);await stage.frame(shot,0);assert.deepEqual(await stage.screenshot(),await readFile(join(output,'0.png')),'Reverse seek reproduces the opening');}
   }
+  for(const [i,time] of [[3,7],[4,9],[5,11]]) {
+    await stage.frame(shot,time);
+    assert.deepEqual(await stage.screenshot(),await readFile(join(output,`${i}.png`)),'Repeated dense-field seeks reproduce the same pixels');
+  }
   assert.equal(await stage.evaluate('document.querySelector(".wall-caption").textContent'),'Recorded demonstrations');
 } finally {await stage.close();}
 console.log(`PASS field: ${shot.tiles.length} distinct tiles; exact square coverage; continuous pull-back; one-second hold; white finish; eight HD review frames`);

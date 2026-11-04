@@ -34,7 +34,7 @@
 </style>
 <main id="stage" aria-label="Film frame"><div id="scene"><div id="camera"></div></div><div class="label" hidden></div><div class="caption" hidden></div></main>
 <script type="module">
-  import { createWall, drawWall } from './wall.mjs';
+  import { createWall, drawWall, paintWall } from './wall.mjs';
   const stage = document.querySelector('#stage');
   const camera = document.querySelector('#camera');
   let active = null;
@@ -153,6 +153,7 @@
     if(shot.layout==='field') stage.querySelector('.wall-opening').style.opacity=String(Math.max(0,1-local/.15));
     await Promise.all(videos.map(({ video, spec }) => seek(video, (spec.start ?? 0) +
       (spec.loop ? local % (spec.loopSeconds ?? video.duration - (spec.start ?? 0)) : Math.min(local, spec.playSeconds ?? local)))));
+    if(shot.kind==='wall')paintWall(shot,local,wallTiles);
     await document.fonts.ready;
     await Promise.all([...camera.querySelectorAll('img')].map(img => img.decode()));
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
