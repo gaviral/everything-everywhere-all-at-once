@@ -50,7 +50,7 @@ try {
   assert.equal(calls[0].body.model, "muse-spark-1.3"); assert.equal(calls[0].body.mode, "tidies");
   await command("take this away");
   await wait("document.querySelectorAll('.workshop-part').length===0 && document.activeElement.dataset.workshopPart==='muse-spark-1.3'");
-  await page("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+  await page("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, text: "\r" });
   await page("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
   await wait("document.querySelectorAll('.workshop-part').length===1");
   await command("take this away");
