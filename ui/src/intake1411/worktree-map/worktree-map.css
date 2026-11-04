@@ -1,0 +1,29 @@
+.wm { color: #182d35; background: #f5f8f7; border: 1px solid #b8ccc8; border-radius: 18px; padding: clamp(16px, 3vw, 32px); font: 1rem/1.5 system-ui, sans-serif; overflow-wrap: anywhere; }
+.wm * { box-sizing: border-box; }
+.wm h2, .wm h3, .wm p { margin: 0 0 12px; }
+.wm h2 { font-size: 1.7em; letter-spacing: -.035em; }
+.wm h3 { font-size: 1.2em; }
+.wm button { font: inherit; color: inherit; background: white; border: 1px solid #99b4ad; border-radius: 10px; padding: 10px 14px; min-height: 46px; cursor: pointer; text-align: start; }
+.wm button:hover { background: #e7f2ee; }
+.wm :focus-visible { outline: 3px solid #075fbb; outline-offset: 3px; }
+.wm-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.wm-header p, .wm-status { color: #425e63; font-size: .9em; }
+.wm-status { border-block: 1px solid #ccdcd8; padding-block: 12px; margin-top: 12px !important; }
+.wm-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; }
+.wm-root { display: grid; gap: 4px; padding: 16px; border-inline-start: 3px solid #276454; }
+.wm-root > span { color: #425e63; font-size: .85em; }
+.wm-branches { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 10px; }
+.wm-branches button { display: grid; gap: 5px; width: 100%; }
+.wm-branches button > span:not(:first-child) { color: #425e63; font-size: .9em; }
+.wm-branches button[aria-pressed=true] { border: 2px solid #276454; background: #e2f0e9; padding: 9px 13px; }
+.wm-branch-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-weight: 650; }
+.wm-selected { font-size: .8em; border-radius: 6px; background: #276454; color: white; padding: 2px 7px; }
+.wm-identity { min-width: 0; background: white; padding: 20px; border: 1px solid #ccdcd8; border-radius: 12px; }
+.wm-identity > button:first-child { margin-bottom: 16px; }
+.wm-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); margin: 16px 0 24px; gap: 12px; }
+.wm-fields dt { color: #425e63; }
+.wm-fields dd { margin: 0; font-weight: 550; min-width: 0; }
+.wm code { font-size: .9em; overflow-wrap: anywhere; }
+.wm button.wm-primary { background: #276454; color: white; }
+@media (max-width: 640px) { .wm-layout { grid-template-columns: minmax(0, 1fr); } .wm-identity { padding: 16px; } }
+@media (max-width: 400px) { .wm-fields { grid-template-columns: minmax(0, 1fr); gap: 4px; } .wm-fields dt { margin-top: 10px; } }
