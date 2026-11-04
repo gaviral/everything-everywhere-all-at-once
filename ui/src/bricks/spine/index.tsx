@@ -554,7 +554,9 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
     if (!ready) return;
     if (!following && previous) {
       const view = flow.getViewport();
-      void flow.setViewport({ ...view, x: view.x + (width - previous.width) / 2, y: view.y + (box.tall - previous.height) / 2 }, { duration: 0 });
+      const zoom = new URLSearchParams(location.search).has("rehearse") ? readingZoom : view.zoom;
+      const scale = zoom / view.zoom;
+      void flow.setViewport({ x: width / 2 - (previous.width / 2 - view.x) * scale, y: box.tall / 2 - (previous.height / 2 - view.y) * scale, zoom }, { duration: 0 });
       return;
     }
     const g = goal();

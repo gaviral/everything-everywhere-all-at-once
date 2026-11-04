@@ -47,13 +47,13 @@ try {
   await until(`filmEvents.some(e=>e.type==='change'&&e.change.type==='thought_added'&&e.change.thought.text.includes('repair the bicycle'))`);
   await say('Where was I?');
   await until(`document.querySelector('.flow-canvas-status').textContent.includes('1 held')`);
-  assert.equal(await evaluate(`!!document.querySelector('.flow-question')`),false,'the question waits while there is a draft');
+  assert.equal(await evaluate(`!!document.querySelector('.flow-canvas-question')`),false,'the question waits while there is a draft');
   assert.equal(await evaluate(`document.querySelectorAll('.flow-canvas-box').length`),3,'a passing thought never edits the boxes');
   assert.equal(await evaluate(`!!document.querySelector('.flow-canvas-error')`),false,'talking during the run never errors');
   await screenshot('02-held'); console.log('PASS capture, concurrent tangent, and held question while busy');
   await type('[data-guide="composer"] textarea', '');
-  await until(`!!document.querySelector('.flow-question')`);
-  assert(await evaluate(`document.querySelector('.flow-question p').textContent.length>8`));
+  await until(`!!document.querySelector('.flow-canvas-question')`);
+  assert(await evaluate(`document.querySelector('.flow-canvas-question p').textContent.length>8`));
   await screenshot('03-question'); console.log('PASS real Spark question shown after the pause');
   await say('Warm, friendly and very casual.');
   await until(`document.querySelector('.flow-canvas-status').textContent.startsWith('Run complete')`,120000);
@@ -67,19 +67,24 @@ try {
   await say('Open the second box');
   await until(`!!document.querySelector('.flow-canvas-inspect')`);
   const before=await evaluate(`document.querySelector('.flow-canvas-inspect textarea').value`);
+  await until(`!document.querySelector('.flow-canvas-mic').disabled`);
   await say('Make it kinder.');
   await until(`document.querySelector('.flow-canvas-inspect textarea').value!==${JSON.stringify(before)}`);
-  await until(`document.querySelector('.flow-canvas-status').textContent.startsWith('Run complete')||!!document.querySelector('.flow-question')`,120000);
+  await until(`document.querySelector('.flow-canvas-status').textContent.startsWith('Run complete')||!!document.querySelector('.flow-canvas-question')`,120000);
   // Editing uses the same original source; answer any newly needed question explicitly.
-  if(await evaluate(`!!document.querySelector('.flow-question')`)) {await say('Warm and casual.');await until(`document.querySelector('.flow-canvas-status').textContent.startsWith('Run complete')`,120000);}
+  if(await evaluate(`!!document.querySelector('.flow-canvas-question')`)) {await say('Warm and casual.');await until(`document.querySelector('.flow-canvas-status').textContent.startsWith('Run complete')`,120000);}
   await say('Send that to Phone');
   await until(`filmEvents.some(e=>e.type==='send_card'&&e.state==='counting')`);
   assert.equal(await evaluate(`filmEvents.filter(e=>e.type==='send_card').at(-1).live`),false,'real sending stays off');
+  assert(await evaluate(`filmEvents.filter(e=>e.type==='send_card').at(-1).text === filmEvents.filter(e=>e.type==='change'&&e.change.type==='thought_added'&&e.change.thought.speaker==='Flow').at(-1).change.thought.text`), 'send card contains the exact final box result');
+  assert(await evaluate(`(()=>{const button=document.querySelector('.send-card-stop'),r=button.getBoundingClientRect();return button.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))})()`), 'Stop is visibly reachable above Flow');
   await screenshot('05-send-card');
   await say('Stop');
   await until(`filmEvents.some(e=>e.type==='send_card'&&e.state==='stopped')`);
   assert.equal(await evaluate(`filmEvents.some(e=>e.type==='send_card'&&e.state==='sent')`),false,'Stop prevents sending');
   await cdp('Emulation.setDeviceMetricsOverride',{width:3840,height:2160,deviceScaleFactor:1,mobile:false});
+  await until(`new DOMMatrixReadOnly(getComputedStyle(document.querySelector('.react-flow__viewport')).transform).a>=1.9`);
+  assert(await evaluate(`parseFloat(getComputedStyle(document.querySelector('.send-card-text')).fontSize)>=38`), 'send card has TV-sized text');
   await screenshot('06-tv');
   await cdp('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:false});
   await screenshot('07-phone');

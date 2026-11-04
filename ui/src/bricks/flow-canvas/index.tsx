@@ -5,6 +5,10 @@ import "./flow-canvas.css";
 type Step = { id: string; name: string; prompt: string };
 type Pipeline = { id: string; name: string; steps: Step[] };
 type Result = { text: string; input: string; status: "waiting" | "running" | "held" | "done" | "failed"; ms: number; error?: string };
+const stateClass = {
+  pair: "flow-canvas-pair", changed: "flow-canvas-changed", selected: "flow-canvas-selected",
+  held: "flow-canvas-held", running: "flow-canvas-running", listening: "flow-canvas-listening",
+};
 const duration = (ms: number) => `${(ms / 1000).toFixed(2)}s`;
 function endpoint(path: string) {
   const url = new URL(path, location.origin);
@@ -29,9 +33,13 @@ function fromLink(): Pipeline | null {
     return p;
   } catch { return null; }
 }
-export default function FlowCanvas({ map, actions, on }: BrickProps) {
+export default function FlowCanvas({ map, actions, on, destination }: BrickProps) {
   const [open, setOpen] = useState(!new URLSearchParams(location.search).has("rehearse"));
   const answersRef = useRef(new Map<string, string>());
+  const foundRef = useRef<{ id: string; latest: string | undefined } | null>(null);
+  useEffect(() => {
+    foundRef.current = destination?.thoughtId ? { id: destination.thoughtId, latest: [...map.thoughts].reverse().find(t => t.speaker === map.me)?.id } : null;
+  }, [destination]);
   const sourceRef = useRef<{ id: string; text: string } | null>(null);
   const pending = useRef<{ id: string; text: string; shown: boolean; resolve: (answer: string) => void } | null>(null);
   const [question, setQuestion] = useState("");
@@ -62,7 +70,7 @@ export default function FlowCanvas({ map, actions, on }: BrickProps) {
   const refreshLibrary = async () => { try { const r = await request("/flow/library"); if (alive.current) setLibrary(r.flows); } catch (e) { if (alive.current) setError(String(e)); } };
   useEffect(() => { void refreshLibrary(); }, []);
   useEffect(() => {
-    const url = endpoint("/flow/turns"); url.searchParams.set("name", map.me);
+    const url = endpoint("/flow/turns"); url.searchParams.set("name", map.me); url.searchParams.set("editing", String(!!selected));
     const source = new EventSource(url);
     source.onopen = () => setVoiceReady(true);
     source.onerror = () => setVoiceReady(false);
@@ -79,7 +87,7 @@ export default function FlowCanvas({ map, actions, on }: BrickProps) {
       }
     } catch { setError("Couldn't read the incoming turn. Say it again."); } };
     return () => { source.close(); setVoiceReady(false); };
-  }, [map.me, map.visitKey, testing]);
+  }, [map.me, map.visitKey, testing, selected]);
   useEffect(() => {
     if (!changed.length) return;
     const timeout = window.setTimeout(() => setChanged([]), 6000);
@@ -194,6 +202,11 @@ export default function FlowCanvas({ map, actions, on }: BrickProps) {
     const normal = text.toLowerCase().replace(/[.!?,]/g, "").trim();
     if (/^(run (that|it|this) through|take .+run it through)/i.test(text)) {
       let origin = sourceRef.current;
+      const latest = [...map.thoughts].reverse().find(t => t.speaker === map.me);
+      if (foundRef.current?.latest === latest?.id) {
+        const found = map.thoughts.find(t => t.id === foundRef.current?.id);
+        if (found?.speaker === map.me) origin = { id: found.id, text: found.text };
+      }
       const named = text.match(/^take (?:the )?(.+?) (?:thing|thought|topic)[.,]?/i)?.[1];
       if (named) {
         const thread = map.threads.find(t => t.title.toLowerCase().includes(named.toLowerCase()));
@@ -245,19 +258,19 @@ export default function FlowCanvas({ map, actions, on }: BrickProps) {
       </div>
     </div>
     {libraryOpen && <div className="flow-canvas-library"><strong>Saved boxes</strong>{library.length ? library.map(p => <button key={p.id} disabled={busy} onClick={() => { setPipeline(p); setResults([]); setSelected(null); setSaved(true); setLibraryOpen(false); setNotice("Boxes reopened. Ready to test."); }}>{p.name}<span>{p.steps.length} boxes</span></button>) : <p>Save the boxes to find it here.</p>}<button onClick={() => setLibraryOpen(false)}>Close</button></div>}
-    {question && <section className="flow-question" role="status" aria-label="Question from Spark"><span>Muse Spark asks</span><p>{question}</p><small>Say your answer. The boxes will continue.</small></section>}
+    {question && <section className="flow-canvas-question" role="status" aria-label="Question from Spark"><span>Muse Spark asks</span><p>{question}</p><small>Say your answer. The boxes will continue.</small></section>}
     <div className="flow-canvas-body">
       <div className="flow-canvas-title"><p>YOUR THOUGHT, THROUGH BOXES</p><h1>{pipeline?.name || "Keep talking. Spark keeps up."}</h1><p className="flow-canvas-status" role="status">{notice}{held ? " · 1 held" : ""}</p>{error && <p className="flow-canvas-error" role="alert">{error}</p>}</div>
       {!pipeline ? <div className="flow-canvas-empty"><div className="flow-canvas-sketch" aria-hidden="true"><span>01</span><b>→</b><span>02</span><b>→</b><span>03</span></div><p>Say a thought, then “run that through three boxes…”<br />Watch Spark make the pieces.</p><button disabled={busy} onClick={() => void act("Make a pipeline: fix the grammar, then enrich it, then red-team it.")}>Try grammar → enrich → red team</button></div> : <>
         <div className="flow-canvas-source"><label htmlFor="flow-input">YOUR INPUT</label><textarea id="flow-input" value={input} onChange={e => setInput(e.target.value)} placeholder={testing ? "Listening for your test text… or type it here." : "Say ‘let’s test it’, or type the text to send through."} /><div><button disabled={busy || !input.trim()} onClick={() => void execute(pipeline, input)}>Run boxes →</button><button disabled={busy || !input.trim()} onClick={() => void execute(pipeline, input, 2)}>Two versions</button></div></div>
         <div className="flow-canvas-grid" style={{ "--flow-count": pipeline.steps.length } as React.CSSProperties}>
-          {pipeline.steps.map((step, index) => <article key={step.id} className={`flow-canvas-box ${results.length === 2 ? "flow-canvas-pair" : ""} ${changed.includes(step.id) ? "flow-canvas-changed" : ""} ${selected === step.id ? "flow-canvas-selected" : ""} ${results.some(row => row[index]?.status === "held") ? "flow-canvas-held" : ""}`}>
-            <button className="flow-canvas-box-head" onClick={() => setSelected(selected === step.id ? null : step.id)} aria-expanded={selected === step.id}><span>{String(index + 1).padStart(2, "0")}</span><strong>{step.name}</strong><b>{selected === step.id ? "−" : "+"}</b></button>
+          {pipeline.steps.map((step, index) => <article key={step.id} className={`flow-canvas-box ${results.length === 2 ? stateClass.pair : ""} ${changed.includes(step.id) ? stateClass.changed : ""} ${selected === step.id ? stateClass.selected : ""} ${results.some(row => row[index]?.status === "held") ? stateClass.held : ""}`}>
+            <button className="flow-canvas-box-head" onClick={() => setSelected(selected === step.id ? null : step.id)} aria-expanded={selected === step.id}><span>{String(index + 1).padStart(2, "0")}</span><strong>{step.name}</strong>{results[0]?.[index] && results[0][index].status !== "waiting" && <time className="flow-canvas-box-clock">{duration(results[0][index].ms)}</time>}<b>{selected === step.id ? "−" : "+"}</b></button>
             {selected === step.id && <div className="flow-canvas-inspect"><label>Prompt<textarea aria-label={`${step.name} prompt`} disabled={busy} value={step.prompt} onChange={e => { setPipeline({ ...pipeline, steps: pipeline.steps.map(s => s.id === step.id ? { ...s, prompt: e.target.value } : s) }); setSaved(false); }} /></label><p><b>Input</b> {index === 0 ? "Your original text" : `Output of ${pipeline.steps[index - 1].name}`}</p><p><b>Control flow</b> Runs once after its input is ready. A failure stops this version.</p><button disabled={busy || !input.trim()} onClick={() => void execute(pipeline, input, results.length || 1)}>Apply & rerun same input</button></div>}
             {(results.length ? results : [[]]).map((row, lane) => { const r = row[index]; return <div className="flow-canvas-result" key={lane}>
               {results.length === 2 && <p className="flow-canvas-version">VERSION {lane + 1}</p>}
-              <div className={`flow-canvas-run-state ${r?.status === "running" ? "flow-canvas-running" : ""}`}><span>{r ? ({ waiting: "Waiting for input", running: "Running…", held: "Waiting for you", done: "Complete", failed: "Failed" }[r.status]) : "Ready"}</span>{r && r.status !== "waiting" && <time>{duration(r.ms)}</time>}</div>
-              <div className="flow-canvas-output">{(r?.text?.startsWith("QUESTION:") ? "" : r?.text) || (!r ? "Its output will appear here." : r.status === "running" ? "Spark is working…" : "")}</div>
+              <div className={`flow-canvas-run-state ${r?.status === "running" ? stateClass.running : ""}`}><span>{r ? ({ waiting: "Waiting for input", running: "Running…", held: "Waiting for you", done: "Complete", failed: "Failed" }[r.status]) : "Ready"}</span>{r && r.status !== "waiting" && <time>{duration(r.ms)}</time>}</div>
+              <div className="flow-canvas-output">{r?.text || (!r ? "Its output will appear here." : r.status === "running" ? "Spark is working…" : "")}</div>
               {r?.error && <p className="flow-canvas-error">{r.error}</p>}
               {selected === step.id && r?.input && <details className="flow-canvas-exact-input"><summary>Exact input · version {lane + 1}</summary><p>{r.input}</p></details>}
             </div>; })}
@@ -268,7 +281,7 @@ export default function FlowCanvas({ map, actions, on }: BrickProps) {
     <div className="flow-canvas-bottom">
       {map.partial && <p className="flow-canvas-heard" aria-live="polite">{map.partial}</p>}
       <form className="flow-canvas-command" onSubmit={e => { e.preventDefault(); void act(command); }}>
-        <button className={`flow-canvas-mic ${listening ? "flow-canvas-listening" : ""}`} type="button" disabled={!voiceReady} onClick={toggleMic} aria-pressed={listening}>{listening ? "Stop mic" : "Use voice"}</button>
+        <button className={`flow-canvas-mic ${listening ? stateClass.listening : ""}`} type="button" disabled={!voiceReady} onClick={toggleMic} aria-pressed={listening}>{listening ? "Stop mic" : "Use voice"}</button>
         <textarea ref={commandRef} aria-label="Tell Spark what to build or change" value={command} onChange={e => setCommand(e.target.value)} placeholder={pipeline ? "Open the enrich box. Make it shorter. Add a tweet after red team…" : "Make a pipeline: fix the grammar, then enrich it, then red-team it."} rows={1} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void act(command); } }} />
         <button disabled={busy || !command.trim()} type="submit">{busy ? "Working…" : "Send ↑"}</button>
       </form>
