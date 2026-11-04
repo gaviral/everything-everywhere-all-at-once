@@ -54,6 +54,7 @@ export function useBrickHost(world: World, revision: number, me: string, connect
   const actionsFor = useMemo(() => (info: BrickInfo): BrickActions => {
     let actions = made.current.get(info.id);
     if (!actions) made.current.set(info.id, actions = {
+      setActionEstimate: (request) => latest.current.setActionEstimate?.(request) ?? Promise.resolve({ request_id: request.request_id, ok: false, message: "Action estimates is unavailable.", estimate: null }),
       saveTextFile: (name, text, mime) => {
         if (typeof name !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._ -]{0,79}$/.test(name) || name.includes("..")
           || typeof text !== "string" || new TextEncoder().encode(text).length > 64 * 1024

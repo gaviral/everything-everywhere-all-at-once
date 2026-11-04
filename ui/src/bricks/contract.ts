@@ -6,7 +6,7 @@
 import { createContext, useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import type { MiniApp } from "../apps-core";
 import type { Anchor } from "../annotate-core";
-import type { Action, Note, Pause, Suggestion, Thought, Thread as MapThread, UsageRow, UsageSnapshot } from "../core";
+import type { ActionEstimate, EstimateRequest, EstimateResult, Action, Note, Pause, Suggestion, Thought, Thread as MapThread, UsageRow, UsageSnapshot } from "../core";
 import type { Position } from "../positions-core";
 
 export type CanvasToolId = "composer" | "features" | "history";
@@ -49,7 +49,7 @@ export const ShapesContext = createContext<Shapes | null>(null);
 /** The app's existing speech-correction controls, attached to a thought by a view. */
 export const SpeechFixesContext = createContext<((thought: Thought) => ReactNode) | null>(null);
 
-export type { Action, Anchor, MiniApp, Note, Pause, Position, Suggestion, Thought, UsageRow, UsageSnapshot };
+export type { ActionEstimate, EstimateRequest, EstimateResult, Action, Anchor, MiniApp, Note, Pause, Position, Suggestion, Thought, UsageRow, UsageSnapshot };
 
 /** One thought of a turn: a turn the placer cut in two is one turn of two parts, each its own point on the map. */
 export interface Part {
@@ -195,6 +195,8 @@ export interface MapSnapshot {
   readonly suggestions: readonly Suggestion[];
   /** Reminders and calendar events the AI proposed from what was said (the map's `actions`). */
   readonly reminders: readonly Action[];
+  /** Manual effort metadata; other owners are display-only. */
+  readonly actionEstimates?: readonly Readonly<ActionEstimate>[];
   /** The apps people made (a watcher, a prompt, publishers), and whether each is on. */
   readonly apps: readonly MiniApp[];
   /** Why a thought went where it went, by thought id, where the placer said. */
@@ -232,6 +234,8 @@ export interface MapSnapshot {
 
 /** What a brick may do. Each does what its button in the app does, with the same answer on screen. */
 export interface BrickActions {
+  /** Resolves only with the matching write acknowledgement, or an explicit failure. */
+  setActionEstimate?(request: EstimateRequest): Promise<EstimateResult>;
   /** Explicitly hands a plain text file to the browser, not proof it reached disk. Host bounds: plain filename
    *  up to 80 characters, text/plain or text/markdown, and at most 64 KiB UTF-8. False on refusal or failure. */
   saveTextFile(name: string, text: string, mime: string): boolean;

@@ -1127,6 +1127,7 @@ export default function App() {
   // (core annotate.rs), openCatalog is Apps' Catalog button, at a brick's row, and hint is the guide's arrow or corner
   // caption, here only (guide-core.ts `showHint`).
   const brickHost = useBrickHost(world, core.snapshotRevision, me, core.connected, rooms, core.partial, {
+    setActionEstimate: (request) => isOn("action-estimates") ? core.setActionEstimate(request) : Promise.resolve({ request_id: request.request_id, ok: false, message: "Action estimates is off.", estimate: null }),
     saveTextFile: (name, text, mime) => { saveFile(text, mime, name); return true; },
     addThought: core.sendText,
     resume: (id,keyboard) => finishPause(id,keyboard),
@@ -1158,6 +1159,8 @@ export default function App() {
     hint: showHint,
   }, destination, core.usage, core.noKey || core.keyRefused || core.resting);
   const bricksOn = useBricksOn();
+  const actionEstimatesOn = bricksOn.has("action-estimates");
+  useEffect(() => { core.setActionEstimatesOn(actionEstimatesOn); }, [actionEstimatesOn]);
   const shapes = useShapes(bricksOn.has("shapes"));
   const builtIns = useBuiltInsOn();
   // Only an ID and a focus return address live here; World remains the source of the panel's words.

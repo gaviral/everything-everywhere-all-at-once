@@ -25,10 +25,11 @@ try {
   const same = (a, b) => JSON.stringify(sorted(plain(a))) === JSON.stringify(sorted(plain(b)));
   for (const name of ["every", "session"]) {
     const { changes, world, worlds } = JSON.parse(readFileSync(join(dir, `${name}.json`), "utf8"));
+    if (name === "every") assert.ok(changes.some(c => c.type === "action_estimate_set"), "estimate change is in every_change");
     let mirror = EMPTY;
     // Every field the core sends, as the window holds it (a window without notes, places, margin notes or AI
     // participants yet holds none).
-    const none = { captions: [], notes: {}, positions: {}, anchors: {}, ai: [] };
+    const none = { action_estimates: [], captions: [], notes: {}, positions: {}, anchors: {}, ai: [] };
     const agree = (core, at) => {
       for (const key of Object.keys(core)) {
         assert.deepEqual(sorted(plain(mirror[key] ?? none[key] ?? null)), sorted(plain(core[key] ?? null)), `${name}: the window's ${key} differs from the core's ${at}`);

@@ -1,0 +1,8 @@
+{
+  "id": "action-estimates",
+  "name": "Action estimates",
+  "does": "Give actions your own effort estimate in minutes, with an optional reason.",
+  "kind": "card",
+  "defaultOn": false,
+  "demoSafe": false
+}

@@ -36,6 +36,7 @@ pub const POSITION_MAX: f64 = 1_000_000.0;
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMsg {
+    ActionEstimateResult { request_id: String, ok: bool, message: String, estimate: Option<crate::world::ActionEstimate>, #[serde(skip)] window: u64 },
     Returned { request_id: Option<String>, anchor: Option<crate::world::ReturnAnchor>, message: String },
     CaptureSaved { capture: crate::world::CaptureReceipt, replay: bool },
     MapIdentity { id: String },
@@ -224,6 +225,8 @@ pub struct Outgoing {
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMsg {
+    ActionEstimates { on: bool },
+    SetActionEstimate { #[serde(flatten)] request: crate::world::EstimateRequest },
     Resume { pause_id: String, request_id: String },
     PauseChoice { pause_id: String, later: bool },
     RetryPlacement { id: String },
@@ -368,4 +371,17 @@ pub enum ClientMsg {
     Read { thought_id: String },
     /// How far the Friend may interrupt, as the meter at the foot of Talk sets it, for everyone in the call (call.rs).
     Level { level: crate::call::Level },
+}
+
+#[cfg(test)]
+mod c10_estimates_protocol_tests {
+    use super::*;
+    #[test]
+    fn c10_estimates_whole_minutes_and_no_owner_input() {
+        let text = r#"{"type":"set_action_estimate","request_id":"synthetic","action_id":"a","source_title":"Synthetic","source_thread_id":"T1","observed_revision":0,"minutes":15,"reason":"","owner":"someone else"}"#;
+        assert!(matches!(serde_json::from_str::<ClientMsg>(text).unwrap(), ClientMsg::SetActionEstimate { .. }));
+        for invalid in ["1.5", "-1", "1440.1"] {
+            assert!(serde_json::from_str::<ClientMsg>(&text.replace("\"minutes\":15", &format!("\"minutes\":{invalid}"))).is_err());
+        }
+    }
 }

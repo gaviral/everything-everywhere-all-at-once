@@ -133,6 +133,39 @@ pub struct Action {
     pub done_ms: Option<u64>,
 }
 
+/// Manual effort metadata. A clear keeps a tombstone so stale requests cannot recreate it.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct EstimateValue {
+    pub minutes: u16,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct EstimateRequest {
+    pub request_id: String,
+    pub action_id: String,
+    pub source_title: String,
+    pub source_thread_id: String,
+    pub observed_revision: u64,
+    pub minutes: Option<u16>,
+    #[serde(default)] pub reason: String,
+    #[serde(default)] pub undo_of: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct ActionEstimate {
+    pub action_id: String,
+    pub owner: String,
+    pub source_title: String,
+    pub source_thread_id: String,
+    pub source_topic: String,
+    pub minutes: Option<u16>,
+    pub reason: String,
+    pub revision: u64,
+    pub request: EstimateRequest,
+    #[serde(default)] pub cleared: Option<EstimateValue>,
+}
+
 /// A completed conversational caption. Playback flags belong only to its live relay.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Caption {
@@ -187,6 +220,8 @@ pub struct SpeechDraft {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct World {
+    #[serde(default)] pub action_estimates: Vec<ActionEstimate>,
+    #[serde(default, skip_serializing)] pub estimate_receipts: std::collections::HashMap<(String, String), ActionEstimate>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")] pub pauses: Vec<Pause>,
     #[serde(default, skip_serializing)] pub returning: std::collections::HashMap<String, (String, usize)>,
     #[serde(default, skip_serializing)]
@@ -292,6 +327,7 @@ pub struct World {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Change {
+    ActionEstimateSet { estimate: ActionEstimate },
     CaptionAdded { caption: Caption },
     Paused { pause: Pause },
     PauseResolved { id: String, by_thought: String },
@@ -561,6 +597,12 @@ impl World {
         let change = self.resolved(change);
         crate::tidy::follow(self, &change);
         match change.as_ref() {
+            Change::ActionEstimateSet { estimate } => {
+                self.estimate_receipts.insert((estimate.owner.clone(), estimate.request.request_id.clone()), estimate.clone());
+                if let Some(existing) = self.action_estimates.iter_mut().find(|e| e.action_id == estimate.action_id && e.owner == estimate.owner) {
+                    if existing.revision <= estimate.revision { *existing = estimate.clone(); }
+                } else { self.action_estimates.push(estimate.clone()); }
+            }
             Change::CaptionAdded { caption } => {
                 if !self.captions.iter().any(|c| c.id == caption.id && c.by == caption.by) {
                     self.captions.push(caption.clone());
@@ -1867,6 +1909,11 @@ mod tests {
             Change::SuggestionAdded {
                 suggestion: super::Suggestion { id: "sg-1".into(), thread_id: "T2".into(), text: "Ask Sam".into(), status: super::ItemStatus::New },
             },
+            Change::ActionEstimateSet { estimate: super::ActionEstimate {
+                action_id: "ac-1".into(), owner: "you".into(), source_title: "Ask Sam".into(),
+                source_thread_id: "T2".into(), source_topic: "Workshop".into(), minutes: Some(15), reason: "First pass".into(), revision: 1,
+                request: super::EstimateRequest { request_id: "estimate-1".into(), action_id: "ac-1".into(), source_title: "Ask Sam".into(), source_thread_id: "T2".into(), observed_revision: 0, minutes: Some(15), reason: "First pass".into(), undo_of: None }, cleared: None,
+            } },
             Change::ActionProposed {
                 action: super::Action {
                     id: "ac-1".into(),
@@ -2091,6 +2138,7 @@ mod tests {
                 | Change::ThreadUnmerged { .. }
                 | Change::TidyProposed { .. }
                 | Change::SuggestionAdded { .. }
+                | Change::ActionEstimateSet { .. }
                 | Change::ActionProposed { .. }
                 | Change::ItemStatus { .. }
                 | Change::ItemMoved { .. }
@@ -2280,5 +2328,16 @@ pub(crate) mod fixtures {
             place_ms: Some(1_000),
             decided: false,
         }
+    }
+}
+
+#[cfg(test)]
+mod c10_estimates_world_tests {
+    #[test]
+    fn c10_estimates_old_world_defaults() {
+        let mut json = serde_json::to_value(super::World::default()).unwrap();
+        json.as_object_mut().unwrap().remove("action_estimates");
+        let world: super::World = serde_json::from_value(json).unwrap();
+        assert!(world.action_estimates.is_empty());
     }
 }

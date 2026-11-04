@@ -1,0 +1,16 @@
+.action-estimates { color: var(--ink); max-width: min(38rem, calc(100vw - 2rem)); font-size: .95rem; }
+.action-estimates summary { cursor: pointer; padding: .6rem; font-weight: 600; }
+.action-estimates-body { max-height: 42dvh; overflow-y: auto; overscroll-behavior: contain; padding: 0 .65rem .65rem; scroll-padding: .75rem; }
+.action-estimates-body p { margin: .4rem 0; overflow-wrap: anywhere; }
+.action-estimates-row { border-top: 1px solid currentColor; padding: .7rem 0; }
+.action-estimates-row code { font-size: .85em; overflow-wrap: anywhere; }
+.action-estimates-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: .5rem 0; }
+.action-estimates-controls label { display: flex; align-items: center; gap: .35rem; }
+.action-estimates button { min-height: 2.75rem; white-space: normal; }
+.action-estimates-editor { display: grid; gap: .6rem; }
+.action-estimates-editor label { display: grid; gap: .3rem; }
+.action-estimates-duration { display: flex; align-items: center; gap: .4rem; }
+.action-estimates-duration input { min-width: 0; width: 7ch; }
+.action-estimates-editor textarea { width: 100%; box-sizing: border-box; resize: vertical; min-height: 3rem; }
+.action-estimates input, .action-estimates textarea { font: inherit; color: inherit; background: var(--bg); border: 1px solid currentColor; border-radius: .3rem; padding: .35rem; }
+.action-estimates :focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
