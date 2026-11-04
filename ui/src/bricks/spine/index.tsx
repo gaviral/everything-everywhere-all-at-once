@@ -733,7 +733,8 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
   const cueLayout = { ...layout, byKey: new Map([...layout.byKey].map(([key, item]) => [key, viewItem(item)])) };
 
   // A thought landing: its slot fills once its flight is in (a ring), the newest landing says what put it there, and
-  // out of view an edge chip says where.
+  // out of view an edge chip says where. The named subscription also receives the first landing when this
+  // Canvas mounts within five seconds, including under Reduce Motion without a flight to observe.
   const ring = (key: string) => {
     if (reduced) camera.flash(key);
     else setPulses((was) => ({ ...was, [key]: (was[key] ?? 0) + 1 }));
@@ -770,15 +771,6 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
       setCues((was) => [...was.filter((cue) => cue.thread !== item.thread), { key: item.key, thread: item.thread, title, at: Date.now() }]);
     }
   }, "spine");
-  // Your first thought on an empty map: this view is only drawn once the map has a thread, so it mounts after that
-  // thought landed (its `landed` came before this view was here) with its bubble waiting in the air. It arrives as a
-  // later one does: the slot holds its place until the bubble is in.
-  useEffect(() => {
-    const flying = reduced ? [] : [...document.querySelectorAll("[data-flight]")].map((bubble) => bubble.getAttribute("data-flight"));
-    const waiting = flying.length ? map.thoughts.find((t) => t.speaker === map.me && t.placed && flying.includes(t.id)) : undefined;
-    const item = waiting && layout.items.find((i) => (i.kind === "point" || i.kind === "aside") && i.thoughts?.includes(waiting.id));
-    if (waiting && item) arrive(waiting.id, item);
-  }, []);
   // What the guide points at (`pointing`: the Friend's point, or a hint), or null when it stops. The Spine keeps the one
   // dim (78%) for the rest, so a pointed-at thread never dims twice; while the view follows your talk, the target comes
   // into view (a view a hand holds stays where it was left).

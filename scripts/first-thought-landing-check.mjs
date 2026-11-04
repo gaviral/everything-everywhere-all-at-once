@@ -22,7 +22,28 @@ try{
   const off2=events.on('landed',e=>seen.push(e.thoughtId),'spine');await Promise.resolve();
   assert.deepEqual(seen,['B'],'remount cannot replay the same landing twice');off2();
   const clock=Date.now;let now=clock();Date.now=()=>now;
-  try{events.emit('landed',event('C'));now+=5001;events.on('landed',e=>seen.push(e.thoughtId),'late');await Promise.resolve();assert.deepEqual(seen,['B'],'five-second replay window');}finally{Date.now=clock;}
+  try{
+    events.emit('landed',event('C'));now+=5000;
+    const boundary=[];const off=events.on('landed',e=>boundary.push(e.thoughtId),'boundary');
+    await Promise.resolve();off();assert.deepEqual(boundary,['C'],'landing replays at five seconds');
+    now+=1;events.on('landed',e=>seen.push(e.thoughtId),'late');await Promise.resolve();
+    assert.deepEqual(seen,['B'],'five-second replay window');
+    events.emit('landed',event('D'));
+    const expired=[];events.on('landed',e=>expired.push(e.thoughtId),'expires-while-queued');
+    now+=5001;await Promise.resolve();assert.deepEqual(expired,[],'queued replay cannot outlive five seconds');
+  }finally{Date.now=clock;}
+  const race=brickEvents(), delivered=[];
+  race.emit('landed',event('old'));
+  const cancel=race.on('landed',e=>delivered.push(e.thoughtId),'canvas');
+  race.emit('landed',event('new'));await Promise.resolve();cancel();
+  assert.deepEqual(delivered,['new'],'queued replay cannot replace a newer live landing');
+  race.emit('landed',event('before-reconnect'));
+  race.on('landed',e=>delivered.push(e.thoughtId),'reconnected');
+  race.clearReplay();await Promise.resolve();
+  assert.deepEqual(delivered,['new'],'reconnect cancels queued replay from the old map');
+  const cancelled=[];race.emit('landed',event('unmounted'));
+  race.on('landed',e=>cancelled.push(e.thoughtId),'unmounted')();
+  await Promise.resolve();assert.deepEqual(cancelled,[],'unmounted Canvas receives no replay');
 }finally{await modules.close();}
 const shots=process.env.SHOTS??mkdtempSync(join(tmpdir(),'e2a2o-capture-frames-'));mkdirSync(shots,{recursive:true});
 async function record(browser,name){
@@ -67,13 +88,16 @@ for(const [width,height] of (process.env.CAPTURE_FAULT ? [] : [[1440,900],[390,8
     const ids=[...core.state.accepted.keys()];assert.equal(ids.length,2);
     assert.deepEqual(new Set(await evaluate('[...document.querySelectorAll(".map-capture-waiting")].map(item=>item.dataset.capture)')),new Set(ids),'canonical map captures retain the exact input IDs');
     assert.equal(await evaluate('document.querySelectorAll("[data-flight]").length'),0,'capture starts on the map without a separate flight in either motion mode');
-    for(const id of ids)core.place(id);
+    core.place(ids[0]);
+    assert.ok(await until(`(()=>{const note=document.querySelector('.spine-point[data-thought="${core.state.accepted.get(ids[0]).thought_ids[0]}"] .spine-landing');return note?.innerText.includes('Placed here') && note.getBoundingClientRect().height>0})()`,6000),`${width} ${scheme} reduced=${reduced}: first thought has its visible landing note`);
+    core.place(ids[1]);
     assert.ok(await until('document.querySelectorAll(".spine-point[data-thought]").length===2',6000),`${width} ${scheme} reduced=${reduced}: both captures visibly land`);
     assert.ok(await until('!document.querySelector("[data-flight]")',3500),'visuals release');
     assert.ok(await until('!!document.querySelector(".spine-landing")'),'late-mounted Canvas gets landing note');
     for(const id of ids)assert.equal(core.state.commits.get(id),1,'at most one committed placement');
     await finish();await page('Page.reload');
     assert.ok(await until('document.querySelectorAll(".spine-point[data-thought]").length===2'),'placements survive reload');
+    assert.equal(await evaluate('document.querySelectorAll(".spine-landing").length'),0,'reload does not replay historical landing notes');
     assert.deepEqual([...core.state.accepted.keys()],ids,'same IDs after reload');
     assert.deepEqual([...core.state.accepted.values()].map(capture=>capture.text),['A: book the cooking class','B: bring the notebook'],'original words and order after reload');
     assert.equal(await evaluate('document.querySelectorAll("[data-flight]").length'),0,'reload does not replay historical flight');
@@ -87,7 +111,9 @@ for(const fault of ['local-storage','journal','lost-receipt','slow','rejected','
     seed.thoughts=['T1','T2'].map(id=>({id:'old-'+id,speaker:'you',text:'Existing '+id,point:'Existing '+id,thread_id:id,placed:true,complete:true,at_ms:1}));
     seed.active='T1';seed.active_by={you:'T1'};seed.positions={T2:{x:9000,y:200,by:'you',at_ms:1}};
   }
-  const core=await captureCore({delay:fault==='slow'?6300:1800,seed});let browser;
+  // Browser work has no fixed duration. Hold placement until each fault's visible checkpoint;
+  // the rejected case still has to release through its real Retry button.
+  const core=await captureCore({delay:fault==='slow'?6300:1800,seed,manualPlacement:true});let browser;
   try{
     core.state.failSave=fault==='journal';core.state.loseReceipt=fault==='lost-receipt';core.state.reject=fault==='rejected';
     browser=await capturePage(core,{width:390,height:844});const {page,evaluate,until}=browser;
@@ -135,6 +161,7 @@ for(const fault of ['local-storage','journal','lost-receipt','slow','rejected','
         await page('Emulation.setDeviceMetricsOverride',{width:320,height:568,deviceScaleFactor:1,mobile:true});
         assert.ok(await until('!document.querySelector("[data-flight]")'),'manual navigation and resize cancel obsolete visuals');
       }
+      if(fault!=='rejected')core.place(id);
       const thoughtId=core.state.accepted.get(id)?.thought_ids[0];
       assert.ok(await until(`!!document.querySelector('.spine-point[data-thought="${thoughtId}"]')`,8000),'placement remains rendered after fault/retry');
       assert.equal(core.state.accepted.size,1,'one accepted input ID');
