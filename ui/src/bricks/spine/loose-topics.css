@@ -1,0 +1,14 @@
+/* Proximity carries the quiet state. Speaker, decision and return cues stay legible. */
+.spine-loose .spine-point:not(.spine-point-mini):not(.spine-conversation-turn):not(.spine-pinned)::before {
+  content: "";
+  position: absolute;
+  inset: -5px -5px -5px 32px;
+  z-index: -1;
+  border-radius: 14px 18px 12px 16px;
+  background: color-mix(in srgb, var(--ink) 4%, var(--bg));
+}
+.spine-loose .spine-link-spine { opacity: 0; }
+.spine-loose .spine-link-spine.spine-loose-reveal { opacity: .38; stroke-width: 1.5; }
+/* The thread appears without a draw animation, including with Reduce Motion. */
+.spine-loose .spine-link-spine { animation: none; transition: none; }
+.spine-loose .spine-point:not(.spine-point-mini) .spine-words { background: transparent; }

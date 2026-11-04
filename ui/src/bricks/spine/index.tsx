@@ -25,6 +25,9 @@ import { useStayingHere } from "../../StayHere";
 import { C, CONVERSATION } from "./conversation";
 import { lensLayout, shiftLayout, type Lens } from "./lenses";
 import "./spine.css";
+import { useThreadReveal } from "./thread-reveal";
+import { looseThread } from "./loose-topics";
+import "./loose-topics.css";
 import { InlinePhone } from "./InlinePhone";
 import { phoneUsableArea } from "./measure";
 import { CanvasToolNode, CanvasToolControls, useCanvasToolNodes, type CanvasNode } from "./canvas-tools";
@@ -205,6 +208,7 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
     try { if (localStorage.getItem("e2a2o.spine.lens") === "topics") view = "topics"; } catch { /* this visit */ }
     return { view, x: 0, y: 0 };
   });
+  const loose = !!map.looseTopics && !conversationEnabled;
   const rotationOn = !!map.rotateCanvas;
   const [localAngle, setLocalAngle] = useState(0);
   const angleRef = useRef(0);
@@ -416,9 +420,10 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
   const pauses = useMemo(() => (map.pauses??[]).filter(p=>p.speaker===map.me&&!p.resolved),[map.pauses,map.me]);
   const pauseCounts = useMemo(()=>{const counts=new Map<string,number>();for(const pause of pauses)counts.set(pause.thought_id,(counts.get(pause.thought_id)??0)+1);return counts;},[pauses]);
   const layoutInput = useMemo(() => ({ threads: conversation ? map.threads : threads, thoughts: map.thoughts, notes: map.notes, rooms: map.rooms, positions, shelf: shelf.items, open: open?.id ?? null,
-    readingOrder, me: map.me, speakers: map.speakers, active: staying ?? map.active, slots, paused: pauseCounts, landing, margins: compare ? [] : notes.margins, opened, narrow, topics: topicNames, staying, originals, comparePhone: compare, textScale }),
-  [readingOrder, compare, textScale, pauseCounts, conversation, map.threads, threads, map.thoughts, map.notes, map.rooms, positions, shelf.items, open?.id, map.me, map.speakers, map.active, slotKey, landing, notes.margins, opened, narrow, topicNames, staying, originals]);
+    readingOrder, looseTopics: loose, me: map.me, speakers: map.speakers, active: staying ?? map.active, slots, paused: pauseCounts, landing, margins: compare ? [] : notes.margins, opened, narrow, topics: topicNames, staying, originals, comparePhone: compare, textScale }),
+  [loose, readingOrder, compare, textScale, pauseCounts, conversation, map.threads, threads, map.thoughts, map.notes, map.rooms, positions, shelf.items, open?.id, map.me, map.speakers, map.active, slotKey, landing, notes.margins, opened, narrow, topicNames, staying, originals]);
   const layout = useMemo(() => conversation && !compare ? shiftLayout(lensLayout(layoutInput, lens.view), lens) : place(layoutInput), [conversation, layoutInput, lens]);
+  const threadReveal = useThreadReveal(layout, loose);
   const captureNodes = useCaptureNodes(layout, map);
   // A move the map now shows, or one that never came (refused, or the core away), stops being held.
   useEffect(() => {
@@ -484,7 +489,7 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
 
   // The camera.
   const pane = useCallback(() => frame.current?.querySelector<HTMLElement>(".spine-flow") ?? null, []);
-  const readingZoom = new URLSearchParams(location.search).has("rehearse") ? Math.min(2, Math.max(1, window.innerWidth / 1920)) : 1;
+  const readingZoom = loose ? Math.max(1, Math.min(3, window.innerWidth / 1280)) : new URLSearchParams(location.search).has("rehearse") ? Math.min(2, Math.max(1, window.innerWidth / 1920)) : 1;
   const camera = useCamera(flow, area, reduced || compare, pane, (key) => layout.byKey.get(key)?.box, angle, !inline, true, readingZoom);
   const savedCamera = useRef<ReturnType<typeof flow.getViewport> | null>(null);
   const wasInline = useRef(false);
@@ -1036,7 +1041,7 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
       </div>;
   return <div className="spine">
     <div ref={anchor} className="spine-anchor" style={{ height: box?.tall ?? 0 }} />
-    <div ref={frame} tabIndex={-1} data-rotation-angle={angle} data-lens={conversation ? lens.view : undefined} className={cls("spine-frame", rotationOn && "spine-rotating", ready_ && "spine-ready", !semantic && shownStop === "pictures" && "spine-stop-pictures", narrow && "spine-narrow", compare && "spine-phone-compare")} data-phone-bounds={compare ? JSON.stringify(phoneArea) : undefined} data-phone-reading-mode={compare ? inline ? "inline" : "spatial" : undefined} style={{ "--phone-text-scale": textScale, top: top ?? 0, left: box?.left ?? 0, right: box?.right ?? 0 } as React.CSSProperties}>
+    <div ref={frame} tabIndex={-1} {...threadReveal.handlers} data-rotation-angle={angle} data-lens={conversation ? lens.view : undefined} className={cls("spine-frame", loose && "spine-loose", rotationOn && "spine-rotating", ready_ && "spine-ready", !semantic && shownStop === "pictures" && "spine-stop-pictures", narrow && "spine-narrow", compare && "spine-phone-compare")} data-phone-bounds={compare ? JSON.stringify(phoneArea) : undefined} data-phone-reading-mode={compare ? inline ? "inline" : "spatial" : undefined} style={{ "--phone-text-scale": textScale, top: top ?? 0, left: box?.left ?? 0, right: box?.right ?? 0 } as React.CSSProperties}>
       {compare && <div ref={phoneControls} className="phone-controls" style={{ "--phone-text-scale": textScale } as React.CSSProperties}>
         <div role="group" aria-label="Compare phone reading">
           <button type="button" aria-pressed={!inline} onClick={() => setReadingMode("spatial")}>Spatial</button>
@@ -1096,7 +1101,7 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
         }}
         onMoveStart={(event) => { if (event) { stopFollowing(); if (!picking?.typing) unpick(); } }}
         onPaneClick={() => { setPicked(null); if (!picking?.typing) unpick(); }}
-        minZoom={minZoom} maxZoom={2} nodeDragThreshold={DRAG}
+        minZoom={minZoom} maxZoom={loose ? 3 : 2} nodeDragThreshold={DRAG}
         panOnScroll zoomOnPinch zoomOnDoubleClick={false} selectionOnDrag={false} elementsSelectable={false}
         nodesConnectable={false} nodesFocusable={false} edgesFocusable={false} proOptions={{ hideAttribution: true }}
         aria-label={conversation ? `Your thoughts by ${lens.view}. Drag the canvas to look around.` : "Your topics on the canvas: drag the canvas to look around, pinch or Ctrl and scroll to zoom; 1, 2 and 3 for words, titles and pictures"}>
@@ -1123,12 +1128,12 @@ function Canvas({ map, actions, on, destination, conversation: conversationEnabl
         <EdgeLabelRenderer>
           <svg className="spine-links" aria-hidden="true">
             <g transform={`rotate(${angle})`}>{layout.links.map((link) => {
-              const d = pathOf(link, linkEnd(link));
+              const d = loose && (link.kind === "spine" || link.kind === "slot") ? looseThread(link, layout, linkEnd(link)) : pathOf(link, linkEnd(link));
               const drawn = fresh.has(link.key) && link.kind !== "pulled" && link.kind !== "slot";
               const dim = pointing ? !!link.topic && layout.byKey.get(link.to.key)?.thread !== pointing.thread : !!focusTopic && link.topic !== focusTopic;
               const start = link.kind === "branch" || link.kind === "note" ? linkEnd(link)(link.from) : null;
               return d && <g key={link.key} className={cls(dim && "spine-link-dim")}>
-                <path d={d} className={cls("spine-link", LINK_CLASS[link.kind], drawn && "spine-draw")}
+                <path d={d} className={cls("spine-link", LINK_CLASS[link.kind], threadReveal.visible(link) && "spine-loose-reveal", drawn && "spine-draw")}
                   pathLength={drawn ? 1 : undefined} style={{ stroke: link.room && link.kind !== "note" ? `var(--room-${link.room})` : undefined }} />
                 {start && <circle className={cls("spine-link-end", link.kind === "note" && "spine-link-end-note")} cx={start.x} cy={start.y} r={2.2}
                   style={{ fill: link.room && link.kind !== "note" ? `var(--room-${link.room})` : undefined }} />}

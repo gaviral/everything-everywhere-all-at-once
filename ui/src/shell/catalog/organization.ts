@@ -8,7 +8,7 @@ export const TASKS: ReadonlyArray<{ name: string; ids: readonly string[] }> = [
   { name: "Plan next steps", ids: ["countdown", "next-steps", "helpers", "work-spine"] },
   { name: "Make and inspect apps", ids: [] },
   { name: "Take work out", ids: ["export", "email"] },
-  { name: "Set up workspace", ids: ["canvas-tools", "rotate-canvas", "shapes", "view-instances", "keys", "level", "brick-chip", "usage", "conversation-spine"] },
+  { name: "Set up workspace", ids: ["loose-topics", "canvas-tools", "rotate-canvas", "shapes", "view-instances", "keys", "level", "brick-chip", "usage", "conversation-spine"] },
 ];
 export const OTHER = "Other features";
 export function taskOf(row: CatalogRow): string {

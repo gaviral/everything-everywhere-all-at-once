@@ -17,6 +17,7 @@ import { anchorRange, type AnchorContext } from "../contract";
 //    topic is a group of columns under a header with its name, in the map's order, those not sorted yet last; a group
 //    grows a column every `perColumn` topics. Within a group, topics stand as the columns always did.
 import type { Note, Position, Speaker, Thought, Thread } from "../contract";
+import { thoughtOffset } from "./loose-topics";
 import { wrap, wrapEnd, type FontKey } from "./measure";
 import { trimFillers } from "../live-outline/outline";
 
@@ -292,6 +293,7 @@ export interface MarginInput {
 export interface LayoutInput {
   /** New spines fill each row left to right, then start the next row. */
   readingOrder?: boolean;
+  looseTopics?: boolean;
   threads: readonly Thread[];
   thoughts: readonly Thought[];
   notes: Readonly<Record<string, Note>>;
@@ -698,7 +700,8 @@ export function layout(input: LayoutInput): Layout {
    *  each of your thoughts on its way, if it's the thread you're on. */
   function points(s: Scene, t: Thread, x: number, y: number, look: Look, up: string, depth: number, anchors: Map<string, Anchor>, fit: boolean) {
     const keys: string[] = [];
-    const gap = look.variant === "spine" ? G.pointGap : 8;
+    const loose = input.looseTopics && look.variant === "spine";
+    const gap = look.variant === "spine" ? G.pointGap + (loose ? 8 : 0) : 8;
     for (const idea of ideasIn(t.id)) {
       if (!deciding && (pins.has(idea.key) || shelved.has(idea.key))) {
         const at = { x, y, w: look.w, h: G.notch };
@@ -712,7 +715,7 @@ export function layout(input: LayoutInput): Layout {
         continue;
       }
       const shape = shapeOf(idea, look);
-      const at = { x, y, w: look.w, h: shape.h };
+      const at = { x: x + (loose ? thoughtOffset(idea.key) : 0), y, w: look.w, h: shape.h };
       const box = fit ? clear(s, at) : at;
       const item = add(s, pointItem(idea, t.id, box, look, up, depth));
       const dot = look.line / 2;

@@ -214,6 +214,7 @@ export interface MapSnapshot {
   /** Whether the host conversation controls are enabled. */
   readonly partnerOn?: boolean;
   readonly rotateCanvas?: boolean;
+  readonly looseTopics?: boolean;
   readonly reviewTextEdits?: boolean;
   /** Allowances from USAGE_FILE and the core's rolling-hour model budget; null with no readable file or connection. */
   readonly usage: UsageSnapshot | null;
