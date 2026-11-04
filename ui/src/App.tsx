@@ -11,6 +11,7 @@ import { memo, useContext, useDeferredValue, useEffect, useLayoutEffect, useMemo
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
 import { capitalized, firstLetter, LOOKING, useCore, type Action, type ItemStatus, jumpTracker, landingToFollow, pendingLabel, statusLine, aboutKey, type Landing, type Placing, type Suggestion, type Thread, type Thought, type ViewAsk } from "./core";
 import { download, exportedNotice, mapMarkdown } from "./export-md";
+import { saveFile } from "./save-file";
 import { ImportChats } from "./Import";
 import { StayHere, StayProvider } from "./StayHere";
 import { Away, useAway } from "./Away";
@@ -1125,6 +1126,7 @@ export default function App() {
   // (core annotate.rs), openCatalog is Apps' Catalog button, at a brick's row, and hint is the guide's arrow or corner
   // caption, here only (guide-core.ts `showHint`).
   const brickHost = useBrickHost(world, core.snapshotRevision, me, core.connected, rooms, core.partial, {
+    saveTextFile: (name, text, mime) => { saveFile(text, mime, name); return true; },
     addThought: core.sendText,
     resume: (id,keyboard) => finishPause(id,keyboard),
     openThread: (id) => { const thread = threadById.get(resolveMerged(world, id)); if (thread) goBack(thread); },

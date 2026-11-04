@@ -1,0 +1,11 @@
+.topic-brief { min-width: 0; max-width: 100%; padding: 8px 12px; border: 1px solid var(--line); border-radius: 12px; color: var(--ink); background: var(--card); overflow-wrap: anywhere; }
+.topic-brief button { min-height: 36px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit; cursor: pointer; white-space: normal; }
+.topic-brief :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.topic-brief-trigger { max-width: 100%; }
+.topic-brief-form { display: grid; gap: 8px; max-height: 48dvh; overflow: auto; padding: 4px; margin-top: 8px; }
+.topic-brief-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.topic-brief-scope { display: flex; align-items: center; gap: 8px; }
+.topic-brief-label { font-size: .9em; color: var(--muted); }
+.topic-brief-preview { box-sizing: border-box; width: 100%; min-width: 0; height: 19dvh; min-height: 80px; padding: 8px; resize: vertical; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); font: .85em/1.5 monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.topic-brief-status { margin: 0; color: var(--muted); font-size: .9em; }
+@media (max-width: 560px) { .topic-brief-form { max-height: 42dvh; } .topic-brief-preview { height: 12dvh; } }

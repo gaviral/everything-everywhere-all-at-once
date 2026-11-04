@@ -136,3 +136,13 @@ live words, captions, notices and Usage. Usage still appears only when the core 
 Other feature switches are covered by the preset; their saved choices are left untouched.
 Say or type **all features** to leave Talk and restore those choices. Talk survives reload;
 leaving also removes `preset=talk` from the address so it stays off on reload.
+
+## Topic brief
+
+**Topic brief** starts off. Switch it on in Features, then choose **Preview brief** in the bottom bar. It reads only the active topic in the current map. **Include tangents** also includes descendant tangents. Close or Escape returns focus to Preview brief and preserves the scope choice, your map position and the input draft.
+
+The read-only Markdown includes source IDs, speaker and time, explicitly recorded decisions, pending AI proposals, and the latest ten placed thoughts in chronological order. Different original words are quoted. AI speakers are labeled. Recorded evidence does not guarantee truth, agreement or completion. A changed source refreshes the preview with **Updated from your map**.
+
+**Download** is a separate click. It hands `topic-brief.md` (`text/markdown`) to the browser; that does not confirm a file was written. No model, connector or map change is involved. Local source IDs replace navigable references; external addresses and access parameters are omitted. At 24 KiB UTF-8, only whole records fit, and coverage reports omissions for every section, including thoughts outside the latest ten. Full-map Export keeps its existing behavior.
+
+The shared `actions.saveTextFile(name, text, mime)` action accepts a plain filename of at most 80 characters, `text/plain` or `text/markdown`, and at most 64 KiB UTF-8. The host validates before using the existing file-saving helper. The playground uses the same path. `node scripts/f7-brief-check.mjs` checks the real Features switch and preview with synthetic data.

@@ -54,6 +54,12 @@ export function useBrickHost(world: World, revision: number, me: string, connect
   const actionsFor = useMemo(() => (info: BrickInfo): BrickActions => {
     let actions = made.current.get(info.id);
     if (!actions) made.current.set(info.id, actions = {
+      saveTextFile: (name, text, mime) => {
+        if (typeof name !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._ -]{0,79}$/.test(name) || name.includes("..")
+          || typeof text !== "string" || new TextEncoder().encode(text).length > 64 * 1024
+          || (mime !== "text/plain" && mime !== "text/markdown")) return false;
+        try { return latest.current.saveTextFile(name, text, mime); } catch { return false; }
+      },
       readThought: (id) => read.current(id),
       resume: (id, keyboard) => latest.current.resume?.(id, keyboard) ?? false,
       addThought: (text) => {
