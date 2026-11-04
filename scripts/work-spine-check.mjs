@@ -38,7 +38,7 @@ const story = (now, demo = true) => {
     m("demo-pottery", "running", 58_000, pottery), m("demo-pottery", "done", 51_000, { ...pottery, result: "Saturdays at 10 AM · $45 a person · 2 seats left" }),
     m("demo-card", "running", 47_000, card), m("demo-card", "waiting", 40_000, { ...card, result: "Mention the pottery class in Mom's card, or keep it a surprise?" }),
     m("demo-birthday", "waiting", 39_000, { ...birthday, result: "Class found · card drafted · waiting on your answer" }),
-    m("demo-rent", "running", 33_000, { title: "Check when rent is due" }), m("demo-rent", "done", 26_000, { title: "Check when rent is due", result: "Due on the 1st · reminder set for Friday" }),
+    m("demo-rent", "running", 33_000, { title: "Check when rent is due" }), m("demo-rent", "done", 26_000, { title: "Check when rent is due", result: "Due Nov 1 · already late · transfer today (Nov 3)" }),
     m("demo-booking", "running", 17_000, { title: "Book two pottery seats" }),
     m("demo-booking", "failed", 12_000, { title: "Book two pottery seats", result: "The booking site needs your sign-in, so it's left for you" }),
     m("demo-study", "running", 4_000, { title: "Make this week's study plan" }),
@@ -308,6 +308,8 @@ try {
     const wheel = await evaluate(rect(`${inside} .work-spine-scroll`));
     await page("Input.dispatchMouseEvent", { type: "mouseWheel", x: wheel.left + wheel.width / 2, y: wheel.top + wheel.height / 2, deltaX: 0, deltaY: -20000 });
     await check('!!document.querySelector(".work-spine-latest")', "scrolled up by hand, a Latest button shows");
+    assert.equal(await evaluate(`(() => { const list = document.querySelector(${JSON.stringify(`${inside} .work-spine-scroll`)}).getBoundingClientRect();
+      const latest = document.querySelector(".work-spine-latest").getBoundingClientRect(); return latest.top >= list.bottom; })()`), true, `${where}: Latest has its own row below the jobs`);
     core.send(job("cap:new", "running", { at_ms: Date.now() }));
     await sleep(300);
     assert.equal(await evaluate(`document.querySelector(${JSON.stringify(`${inside} .work-spine-scroll`)}).scrollTop`), 0, `${where}: a new job doesn't pull you off what you're reading`);
@@ -318,6 +320,7 @@ try {
     // ── A fresh snapshot (another map, a restarted core) clears them. ──
     core.send({ type: "snapshot", world });
     await check('!document.querySelector("[data-job-id]") && !!document.querySelector(".work-spine-empty")', "a new snapshot clears the jobs");
+    assert.match(await evaluate('document.querySelector(".work-spine-empty").textContent'), /node scripts\/demo-jobs\.mjs.*--port PORT.*No AI key needed/, `${where}: the empty list explains how to try it`);
     assert.equal(await evaluate("document.querySelector('.work-spine-counts, .work-spine-bar-text')?.textContent.includes('No jobs yet')"), true, `${where}: and says so`);
 
     // ── Switched off: gone, and the Canvas has its room back; jobs that came meanwhile are there when it's back on. ──
