@@ -35,7 +35,7 @@ const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css
 const requests = [];
 const server = createServer((req, res) => {
   requests.push({ method: req.method, url: req.url });
-  const path = resolve(dist, '.' + new URL(req.url, 'http://check').pathname);
+  const path = resolve(dist, '.' + new URL(req.url, 'http://127.0.0.1').pathname);
   if (!path.startsWith(dist + '/') || !existsSync(path)) { res.writeHead(404).end(); return; }
   res.writeHead(200, { 'Content-Type': mime[extname(path)] ?? 'application/octet-stream' });
   res.end(readFileSync(path));
