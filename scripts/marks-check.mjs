@@ -25,7 +25,7 @@ try {
   } } } });
   globalThis.window ??= globalThis;
   const capture = [];
-  globalThis.AudioWorkletNode = class { port = { postMessage: (state) => capture.push(state) }; connect(next) { return next; } disconnect() {} };
+  globalThis.AudioWorkletNode = class { port = { postMessage: (state) => capture.push(state), close() {} }; connect(next) { return next; } disconnect() {} };
   globalThis.AudioContext = class { sampleRate = 24000; state = "running"; async resume() {} audioWorklet = { addModule: async () => {} }; destination = {};
     createMediaStreamSource() { return audioNode(); } createGain() { return { gain: { value: 1 }, ...audioNode() }; } close() {} };
   let lost = 0;

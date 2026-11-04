@@ -98,6 +98,7 @@ Core, one process (core/src: axum, tokio)
   world.rs       World, Change, the journal
   protocol.rs    ServerMsg, ClientMsg
   conversation.rs opt-in question-led Meta responder; four recent same-speaker thoughts and four completed exchanges; bounded spoken captions, thinking state, cancel/timeout; window guard aborts work on last disable/disconnect
+  replies.rs       deterministic, bounded anchors and command speech: no model calls, no saved replies
   guide.rs       validates and relays point, caption, hold, tour, job and answer; transient guide messages, latest jobs retained in memory for replay, answers addressed to a speaker's windows; never journaled, no model (below)
   asr.rs         relay to Muse Voice Transcribe
   placer.rs      places one thought at a time, telling the map as it decides (`Route`: the topics weighed, then where it went and why)
