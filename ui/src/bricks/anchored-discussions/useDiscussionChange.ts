@@ -14,15 +14,15 @@ export function useDiscussionChange(host: ContextType<typeof DiscussionContext>,
   }, [host?.enabled, item.id]);
   const change = async () => {
     if (!host?.enabled || !connected || pending.current) return;
-    const token = generation.current;
+    const requestGeneration = generation.current;
     pending.current = true; setBusy(true); setMessage('Saving…');
     try {
       const result = await host.set(item.id, item.status?.status === 'resolved' ? 'open' : 'resolved', item.status?.revision ?? 0);
-      if (token === generation.current) setMessage(result.message);
+      if (requestGeneration === generation.current) setMessage(result.message);
     } catch {
-      if (token === generation.current) setMessage('Save unconfirmed. Review the current state before trying again.');
+      if (requestGeneration === generation.current) setMessage('Save unconfirmed. Review the current state before trying again.');
     } finally {
-      if (token === generation.current) { pending.current = false; setBusy(false); }
+      if (requestGeneration === generation.current) { pending.current = false; setBusy(false); }
     }
   };
   return { busy, message, change };
