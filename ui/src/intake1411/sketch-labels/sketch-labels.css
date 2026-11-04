@@ -1,0 +1,46 @@
+.sketch-labels-preview { margin: 0 auto; max-width: 1100px; padding: 20px; background: #f3f4ef; color: #172e2b; font: 16px/1.5 system-ui, sans-serif; }
+.sketch-labels { color: #172e2b; background: #fff; padding: 20px; border: 1px solid #c6d3ce; border-radius: 16px; margin-bottom: 16px; font: 1rem/1.5 system-ui, sans-serif; overflow-wrap: anywhere; }
+.sketch-labels * { box-sizing: border-box; }
+.sketch-labels header { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; align-items: center; }
+.sketch-labels h2, .sketch-labels h3 { margin: 0 0 8px; line-height: 1.3; }
+.sketch-labels h2 { font-size: 1.6em; }
+.sketch-labels p { margin: 8px 0 12px; }
+.sketch-labels button, .sketch-labels input, .sketch-labels summary { font: inherit; }
+.sketch-labels button, .sketch-labels summary { min-height: 44px; border-radius: 8px; padding: 8px 12px; cursor: pointer; }
+.sketch-labels button { background: #f3f7f5; color: #173e35; border: 1px solid #678f80; }
+.sketch-labels button[aria-pressed="true"], .sketch-labels button[type="submit"] { background: #205c4e; color: white; }
+.sketch-labels button:disabled { opacity: .55; cursor: default; }
+.sketch-labels :focus-visible { outline: 3px solid #315ec4; outline-offset: 3px; }
+.sketch-labels label { display: grid; gap: 4px; min-width: 0; }
+.sketch-labels input:not([type="checkbox"]) { width: 100%; min-width: 0; min-height: 44px; color: #172e2b; background: white; border: 1px solid #78988b; border-radius: 7px; padding: 8px; }
+.sketch-labels input[type="checkbox"] { width: 20px; height: 20px; accent-color: #205c4e; }
+.sketch-labels .sketch-labels-switch, .sketch-labels .sketch-labels-mark-choice { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 4px; cursor: pointer; }
+.sketch-labels-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.sketch-labels fieldset { border: 1px solid #c6d3ce; border-radius: 8px; margin: 12px 0; min-width: 0; }
+.sketch-labels-region-fields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; padding: 8px 0; }
+.sketch-labels-region-fields button { grid-column: 1 / -1; justify-self: start; }
+.sketch-labels-target { padding: 8px 12px; background: #e6f2ec; border-radius: 8px; }
+.sketch-labels-surface { display: block; width: 100%; height: auto; margin: 12px 0; touch-action: none; user-select: none; border: 1px solid #8faa9e; border-radius: 12px; }
+.sketch-labels-paper { fill: #f9faf6; }
+.sketch-labels-original-mark { fill: none; stroke: #203c36; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
+.sketch-labels-selected-mark { fill: none; stroke: #83c6b0; stroke-width: 14; stroke-linecap: round; stroke-linejoin: round; }
+.sketch-labels-mark-name, .sketch-labels-context { font: 16px system-ui, sans-serif; fill: #3c584f; }
+.sketch-labels-highlight { fill: #f7d655; fill-opacity: .45; stroke: #826318; stroke-dasharray: 5 3; }
+.sketch-labels-selected-region { fill: #72b59c; fill-opacity: .18; stroke: #205c4e; stroke-width: 2; stroke-dasharray: 6 4; }
+.sketch-labels-marker { fill: #205c4e; }
+.sketch-labels-marker-number { fill: white; font: bold 13px system-ui, sans-serif; }
+.sketch-labels-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; margin-top: 20px; }
+.sketch-labels-editor { display: grid; gap: 12px; align-content: start; }
+.sketch-labels-time-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.sketch-labels-list { margin: 0; padding-left: 28px; }
+.sketch-labels-list li { padding: 12px; margin: 0 0 12px; border: 1px solid #c6d3ce; border-radius: 10px; }
+.sketch-labels dl { margin: 8px 0; }
+.sketch-labels dt { font-weight: 600; }
+.sketch-labels dd { margin: 0 0 8px; }
+.sketch-labels [role="alert"] { color: #8d291c; background: #fff0eb; padding: 12px; border: 1px solid #d27b64; border-radius: 8px; }
+@media (max-width: 680px) {
+  .sketch-labels-preview { padding: 8px; }
+  .sketch-labels { padding: 12px; }
+  .sketch-labels-columns { grid-template-columns: minmax(0, 1fr); }
+  .sketch-labels-time-fields, .sketch-labels-region-fields { grid-template-columns: minmax(0, 1fr); }
+}
