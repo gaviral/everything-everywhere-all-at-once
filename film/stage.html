@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>E2A2O film stage</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #08090c; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  #stage { position: absolute; width: 1920px; height: 1080px; transform-origin: 0 0; overflow: hidden; color: white; }
+  #scene { position: absolute; inset: 0; perspective: 2400px; }
+  #camera { position: absolute; inset: 0; transform-style: preserve-3d; }
+  .type { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 152px; font-weight: 650; letter-spacing: -.065em; line-height: 1.05; text-align: center; padding: 100px; }
+  .plane { position: absolute; left: 50%; top: 50%; border-radius: 18px; overflow: hidden; background: #fff; box-shadow: 0 55px 90px -30px #0007, 0 12px 28px #0002; border: 1px solid #ffffff80; }
+  video { display: block; width: 100%; height: auto; }
+  .lockup { display: flex; align-items: center; gap: 42px; }
+  .mark { width: 144px; height: 144px; background: #0866ff; border-radius: 40px; position: relative; box-shadow: 0 16px 45px #0866ff30; }
+  .mark::before, .mark::after { content: ""; position: absolute; width: 62px; height: 22px; background: white; border-radius: 15px; left: 41px; transform: rotate(-28deg); }
+  .mark::before { top: 47px; } .mark::after { top: 78px; }
+</style>
+<main id="stage" aria-label="Film frame"><div id="scene"><div id="camera"></div></div></main>
+<script type="module">
+  const stage = document.querySelector('#stage');
+  const camera = document.querySelector('#camera');
+  let active = null;
+  let videos = [];
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const ease = t => t * t * (3 - 2 * t);
+  const array = value => Array.isArray(value) ? value : [value];
+  const background = value => value === 'muse' ? 'linear-gradient(125deg, #0866ff, #7659ed 60%, #ec91c5)' : value;
+  const bounded = (promise, label) => Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error(label)), 15000))]);
+
+  function textPlate(text, className = 'type') {
+    const node = document.createElement('div');
+    node.className = className;
+    node.textContent = text;
+    camera.append(node);
+    return node;
+  }
+  async function createPlane(spec, count, i) {
+    const node = document.createElement('div');
+    node.className = 'plane';
+    const x = spec.position?.[0] ?? (count === 1 ? 0 : (i - (count - 1) / 2) * 530);
+    const y = spec.position?.[1] ?? (count === 1 ? 0 : (i % 2 ? -65 : 65));
+    const [rx, ry, rz] = spec.tilt ?? [8, -12, -3];
+    node.style.width = `${spec.width ?? (count === 1 ? 1380 : 900)}px`;
+    node.style.transform = `translate(-50%, -50%) translate3d(${x}px, ${y}px, ${i * 25}px) rotateX(${rx}deg) rotateY(${ry}deg) rotateZ(${rz}deg)`;
+    const video = document.createElement('video');
+    video.muted = true; video.playsInline = true; video.preload = 'auto';
+    node.append(video); camera.append(node);
+    const loaded = new Promise((resolve, reject) => {
+      video.addEventListener('loadeddata', resolve, { once: true });
+      video.addEventListener('error', () => reject(new Error(`Cannot decode clip ${i + 1}`)), { once: true });
+    });
+    video.src = spec.source;
+    await bounded(loaded, 'Clip load timed out');
+    videos.push({ video, spec });
+  }
+  async function mount(shot) {
+    videos.forEach(({ video }) => { video.pause(); video.removeAttribute('src'); video.load(); });
+    videos = []; camera.replaceChildren();
+    const isText = ['title', 'card', 'list'].includes(shot.kind);
+    stage.style.background = background(shot.background ?? (shot.kind === 'card' || shot.kind === 'list' ? shot.colour ?? '#0866FF' : shot.kind === 'end' ? '#ffffff' : '#08090c'));
+    stage.style.color = shot.kind === 'end' ? '#08090c' : '#ffffff';
+    if (isText) textPlate('');
+    if (shot.kind === 'end') {
+      const plate = textPlate('');
+      const lockup = document.createElement('div'); lockup.className = 'lockup';
+      const mark = document.createElement('div'); mark.className = 'mark';
+      const name = document.createElement('span'); name.textContent = shot.word ?? 'E2A2O';
+      lockup.append(mark, name); plate.append(lockup);
+    }
+    const clips = shot.kind === 'plane' ? [shot] : shot.kind === 'planes' ? shot.clips : [];
+    // Sequential loading keeps plane order stable even when decode times differ.
+    for (let i = 0; i < clips.length; i++) await createPlane(clips[i], clips.length, i);
+    active = shot.index;
+  }
+  async function seek(video, target) {
+    if (target >= video.duration) throw new Error(`Clip too short: needs ${target.toFixed(3)}s, has ${video.duration.toFixed(3)}s`);
+    if (Math.abs(video.currentTime - target) < 1e-7 && video.readyState >= 2) return;
+    await bounded(new Promise((resolve, reject) => {
+      const failed = () => reject(new Error('Clip seek failed'));
+      video.addEventListener('error', failed, { once: true });
+      video.addEventListener('seeked', () => { video.removeEventListener('error', failed); resolve(); }, { once: true });
+      video.currentTime = target;
+    }), 'Clip seek timed out');
+  }
+  window.filmFrame = async (shot, local, scale = 1) => {
+    stage.style.transform = `scale(${scale})`;
+    if (active !== shot.index) await mount(shot);
+    const progress = Math.min(1, local / shot.duration);
+    const t = ease(progress);
+    const from = shot.drift?.from ?? [0, 0], to = shot.drift?.to ?? [0, 0];
+    const zoom = shot.zoom ?? [1, 1];
+    camera.style.transform = `translate(${lerp(from[0], to[0], t)}px, ${lerp(from[1], to[1], t)}px) scale(${lerp(zoom[0], zoom[1], t)})`;
+    if (shot.kind === 'title') {
+      const values = array(shot.words);
+      camera.firstChild.textContent = values[Math.min(values.length - 1, Math.floor(progress * values.length))];
+    }
+    if (shot.kind === 'card') camera.firstChild.textContent = shot.word;
+    if (shot.kind === 'list') camera.firstChild.textContent = shot.names[Math.min(shot.names.length - 1, Math.floor((local + 1e-8) / shot.seconds))];
+    await Promise.all(videos.map(({ video, spec }) => seek(video, (spec.start ?? 0) + local)));
+    await document.fonts.ready;
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    return { kind: shot.kind, text: camera.textContent, times: videos.map(({ video }) => video.currentTime) };
+  };
+</script>
+</html>
