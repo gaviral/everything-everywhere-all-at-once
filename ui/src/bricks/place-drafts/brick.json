@@ -1,0 +1,8 @@
+{
+  "id": "place-drafts",
+  "name": "Keep my place",
+  "does": "Return to your reading place, folded sources and unsent drafts, even after refresh.",
+  "kind": "view",
+  "defaultOn": false,
+  "demoSafe": true
+}
