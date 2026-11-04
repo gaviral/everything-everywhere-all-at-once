@@ -1,0 +1,88 @@
+.contextual-folds {
+  max-width: 1380px; margin: 0 auto; padding: 24px clamp(12px, 3vw, 42px) 40px;
+  color: var(--ink); font-size: 18px; line-height: 1.5;
+}
+.contextual-folds button, .contextual-folds summary { cursor: pointer; }
+.contextual-folds button { color: inherit; font: inherit; background: transparent; border: 1px solid var(--line); border-radius: 18px; padding: 9px 16px; min-height: 44px; }
+.contextual-folds button:disabled { opacity: .5; cursor: default; }
+.contextual-folds :is(button, summary, textarea, [tabindex]):focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+.contextual-folds-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 22px; }
+.contextual-folds-choices { display: flex; flex-wrap: wrap; gap: 5px; }
+.contextual-folds-choices button { border-color: transparent; }
+.contextual-folds-choices button[aria-pressed=true] { background: var(--ink); color: var(--bg); }
+.contextual-folds-controls .contextual-folds-back { margin-left: auto; }
+.contextual-folds-context { margin: 18px 0 24px; color: var(--muted); font-size: 15px; }
+.contextual-folds-document { display: grid; grid-template-columns: 165px minmax(0, 1fr); gap: clamp(16px, 3vw, 44px); }
+.contextual-folds-position { padding-top: 16px; min-width: 0; }
+.contextual-folds-label { margin: 0; color: var(--muted); font-size: 14px; letter-spacing: .08em; text-transform: uppercase; }
+.contextual-folds-place { font-size: 40px; font-variant-numeric: tabular-nums; margin: 2px 0; line-height: 1.15; }
+.contextual-folds-place span { font-size: 19px; color: var(--muted); }
+.contextual-folds-position-help { font-size: 14px; color: var(--muted); margin: 6px 0 22px; }
+.contextual-folds-position ol { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; max-height: 50svh; overflow: auto; }
+.contextual-folds-position button { display: flex; width: 100%; text-align: left; gap: 12px; border: 0; font-size: 15px; padding: 10px 8px; border-radius: 12px; }
+.contextual-folds-position button > span:first-child { flex: 0 0 2ch; white-space: nowrap; color: var(--muted); font-variant-numeric: tabular-nums; }
+.contextual-folds-position button[aria-current] { background: color-mix(in srgb, var(--accent) 12%, var(--bg)); box-shadow: inset 3px 0 var(--accent); }
+.contextual-folds-position .contextual-folds-branch-link { padding-left: 18px; }
+.contextual-folds-position button span { overflow-wrap: anywhere; }
+.contextual-folds-pages { box-sizing: border-box; min-width: 0; height: 70svh; min-height: 300px; overflow: auto; scrollbar-width: thin; scrollbar-gutter: stable; padding: 12px 18px 36px 5px; overscroll-behavior: contain; }
+.contextual-folds-section { margin: 0 0 42px; }
+.contextual-folds-section > summary { display: flex; align-items: baseline; gap: 14px; list-style: none; padding: 8px 5px; border-radius: 12px; }
+.contextual-folds-section > summary::-webkit-details-marker { display: none; }
+.contextual-folds-fold-mark { color: var(--accent); font-size: 24px; transition: transform .15s; }
+.contextual-folds-section:not([open]) > summary .contextual-folds-fold-mark { transform: rotate(-90deg); }
+.contextual-folds-topic-title { display: block; font-size: clamp(26px, 2.6vw, 36px); line-height: 1.2; letter-spacing: -.025em; font-weight: 580; }
+.contextual-folds-topic-context { display: block; color: var(--muted); font-size: 14px; margin-top: 9px; }
+.contextual-folds-section-body { padding: 10px 0 0 34px; }
+.contextual-folds-section-body > .contextual-folds-section { margin: 32px 0 0; padding-left: 16px; border-left: 2px solid color-mix(in srgb, var(--accent) 30%, transparent); }
+.contextual-folds-section-body > .contextual-folds-section .contextual-folds-topic-title { font-size: 25px; }
+.contextual-folds-passage { margin: 18px 0 36px; min-width: 0; }
+.contextual-folds-with-notes { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 28px; align-items: start; }
+.contextual-folds-words { min-width: 0; }
+.contextual-folds-prose { font-size: clamp(23px, 2vw, 29px); line-height: 1.65; letter-spacing: -.015em; margin: 8px 0 16px; max-width: 62ch; white-space: pre-wrap; overflow-wrap: anywhere; }
+.contextual-folds-metadata { color: var(--muted); font-size: 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; }
+.contextual-folds-peek { display: inline-flex; }
+.contextual-folds-peek summary { display: inline-flex; align-items: center; justify-content: center; min-height: 32px; min-width: 32px; font-size: 21px; list-style: none; }
+.contextual-folds-peek summary::-webkit-details-marker { display: none; }
+.contextual-folds-peek time { display: inline-block; padding: 0 8px; font-size: 14px; }
+.contextual-folds-source-actions { display: flex; flex-wrap: wrap; align-items: start; gap: 12px; font-size: 14px; color: var(--muted); }
+.contextual-folds-source-actions > button { border-color: transparent; padding: 5px 9px; min-height: 36px; }
+.contextual-folds-question { min-width: 0; flex: 1 1 240px; }
+.contextual-folds-question > summary { padding: 6px 0; min-height: 36px; }
+.contextual-folds-question[open] { padding: 16px; border-radius: 20px; background: var(--card); box-shadow: 0 3px 16px color-mix(in srgb, var(--ink) 5%, transparent); }
+.contextual-folds-question blockquote { border-left: 2px solid var(--accent); padding-left: 14px; margin: 16px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.contextual-folds-question label { display: block; margin-bottom: 8px; color: var(--ink); font-size: 16px; }
+.contextual-folds-question textarea { box-sizing: border-box; width: 100%; max-width: 100%; resize: vertical; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font: inherit; font-size: 18px; padding: 12px; border-radius: 12px; }
+.contextual-folds-question button { margin-top: 8px; color: var(--ink); font-size: 16px; }
+.contextual-folds-question-help { font-size: 13px; }
+.contextual-folds-notes { min-width: 0; margin-top: 18px; background: color-mix(in srgb, var(--accent) 7%, var(--card)); padding: 20px; border-radius: 6px 26px 26px 26px; }
+.contextual-folds-notes .contextual-folds-label span { margin-left: 8px; }
+.contextual-folds-note { margin-top: 15px; font-size: 16px; overflow-wrap: anywhere; }
+.contextual-folds-note summary { font-size: 14px; color: var(--muted); }
+.contextual-folds-note p { white-space: pre-wrap; }
+.contextual-folds-unclear { color: var(--amber); font-size: 16px; }
+.contextual-folds-end { text-align: center; color: var(--muted); font-size: 14px; margin: 40px 0 0; padding-bottom: 55svh; }
+.contextual-folds-empty { padding: 50px 20px; font-size: 26px; }
+@media (max-width: 1100px) {
+  .contextual-folds-with-notes { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .contextual-folds-notes { margin: 0 0 12px 20px; max-width: 55ch; }
+}
+@media (max-width: 650px) {
+  .contextual-folds { padding: 16px 10px 30px; }
+  .contextual-folds-controls { gap: 8px; font-size: 15px; }
+  .contextual-folds button { padding: 8px 12px; }
+  .contextual-folds-controls .contextual-folds-back { margin-left: 0; }
+  .contextual-folds-context { font-size: 13px; }
+  .contextual-folds-document { display: block; }
+  .contextual-folds-position { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; padding: 0 0 16px; }
+  .contextual-folds-place { font-size: 24px; }
+  .contextual-folds-position-help { margin: 0; }
+  .contextual-folds-position ol { width: 100%; flex-direction: row; gap: 5px; max-height: 140px; padding: 4px; }
+  .contextual-folds-position li { flex: 0 0 145px; }
+  .contextual-folds-position button { font-size: 13px; min-height: 60px; }
+  .contextual-folds-pages { padding-right: 8px; height: 65svh; }
+  .contextual-folds-section-body { padding-left: 8px; }
+  .contextual-folds-topic-title { font-size: 28px; }
+  .contextual-folds-prose { font-size: 23px; }
+  .contextual-folds-section-body > .contextual-folds-section { padding-left: 8px; }
+}
+@media (prefers-reduced-motion: reduce) { .contextual-folds-fold-mark { transition: none; } }
