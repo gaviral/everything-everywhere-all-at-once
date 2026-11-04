@@ -1,0 +1,17 @@
+.machine-demo { color: #20312e; background: #f8faf7; padding: clamp(16px, 4vw, 32px); border: 1px solid #bdcbc2; border-radius: 16px; max-width: 960px; margin: 16px auto; font: 1rem/1.55 system-ui, sans-serif; overflow-wrap: anywhere; }
+.machine-demo * { box-sizing: border-box; }
+.machine-demo h2 { font-size: 1.7em; line-height: 1.2; margin: 6px 0 16px; }
+.machine-demo h3 { margin-top: 0; }
+.machine-demo p { margin: 8px 0; }
+.machine-demo-eyebrow { font-weight: 700; color: #3c6056; }
+.machine-demo-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 12px; margin: 24px 0; }
+.machine-demo-choices button { color: inherit; background: white; border: 2px solid #9aac9f; border-radius: 10px; text-align: left; min-height: 64px; padding: 12px; cursor: pointer; font: inherit; }
+.machine-demo-choices button[aria-pressed=true] { background: #e0eee3; border-color: #285c4b; }
+.machine-demo-choices strong, .machine-demo-choices span { display: block; }
+.machine-demo button:focus-visible { outline: 3px solid #315cbb; outline-offset: 4px; }
+.machine-demo article { padding: 20px; background: white; border: 1px solid #bdcbc2; border-radius: 12px; }
+.machine-demo-requirements { padding-left: 22px; }
+.machine-demo-requirements li { margin: 20px 0; }
+.machine-demo small { display: block; color: #475f56; font-size: .85em; }
+.machine-demo-note, .machine-demo aside { color: #475f56; }
+.machine-demo aside { margin-top: 24px; }
