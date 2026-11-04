@@ -1,0 +1,26 @@
+[
+  {
+    "source_file": "src/hermit.rs",
+    "source_sha256": "ad03355bc4d79c180ab3210e1d3edd538eccaaea8d4f9a9b7eb8a0dc2d39b5df",
+    "line": 7,
+    "text": "// Copyright 2015 The Rust Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution and at\n// http://rust-lang.org/COPYRIGHT.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/unix.rs",
+    "source_sha256": "66c64603798cf7d8701de5be077b814b09a324b42ff460e9448686b4d8a330a7",
+    "line": 5,
+    "text": "// Copyright 2015 The Rust Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution and at\n// http://rust-lang.org/COPYRIGHT.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/wasi.rs",
+    "source_sha256": "c83052e5c45c31e2a4630c00a4d0b92f39205774a4d419b4aa5c06dc5992280c",
+    "line": 5,
+    "text": "// Copyright 2015 The Rust Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution and at\n// http://rust-lang.org/COPYRIGHT.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/windows.rs",
+    "source_sha256": "7cbcdb8e74582f357fa945bb1c44c4d19c1a10bec958da1223305bf68ec35baf",
+    "line": 5,
+    "text": "// Copyright 2014 The Rust Project Developers. See the COPYRIGHT\n// file at the top-level directory of this distribution and at\n// http://rust-lang.org/COPYRIGHT.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  }
+]

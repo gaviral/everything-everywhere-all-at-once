@@ -1,0 +1,14 @@
+[
+  {
+    "source_file": "dist/d3-interpolate.js",
+    "source_sha256": "88465b42ce9047fb18cdbe4a045599024deb8900011b474430a721771753cca7",
+    "line": 1,
+    "text": "// https://d3js.org/d3-interpolate/ v3.0.1 Copyright 2010-2021 Mike Bostock\n"
+  },
+  {
+    "source_file": "dist/d3-interpolate.min.js",
+    "source_sha256": "bfc321e4c3f3b3aadc88cfe15ccb5e443abfeadef8b75c65b41c33a4d78a98ae",
+    "line": 1,
+    "text": "// https://d3js.org/d3-interpolate/ v3.0.1 Copyright 2010-2021 Mike Bostock\n"
+  }
+]

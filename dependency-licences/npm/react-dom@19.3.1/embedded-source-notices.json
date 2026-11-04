@@ -1,0 +1,182 @@
+[
+  {
+    "source_file": "cjs/react-dom-client.development.js",
+    "source_sha256": "f6b7e0de965d24a560efa784ef8a63706dea79fa551bee15a37acd015d995106",
+    "line": 1,
+    "text": "/**\n * @license React\n * react-dom-client.development.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/react-dom-client.production.js",
+    "source_sha256": "a319b413b7a19ee34422d9a12a8e7afd003c07846716d278ba1a0898e8cb6251",
+    "line": 1,
+    "text": "/**\n * @license React\n * react-dom-client.production.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/react-dom-profiling.development.js",
+    "source_sha256": "8fa9b7e67869f8d32b6bb268f7c52669bc94541a6e25b4bd43569d5607534189",
+    "line": 1,
+    "text": "/**\n * @license React\n * react-dom-profiling.development.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/react-dom-profiling.profiling.js",
+    "source_sha256": "ec4bc3c26a057bd3b60552c5f42516820c6b5e2ffd191e027e30bf01c8ce8ac1",
+    "line": 1,
+    "text": "/**\n * @license React\n * react-dom-profiling.profiling.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/react-dom-server-legacy.browser.development.js",
+    "source_sha256": "bbe9499a7d5277c3526b372d1db249a299d43bc840373bdff86c6c92d4caf151",
+    "line": 1,
+    "text": "/**\n * @license React\n * react-dom-server-legacy.browser.development.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/react-dom-server-legacy.browser.development.js",
+    "source_sha256": "bbe9499a7d5277c3526b372d1db249a299d43bc840373bdff86c6c92d4caf151",
+    "line": 11,
+    "text": "/*\n\n\n JS Implementation of MurmurHash3 (r136) (as of May 20, 2011)\n\n Copyright (c) 2011 Gary Court\n Permission is hereby granted, free of charge, to any person obtaining a copy\n of this software and associated documentation files (the \"Software\"), to deal\n in the Software without restriction, including without limitation the rights\n to use, copy, modify, merge, publish, distribute, sublicense, and/or sell\n copies of the Software, and to permit persons to whom the Software is\n furnished to do so, subject to the following conditions:\n\n The above copyright notice and this permission notice shall be included in\n all copies or substantial portions of the Software.\n\n THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\n IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\n FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\n AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\n LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\n OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\n SOFTWARE.\n*/"
+  },
+  {
+    "source_file": "cjs/react-dom-server-legacy.browser.production.js",
+    "source_sha256": "a470866a7a27a7f4fa69ef04e9bfdea0514fc9defdcc48bda43516b9ae2dfadd",
+    "line": 1,
+    "text": "/**\n * @license React\n * react-dom-server-legacy.browser.production.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/react-dom-server-legacy.browser.production.js",
+    "source_sha256": "a470866a7a27a7f4fa69ef04e9bfdea0514fc9defdcc48bda43516b9ae2dfadd",
+    "line": 11,
+    "text": "/*\n\n\n JS Implementation of MurmurHash3 (r136) (as of May 20, 2011)\n\n Copyright (c) 2011 Gary Court\n Permission is hereby granted, free of charge, to any person obtaining a copy\n of this software and associated documentation files (the \"Software\"), to deal\n in the Software without restriction, including without limitation the rights\n to use, copy, modify, merge, publish, distribute, sublicense, and/or sell\n copies of the Software, and to permit persons to whom the Software is\n furnished to do so, subject to the following conditions:\n\n The above copyright notice and this permission notice shall be included in\n all copies or substantial portions of the Software.\n\n THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\n IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\n FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\n AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\n LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\n OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\n SOFTWARE.\n*/"
+  },
+  {
+    "source_file": "cjs/react-dom-server-legacy.node.development.js",
+    "source_sha256": "7ce5556e40703b842764fcbe8f875433f721340eab319683c5e8b77feb37ce48",
+    "line": 1,
+    "text": "/**\n * @license React\n * react-dom-server-legacy.node.development.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/react-dom-server-legacy.node.development.js",
+    "source_sha256": "7ce5556e40703b842764fcbe8f875433f721340eab319683c5e8b77feb37ce48",
+    "line": 11,
+    "text": "/*\n\n\n JS Implementation of MurmurHash3 (r136) (as of May 20, 2011)\n\n Copyright (c) 2011 Gary Court\n Permission is hereby granted, free of charge, to any person obtaining a copy\n of this software and associated documentation files (the \"Software\"), to deal\n in the Software without restriction, including without limitation the rights\n to use, copy, modify, merge, publish, distribute, sublicense, and/or sell\n copies of the Software, and to permit persons to whom the Software is\n furnished to do so, subject to the following conditions:\n\n The above copyright notice and this permission notice shall be included in\n all copies or substantial portions of the Software.\n\n THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\n IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\n FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\n AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\n LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\n OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\n SOFTWARE.\n*/"
+  },
+  {
+    "source_file": "cjs/react-dom-server-legacy.node.production.js",
+    "source_sha256": "39b101212252750f4e0b4878f2523ad8d4fe38ad1b53085c34e325ba6f66ec4b",
+    "line": 1,
+    "text": "/**\n * @license React\n * react-dom-server-legacy.node.production.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/react-dom-server-legacy.node.production.js",
+    "source_sha256": "39b101212252750f4e0b4878f2523ad8d4fe38ad1b53085c34e325ba6f66ec4b",
+    "line": 11,
+    "text": "/*\n\n\n JS Implementation of MurmurHash3 (r136) (as of May 20, 2011)\n\n Copyright (c) 2011 Gary Court\n Permission is hereby granted, free of charge, to any person obtaining a copy\n of this software and associated documentation files (the \"Software\"), to deal\n in the Software without restriction, including without limitation the rights\n to use, copy, modify, merge, publish, distribute, sublicense, and/or sell\n copies of the Software, and to permit persons to whom the Software is\n furnished to do so, subject to the following conditions:\n\n The above copyright notice and this permission notice shall be included in\n all copies or substantial portions of the Software.\n\n THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\n IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\n FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\n AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\n LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\n OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\n SOFTWARE.\n*/"
+  },
+  {
+    "source_file": "cjs/react-dom-server.browser.development.js",
+    "source_sha256": "241e05b49025e63a40c97d96ac0d35edcb7ab0dc901ba2fa0c7b70e30b46ba79",
+    "line": 1,
+    "text": "/**\n * @license React\n * react-dom-server.browser.development.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/react-dom-server.browser.development.js",
+    "source_sha256": "241e05b49025e63a40c97d96ac0d35edcb7ab0dc901ba2fa0c7b70e30b46ba79",
+    "line": 11,
+    "text": "/*\n\n\n JS Implementation of MurmurHash3 (r136) (as of May 20, 2011)\n\n Copyright (c) 2011 Gary Court\n Permission is hereby granted, free of charge, to any person obtaining a copy\n of this software and associated documentation files (the \"Software\"), to deal\n in the Software without restriction, including without limitation the rights\n to use, copy, modify, merge, publish, distribute, sublicense, and/or sell\n copies of the Software, and to permit persons to whom the Software is\n furnished to do so, subject to the following conditions:\n\n The above copyright notice and this permission notice shall be included in\n all copies or substantial portions of the Software.\n\n THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\n IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\n FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\n AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\n LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\n OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\n SOFTWARE.\n*/"
+  },
+  {
+    "source_file": "cjs/react-dom-server.browser.production.js",
+    "source_sha256": "a2d401254a198160cdea2164656da5caf35c514b9608906bd38b20e07a99312b",
+    "line": 1,
+    "text": "/**\n * @license React\n * react-dom-server.browser.production.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/react-dom-server.browser.production.js",
+    "source_sha256": "a2d401254a198160cdea2164656da5caf35c514b9608906bd38b20e07a99312b",
+    "line": 11,
+    "text": "/*\n\n\n JS Implementation of MurmurHash3 (r136) (as of May 20, 2011)\n\n Copyright (c) 2011 Gary Court\n Permission is hereby granted, free of charge, to any person obtaining a copy\n of this software and associated documentation files (the \"Software\"), to deal\n in the Software without restriction, including without limitation the rights\n to use, copy, modify, merge, publish, distribute, sublicense, and/or sell\n copies of the Software, and to permit persons to whom the Software is\n furnished to do so, subject to the following conditions:\n\n The above copyright notice and this permission notice shall be included in\n all copies or substantial portions of the Software.\n\n THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\n IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\n FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\n AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\n LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\n OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\n SOFTWARE.\n*/"
+  },
+  {
+    "source_file": "cjs/react-dom-server.bun.development.js",
+    "source_sha256": "ba54024c6ada0f0270406bdb2652f9b0a4eebf7042bdb042bce6c90d4116e613",
+    "line": 1,
+    "text": "/**\n* @license React\n * react-dom-server.bun.development.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/react-dom-server.bun.production.js",
+    "source_sha256": "d1b54ce8599ab8b166d746ec2048fc9dc860afe5b559e7fc9aa08288fdb4b9ab",
+    "line": 1,
+    "text": "/**\n * @license React\n * react-dom-server.bun.production.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/react-dom-server.edge.development.js",
+    "source_sha256": "08ddcde820dd226fd088cfeeda92aa652bbf65bc5808db60881e63aa4e2d9d97",
+    "line": 1,
+    "text": "/**\n * @license React\n * react-dom-server.edge.development.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/react-dom-server.edge.development.js",
+    "source_sha256": "08ddcde820dd226fd088cfeeda92aa652bbf65bc5808db60881e63aa4e2d9d97",
+    "line": 11,
+    "text": "/*\n\n\n JS Implementation of MurmurHash3 (r136) (as of May 20, 2011)\n\n Copyright (c) 2011 Gary Court\n Permission is hereby granted, free of charge, to any person obtaining a copy\n of this software and associated documentation files (the \"Software\"), to deal\n in the Software without restriction, including without limitation the rights\n to use, copy, modify, merge, publish, distribute, sublicense, and/or sell\n copies of the Software, and to permit persons to whom the Software is\n furnished to do so, subject to the following conditions:\n\n The above copyright notice and this permission notice shall be included in\n all copies or substantial portions of the Software.\n\n THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\n IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\n FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\n AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\n LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\n OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\n SOFTWARE.\n*/"
+  },
+  {
+    "source_file": "cjs/react-dom-server.edge.production.js",
+    "source_sha256": "4d43f4e5e78cce97b95c4704b5e3f7bdc142c2a9f9b58ea2702eeb7b6442d00c",
+    "line": 1,
+    "text": "/**\n * @license React\n * react-dom-server.edge.production.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/react-dom-server.edge.production.js",
+    "source_sha256": "4d43f4e5e78cce97b95c4704b5e3f7bdc142c2a9f9b58ea2702eeb7b6442d00c",
+    "line": 11,
+    "text": "/*\n\n\n JS Implementation of MurmurHash3 (r136) (as of May 20, 2011)\n\n Copyright (c) 2011 Gary Court\n Permission is hereby granted, free of charge, to any person obtaining a copy\n of this software and associated documentation files (the \"Software\"), to deal\n in the Software without restriction, including without limitation the rights\n to use, copy, modify, merge, publish, distribute, sublicense, and/or sell\n copies of the Software, and to permit persons to whom the Software is\n furnished to do so, subject to the following conditions:\n\n The above copyright notice and this permission notice shall be included in\n all copies or substantial portions of the Software.\n\n THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\n IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\n FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\n AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\n LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\n OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\n SOFTWARE.\n*/"
+  },
+  {
+    "source_file": "cjs/react-dom-server.node.development.js",
+    "source_sha256": "6d62f012eae9a5f4f8e462914be8b5a98e422e38d947006662cfeb097e41e669",
+    "line": 1,
+    "text": "/**\n * @license React\n * react-dom-server.node.development.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/react-dom-server.node.production.js",
+    "source_sha256": "42f1bcb129059d13f44e3ccc65517994c151d493b89ec154eba7fb6f7953a563",
+    "line": 1,
+    "text": "/**\n * @license React\n * react-dom-server.node.production.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/react-dom-test-utils.development.js",
+    "source_sha256": "a691b913756753dd769c1559b8efbd3d8157feb4c9368d2cb4b79eba67441841",
+    "line": 1,
+    "text": "/**\n * @license React\n * react-dom-test-utils.development.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/react-dom-test-utils.production.js",
+    "source_sha256": "d41ce0bee80299c8330fc080936da31afa5f307dfe4912bc8a6c68f9f566d344",
+    "line": 1,
+    "text": "/**\n * @license React\n * react-dom-test-utils.production.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/react-dom.development.js",
+    "source_sha256": "789172fd0394e995ffa07d3fcf3d9ecf8b042ae31da9846093ffc9c2cdba90c2",
+    "line": 1,
+    "text": "/**\n * @license React\n * react-dom.development.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/react-dom.production.js",
+    "source_sha256": "7a05d7f7bb2b02aae84018a88d4815a2181eef48d2cb8172d403eaa2b131eefd",
+    "line": 1,
+    "text": "/**\n * @license React\n * react-dom.production.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/react-dom.react-server.development.js",
+    "source_sha256": "fc134d9b2fcad99d247fd5e584ab20a43e2d43eebf8548b5c0a17bf5b2cf2a52",
+    "line": 1,
+    "text": "/**\n * @license React\n * react-dom.react-server.development.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  },
+  {
+    "source_file": "cjs/react-dom.react-server.production.js",
+    "source_sha256": "1ac216fb7bc5f859f899da95e258f27531206f5d310d0b74ee872e37e6da00a3",
+    "line": 1,
+    "text": "/**\n * @license React\n * react-dom.react-server.production.js\n *\n * Copyright (c) Meta Platforms, Inc. and affiliates.\n *\n * This source code is licensed under the MIT license found in the\n * LICENSE file in the root directory of this source tree.\n */"
+  }
+]

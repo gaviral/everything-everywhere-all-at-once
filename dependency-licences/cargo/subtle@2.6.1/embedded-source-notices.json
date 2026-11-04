@@ -1,0 +1,8 @@
+[
+  {
+    "source_file": "src/lib.rs",
+    "source_sha256": "ced6ebd3622af527cbbbb09feb57a2894751ff07e7ca8f97f22bad89401e5c8d",
+    "line": 1,
+    "text": "// -*- mode: rust; -*-\n//\n// This file is part of subtle, part of the dalek cryptography project.\n// Copyright (c) 2016-2018 isis lovecruft, Henry de Valence\n// See LICENSE for licensing information.\n//\n// Authors:\n// - isis agora lovecruft <isis@patternsinthevoid.net>\n// - Henry de Valence <hdevalence@hdevalence.ca>\n"
+  }
+]

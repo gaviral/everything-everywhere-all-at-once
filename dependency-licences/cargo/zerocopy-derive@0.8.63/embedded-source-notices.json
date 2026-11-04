@@ -1,0 +1,434 @@
+[
+  {
+    "source_file": "Cargo.toml.orig",
+    "source_sha256": "d03540698ac746e406e33c25475814533ddfe90b1f1e3a6508fb45f4a1ca2850",
+    "line": 1,
+    "text": "# Copyright 2019 The Fuchsia Authors\n#\n# Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n# <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n# license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n# This file may not be copied, modified, or distributed except according to\n# those terms.\n"
+  },
+  {
+    "source_file": "src/derive/from_bytes.rs",
+    "source_sha256": "6cd784417e0c657026f72eb60f5b2f69290c6e669c5775c9c0cf2e714b3d5533",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: BSD-2-Clause OR Apache-2.0 OR MIT\n//\n"
+  },
+  {
+    "source_file": "src/derive/into_bytes.rs",
+    "source_sha256": "ec26199f87c9a544d249509e35abec1e6397c3f431207bf5f5be1ecd5db30493",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: BSD-2-Clause OR Apache-2.0 OR MIT\n//\n"
+  },
+  {
+    "source_file": "src/derive/known_layout.rs",
+    "source_sha256": "abc0325f71428e4d357a745bbf235ff950f62ec3b5b53ba3d5d8b82dbc676d16",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: BSD-2-Clause OR Apache-2.0 OR MIT\n//\n"
+  },
+  {
+    "source_file": "src/derive/mod.rs",
+    "source_sha256": "28e32df3b8d0eab5fcf6af56c443ad0807f9c32641082b6eda8eb8da203eed0e",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: BSD-2-Clause OR Apache-2.0 OR MIT\n//\n"
+  },
+  {
+    "source_file": "src/derive/project.rs",
+    "source_sha256": "9d116f84ab6a998790a32d621e27ab4ba1c169f1be8bcee9330b3536fbf78a29",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: BSD-2-Clause OR Apache-2.0 OR MIT\n//\n// Copyright 2026 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "src/derive/try_from_bytes.rs",
+    "source_sha256": "c5ef4996afd692800ba99a5d544ac554f5b80282b0aa532eceb55b4febce038a",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: BSD-2-Clause OR Apache-2.0 OR MIT\n//\n"
+  },
+  {
+    "source_file": "src/derive/unaligned.rs",
+    "source_sha256": "59eda2d1b65cd0b54112d66a48373f7acc1c66564fb7fcf440fe9a2e07b6c0b2",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: BSD-2-Clause OR Apache-2.0 OR MIT\n//\n"
+  },
+  {
+    "source_file": "src/invariant.rs",
+    "source_sha256": "d90c92486fda33afe90db5aab822dd7cff4e42daa3c4a3fc853d6413db593f71",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: BSD-2-Clause OR Apache-2.0 OR MIT\n//\n// Copyright 2026 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "src/lib.rs",
+    "source_sha256": "ddf22139f2bfb423a59f8d09e5805aa72623159657a1238e376514b2ca16e11c",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: BSD-2-Clause OR Apache-2.0 OR MIT\n//\n// Copyright 2019 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "src/output_tests/mod.rs",
+    "source_sha256": "473c4ec790e914027ef7e83ab3020103e54c580a417d08a814f4e352a450ac68",
+    "line": 1,
+    "text": "// Copyright 2024 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "src/repr.rs",
+    "source_sha256": "fa65696e9f70d25bb0f68f1d7d8d89808205a6e3bb2336afd39348be3813de7d",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: BSD-2-Clause OR Apache-2.0 OR MIT\n//\n// Copyright 2019 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "src/util.rs",
+    "source_sha256": "a4e8660d444fa0d32055f29516f3ab1e323b9c6d478a98ffe4c372c06cbbb2a7",
+    "line": 1,
+    "text": "// SPDX-License-Identifier: BSD-2-Clause OR Apache-2.0 OR MIT\n//\n// Copyright 2019 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/clippy.rs",
+    "source_sha256": "37b538ca3d59c520ec92294a0ccd1d6fcffc70f874f9e4f2c2674c4fc6de9932",
+    "line": 1,
+    "text": "// Copyright 2026 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/deprecated.rs",
+    "source_sha256": "c49b92bcdd1d005ec0c4ae033c5ebaddcc300f9003170a848d9c678ecad66978",
+    "line": 1,
+    "text": "// Copyright 2024 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/enum_from_zeros.rs",
+    "source_sha256": "b080fb192faf039348100ac41e666d3b19908d0312e245d77749eadd52d4a29a",
+    "line": 1,
+    "text": "// Copyright 2019 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/enum_known_layout.rs",
+    "source_sha256": "ce2c7bfc3c7272d03321f7eac7217326afd515f03af7dc7a9cd0b4465e68f193",
+    "line": 1,
+    "text": "// Copyright 2023 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/enum_no_cell.rs",
+    "source_sha256": "a353033f83ccec5258871a04e0ec7b4610191eba9bd024e6059a8b674165bba1",
+    "line": 1,
+    "text": "// Copyright 2023 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/enum_to_bytes.rs",
+    "source_sha256": "73baf3d27a889a39dc4e82c55ab7d36339f87bc1a5b2a4850d34751a598356fe",
+    "line": 1,
+    "text": "// Copyright 2019 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/enum_try_from_bytes.rs",
+    "source_sha256": "ba31239b504608910332d7decb015c53a0fc66a27565d4abbe50138aeb16a367",
+    "line": 1,
+    "text": "// Copyright 2023 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/enum_unaligned.rs",
+    "source_sha256": "0aa3324a672ebd07341ec7a316d1de391be52c1ca9daf21055c74b8c67d3aac4",
+    "line": 1,
+    "text": "// Copyright 2019 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/eq.rs",
+    "source_sha256": "7c07d1a311478664725632da4d599d4755ac659c589f37a597c73489a3d69c26",
+    "line": 1,
+    "text": "// Copyright 2024 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/hash.rs",
+    "source_sha256": "252efc53a24c92187b02a4f7cdbd9993af5ce40ac734797661308f55d4c4f591",
+    "line": 1,
+    "text": "// Copyright 2024 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/hygiene.rs",
+    "source_sha256": "9a63ecf571b307da50dee55b5bcc52191e54381a1cbd9d624f29e830ce0ccff5",
+    "line": 1,
+    "text": "// Copyright 2019 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/include.rs",
+    "source_sha256": "dfef7b92f6990b50a457a86d2ccb05f136fbfe6efd2d8b1324407b8ae33b6a4c",
+    "line": 1,
+    "text": "// Copyright 2019 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/invariant.rs",
+    "source_sha256": "e427c3d36f205c60d898f91f9ce4e6955893b6adb68fd478eb9162a3e32442b0",
+    "line": 1,
+    "text": "// Copyright 2026 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/issue_2117.rs",
+    "source_sha256": "f41e8c5e021ccd7c994ae3f5468881d45d088acbfb5ab53f391cf03cf647d866",
+    "line": 1,
+    "text": "// Copyright 2024 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/issue_2835.rs",
+    "source_sha256": "0080e4beec745a72bf8be63882e7d0ef645b1ff5adbae6b20e1a519fcb981cfd",
+    "line": 1,
+    "text": "// Copyright 2025 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/issue_2880.rs",
+    "source_sha256": "8e7268473a10f53cdf3c62753facd8065d364e0ce699a9e72a7ea49e54250217",
+    "line": 1,
+    "text": "// Copyright 2026 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/issue_2915.rs",
+    "source_sha256": "9ac2729405d17176d8fa27d9b41590ac7ced232617fdcef7d181a6a89fa4cca4",
+    "line": 1,
+    "text": "// Copyright 2026 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/on_error.rs",
+    "source_sha256": "ca5129c290a38bb28c13a35f4137eca96ff62012a96a9d22ed75ee8e35a8c624",
+    "line": 1,
+    "text": "// Copyright 2026 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/paths_and_modules.rs",
+    "source_sha256": "b0dab4c0da3474f897c5a89964544dc4dbb64737081ea264c5c04f21645a6b83",
+    "line": 1,
+    "text": "// Copyright 2019 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/priv_in_pub.rs",
+    "source_sha256": "1f00f7a510048179939efd78ff2092b846775f8cf3ab1b6ca2d12b3b21a98e79",
+    "line": 1,
+    "text": "// Copyright 2019 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/project.rs",
+    "source_sha256": "c4da6cc0c6d054d71acd051792910d60f07ae70c1701940679b71773b18b7ef3",
+    "line": 1,
+    "text": "// Copyright 2026 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://opensource.org/licenses/MIT>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/project_enum.rs",
+    "source_sha256": "7f2e0d8d80c73bb231835926a3522708ab9479a50abca5da7081f535012901b2",
+    "line": 1,
+    "text": "// Copyright 2026 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// You may not use this file except in compliance with those licenses.\n"
+  },
+  {
+    "source_file": "tests/project_struct.rs",
+    "source_sha256": "660afce6b54bbdf99a84dd955bb3b7b3f4568a3a46bc87de61048191e56d189d",
+    "line": 1,
+    "text": "// Copyright 2026 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// You may not use this file except in compliance with those licenses.\n"
+  },
+  {
+    "source_file": "tests/raw_identifiers.rs",
+    "source_sha256": "11e7fb8c3986ba94e8c0ee3da78c3f1bdd17d7f911fb4db7ee0f25580a34cfed",
+    "line": 1,
+    "text": "// Copyright 2026 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/struct_from_bytes.rs",
+    "source_sha256": "e43702cd221b2721b8abf5f83d3a3c1b35a26d9b46aeeee71263e511d6bed6ce",
+    "line": 1,
+    "text": "// Copyright 2019 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/struct_from_zeros.rs",
+    "source_sha256": "1f4f70ce8cff4a0de9a69206eda5be7db0dfb55408ea36533bff8798463eea9c",
+    "line": 1,
+    "text": "// Copyright 2019 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/struct_known_layout.rs",
+    "source_sha256": "377fa1fd9867897dae15d2ea77ba4e4e537760b464ee6dacfddc92bedbec006b",
+    "line": 1,
+    "text": "// Copyright 2023 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/struct_no_cell.rs",
+    "source_sha256": "889cdbdf2e86baf2615113a1c7c205a90a150e61d093fc3ff827b2653798ac7b",
+    "line": 1,
+    "text": "// Copyright 2023 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/struct_to_bytes.rs",
+    "source_sha256": "21a8c6ce9b9317774a10a1e1a4602d03b8b972f28968781184d5cd36d0c66527",
+    "line": 1,
+    "text": "// Copyright 2019 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/struct_try_from_bytes.rs",
+    "source_sha256": "c838ab5318cfc8b7af6c1aadaf15443d22ea2f51f9cbc08619a5dfa504b3c6a4",
+    "line": 1,
+    "text": "// Copyright 2023 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/struct_unaligned.rs",
+    "source_sha256": "26e2ce75e599469b5bb040c14fb82cfea62a915c8760a12aa03ff8c8b6a124ca",
+    "line": 1,
+    "text": "// Copyright 2019 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/ui.rs",
+    "source_sha256": "65687d4f506ee44194611780e1bdee224da22f84438988914d0d6a12614c9770",
+    "line": 1,
+    "text": "// Copyright 2019 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/ui/absence_of_deprecated_warning.rs",
+    "source_sha256": "bf875b4f7c7f56b01256027ec8cfbde13a282f0798ac0abe5607e1938fe55a0d",
+    "line": 1,
+    "text": "// Copyright 2024 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/ui/cfgs/invariant.rs",
+    "source_sha256": "d20858a27ee47e4421d6df82b3a73830277ab2c6bc23141ecdd0ef362d80980d",
+    "line": 1,
+    "text": "// Copyright 2026 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/ui/cfgs/on_error.rs",
+    "source_sha256": "0021256bbf2d64f178d1ede358b738dbfde4bbe5fc0705c7fd6cb67b713f5d9b",
+    "line": 1,
+    "text": "// Copyright 2026 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/ui/cfgs/union_into_bytes_cfg.rs",
+    "source_sha256": "8503fc71624d9924983fd4d388565a0f76e5040a7b7f32ef055769c789e1f42c",
+    "line": 1,
+    "text": "// Copyright 2024 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/ui/derive_transparent.rs",
+    "source_sha256": "66b1a1bcad4e65f66acb82acfd301411d78c84d41ac9e062d7f1cc77062b3be6",
+    "line": 1,
+    "text": "// Copyright 2019 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/ui/enum.rs",
+    "source_sha256": "c5594be7c163eee209a95d84091e7a78b58eb4e4f73f8dcf5a7696c580559ed2",
+    "line": 1,
+    "text": "// Copyright 2019 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/ui/enum_from_bytes_u8_too_few.rs",
+    "source_sha256": "8f9b6e8c27e109d4adc2e5c95e21211d4a7986bc6684dc70370d1a83cb791eb9",
+    "line": 1,
+    "text": "// Copyright 2019 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/ui/invariant.rs",
+    "source_sha256": "79afe8baed992ffe2cc839596a3e90ea94864b579b713bc66bdda190ca69fab7",
+    "line": 1,
+    "text": "// Copyright 2026 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/ui/invariant_field_scope.rs",
+    "source_sha256": "513319741b58a1c650f4c4d42b8c5ca96bd1a3539046b76dae37cd41cbe952ed",
+    "line": 1,
+    "text": "// Copyright 2026 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/ui/invariant_lints.rs",
+    "source_sha256": "35d7d9a9525d5aa844f168cd83e77eaea821e7d4e3f7212fb6ea51ce806bd2f3",
+    "line": 1,
+    "text": "// Copyright 2026 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/ui/invariant_name_collisions.rs",
+    "source_sha256": "01d4655fc12ed65a222f5a52729007dc423e37b5da6dc939c6464bae6695855b",
+    "line": 1,
+    "text": "// Copyright 2026 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/ui/invariant_union_scope.rs",
+    "source_sha256": "8f3d7979c70805badea48944a0d9e0895c9cd4aa92e014be63855f830f3a19a7",
+    "line": 1,
+    "text": "// Copyright 2026 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/ui/issue_known_layout_missing_debug.rs",
+    "source_sha256": "bbfd3b8613702866dd39286dff9e3510abd0ee0b76607fc67b43f448b849edd4",
+    "line": 1,
+    "text": "// Copyright 2026 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/ui/late_compile_pass.rs",
+    "source_sha256": "506408159f250ed3496d4dba41ae19ee6a0084f973cd80743abed43cd3ffcfd4",
+    "line": 1,
+    "text": "// Copyright 2019 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/ui/mid_compile_pass.rs",
+    "source_sha256": "a3b52312c094e999b148707aa243599f2ec1ff84f47bd7dd0707cf241a4e40a8",
+    "line": 1,
+    "text": "// Copyright 2023 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/ui/msrv_specific.rs",
+    "source_sha256": "fa79ae13b957f458b4386117854c85cda37510d61cabde7636ebc9c8c4a28bf6",
+    "line": 1,
+    "text": "// Copyright 2024 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/ui/privacy.rs",
+    "source_sha256": "be997572cca3250ca0782346ccea4e8c3afef676ed585fa2caa3d1fdb091708f",
+    "line": 1,
+    "text": "// Copyright 2025 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/ui/struct.rs",
+    "source_sha256": "0e4342f20dfb458679bd9a840eaf498ef8b3b182ea66acc1bacebc7a9216b51b",
+    "line": 1,
+    "text": "// Copyright 2019 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/ui/union.rs",
+    "source_sha256": "3767c80a608d0bc126e2c859943afb06e69f1a1871eb94575775d05353a51545",
+    "line": 1,
+    "text": "// Copyright 2019 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/union_from_bytes.rs",
+    "source_sha256": "66094ee4800cfaacec295455262163fc0ef1959261f03de7a71c7a2682ec210c",
+    "line": 1,
+    "text": "// Copyright 2019 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/union_from_zeros.rs",
+    "source_sha256": "dd45058a4ddc268cc2f29b1228a947276b24c94d7cb278f1acc54dac036305af",
+    "line": 1,
+    "text": "// Copyright 2019 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/union_known_layout.rs",
+    "source_sha256": "6c8cc9c7901681bc02f4c986ed7d717c059474670d678dc288eef4e0c392c60f",
+    "line": 1,
+    "text": "// Copyright 2023 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/union_no_cell.rs",
+    "source_sha256": "c4dd72503164e5433ded5202e02add1024c79c9a36a440783cd20d27b3406a7b",
+    "line": 1,
+    "text": "// Copyright 2023 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/union_to_bytes.rs",
+    "source_sha256": "61390d98c077e3060c8cc844c3d03c3f9bb3ee6a5fe488111f72507a3bc67aea",
+    "line": 1,
+    "text": "// Copyright 2019 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/union_try_from_bytes.rs",
+    "source_sha256": "0c89bc23764ca3ef4c4c413c4f552960a501d529480b3cf0fad17b071b87127e",
+    "line": 1,
+    "text": "// Copyright 2023 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/union_unaligned.rs",
+    "source_sha256": "ff7deadd16e331b4a4c686033330ab9d0207b6e9279c0c3419c0a5c84ea30c94",
+    "line": 1,
+    "text": "// Copyright 2019 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  },
+  {
+    "source_file": "tests/unsafe_cell.rs",
+    "source_sha256": "3b65f142efb153009f8a46ee7a932c88b5a3dac6bb4b1e4b1e24bc22f1605714",
+    "line": 1,
+    "text": "// Copyright 2025 The Fuchsia Authors\n//\n// Licensed under a BSD-style license <LICENSE-BSD>, Apache License, Version 2.0\n// <LICENSE-APACHE or https://www.apache.org/licenses/LICENSE-2.0>, or the MIT\n// license <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your option.\n// This file may not be copied, modified, or distributed except according to\n// those terms.\n"
+  }
+]

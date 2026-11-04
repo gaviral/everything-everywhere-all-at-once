@@ -1,0 +1,20 @@
+[
+  {
+    "source_file": "src/dynamic_store.rs",
+    "source_sha256": "f1d8497980bc3f11462067b9c517b8cf50eb3d3e517dab5234f987ab25be2d49",
+    "line": 1,
+    "text": "// Copyright 2017 Amagicom AB.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/lib.rs",
+    "source_sha256": "d52d3afbbfa22df9c36aeea43a55fb13c29bf0b2376a91b558f2883512912901",
+    "line": 1,
+    "text": "// Copyright 2017 Amagicom AB.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  },
+  {
+    "source_file": "src/preferences.rs",
+    "source_sha256": "a4c436f432daacad3d2e015e673baacb34b5f3249c9fe0683c0cdb1099705204",
+    "line": 1,
+    "text": "// Copyright 2017 Amagicom AB.\n//\n// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or\n// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your\n// option. This file may not be copied, modified, or distributed\n// except according to those terms.\n"
+  }
+]

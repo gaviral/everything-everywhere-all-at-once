@@ -1,0 +1,14 @@
+[
+  {
+    "source_file": "src/lib.rs",
+    "source_sha256": "86e7ee192be576d746a1e830d01526bb1e0a74757705964a1a8591d184c0b0ea",
+    "line": 1,
+    "text": "// Copyright Mozilla Foundation\n//\n// Licensed under the Apache License (Version 2.0), or the MIT license,\n// (the \"Licenses\") at your option. You may not use this file except in\n// compliance with one of the Licenses. You may obtain copies of the\n// Licenses at:\n//\n//    https://www.apache.org/licenses/LICENSE-2.0\n//    https://opensource.org/licenses/MIT\n//\n// Unless required by applicable law or agreed to in writing, software\n// distributed under the Licenses is distributed on an \"AS IS\" BASIS,\n// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n// See the Licenses for the specific language governing permissions and\n// limitations under the Licenses.\n"
+  },
+  {
+    "source_file": "src/lib.rs",
+    "source_sha256": "86e7ee192be576d746a1e830d01526bb1e0a74757705964a1a8591d184c0b0ea",
+    "line": 19,
+    "text": "//! # `multiversion_no_op`\n//!\n//! This crate provides a pass-through function attribute called `multiversion`.\n//!\n//! The purpose of this crate is to optimize build times on targets that do not actually\n//! need multiversioning. That is, targets that need multiversioning can use the real\n//! [`multiversion`](https://crates.io/crates/multiversion) crate, and targets that do\n//! not need multiversioning can use this crate instead.\n//!\n//! This crate works in the `no_std` context.\n//!\n//! ## License\n//!\n//! Apache-2.0 OR MIT; the file named `COPYRIGHT`.\n//!\n//! ## Usage\n//!\n//! See [`encoding_rs`](https://github.com/hsivonen/encoding_rs/) crate for a usage example.\n"
+  }
+]
