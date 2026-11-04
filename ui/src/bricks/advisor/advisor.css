@@ -42,3 +42,5 @@
 @media (min-width: 2100px) { .advisor { padding-top: 70px; } .advisor-journey { gap: 32px; } }
 @media (max-width: 1000px) { .advisor-journey { grid-template-columns: 1fr 1fr; } .advisor-escalation { grid-column: 1 / -1; grid-row: 2; display: grid; grid-template-columns: 1fr 1fr; } .advisor-review { grid-column: 2; grid-row: 1; } .advisor-badge { white-space: normal; } }
 @media (max-width: 600px) { .advisor { padding: 20px 14px 100px; } .advisor-heading { flex-direction: column; align-items: flex-start; gap: 16px; } .advisor h1 { font-size: 34px; } .advisor-input { grid-template-columns: 1fr; } .advisor-journey { display: flex; flex-direction: column; gap: 16px; } .advisor-escalation { display: flex; padding: 14px 8px; } .advisor-controls label { width: 100%; } .advisor-answer { border-radius: 24px; } }
+
+.advisor-back { display: inline-block; margin: 16px 24px; padding: 12px 18px; border: 1px solid currentColor; border-radius: 12px; background: transparent; color: inherit; font: 600 20px/1.3 system-ui, sans-serif; cursor: pointer; }

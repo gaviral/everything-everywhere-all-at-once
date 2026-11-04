@@ -10,8 +10,10 @@ import "./example.css";
 
 export default function Example({ actions }: BrickProps) {
 const [example] = useState(createExampleSequence);
-return <section className="dependency-sequences-example" aria-label="Dependency sequences example" data-guide="dependency-sequences">
-<div><strong>Dependency sequences · local example</strong><button onClick={() => actions.openCatalog("dependency-sequences")}>Features</button></div>
-<button onClick={example.advance}>Toggle prerequisite A complete</button><DependencySequences enabled adapter={example.adapter} onDisable={() => actions.openCatalog("dependency-sequences")} />
-</section>;
+const [open, setOpen] = useState(true);
+return <>{!open && <button className="dependency-sequences-reopen" type="button" onClick={() => setOpen(true)}>Open Dependency sequences</button>}
+<section hidden={!open} className="dependency-sequences-example" aria-label="Dependency sequences example" data-guide="dependency-sequences">
+<div><strong>Dependency sequences · local example</strong><span><button type="button" onClick={() => actions.openCatalog("dependency-sequences")}>Features</button> <button type="button" onClick={() => setOpen(false)}>Close</button></span></div>
+<button onClick={example.advance}>Toggle prerequisite A complete</button><DependencySequences enabled adapter={example.adapter} onDisable={() => setOpen(false)} />
+</section></>;
 }
