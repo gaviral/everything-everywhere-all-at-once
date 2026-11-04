@@ -112,7 +112,9 @@ assert.doesNotMatch(visible, /\b(?:all|every|each)\s+(?:\w+\s+){0,3}(?:changes?|
 const images = [...first.matchAll(/!\[[^\]]*\]\(([^)\s]+)\)|<img[^>]*src="([^"]+)"/g)].map((m) => m[1] ?? m[2]);
 assert.ok(images.some((src) => /screens\//.test(src)), "no screenshot or GIF of the app on the first screen");
 for (const src of images) assert.ok(existsSync(root + src), `the first screen shows ${src}, which isn't in the repo`);
-for (const match of first.matchAll(/!\[[^\]]*\]\([^)]+\)|<img[^>]*>/g)) {
+for (const match of first.matchAll(/!\[[^\]]*\]\(([^)\s]+)\)|<img[^>]*src="([^"]+)"[^>]*>/g)) {
+  // App icons are branding, not recorded demonstrations with an input type.
+  if (/^ui\/public\/icons\//.test(match[1] ?? match[2])) continue;
   const caption = first.slice(match.index, first.indexOf("\n## ", match.index) < 0 ? first.length : first.indexOf("\n## ", match.index));
   assert.match(caption, /synthe(?:tic|sized)|simulated|scripted/i, "first-screen media needs its input type");
   assert.match(caption, /historical|earlier|recorded/i, "first-screen media needs its recorded/historical label");

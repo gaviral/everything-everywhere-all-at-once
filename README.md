@@ -74,14 +74,14 @@ This makes live model calls from scripted text. Add `--port 4400` if the app use
 - **Say it.** Spoken or typed thoughts become topics on the board. Placement aims to preserve commitments, conditions, negations and uncertainty. You can revisit the original words.
 - **Ask about words.** Spark picks an unclear word or phrase from the actual sentence. A question points to it at your pause. Your answer stays attached to that occurrence.
 - **Draw it.** Sketch and label the parts. Spark reads the drawing and its links. Ask Muse Image to draw it back, or hand the sketch to Crew.
-- **Build it.** Crew plans small parts and their dependencies. Independent parts build together. Each part gets a branch in a separate generated repository. The app checks its block format, requests a repair if needed, then merges accepted parts through `dev`, `staging` and `main`. Finished parts enter a reuse catalog.
-- **Follow it.** Parts exposes source files, functions and file history. The branch view shows work in the local repository. A feature that throws is isolated; its recovery notice lets you review it.
+- **Build it.** Crew plans small parts and their dependencies. Independent parts build together. Each part gets a Git branch in a separate generated repository. The app checks its block format, requests a repair if needed, then merges accepted parts through `dev`, `staging` and `main`. Finished parts enter a library for reuse.
+- **Follow it.** Parts exposes source files, functions and file history. The Git branch view shows work in the local repository. A feature that throws is isolated; its recovery notice lets you review it.
 
-The feature catalog has **122 features**. That is a catalog count, not a count of proven successes. [Feature details and source links](docs/FEATURES.md) describe the boundaries.
+The Features page lists **122 features**. That is an entry count, not a count of proven successes. [Feature details and source links](docs/FEATURES.md) describe the boundaries.
 
 ## Model calls in the code
 
-The app calls Meta models only. The Rust core holds the key and sends model requests through [model.rs](core/src/model.rs).
+The app calls Meta models only, with no GPT runtime dependency. The Rust core holds the key and sends model requests through [model.rs](core/src/model.rs).
 
 | Work | Meta model | Implementation |
 |---|---|---|

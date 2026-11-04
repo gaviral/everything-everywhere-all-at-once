@@ -2,7 +2,7 @@
 
 E2A2O turns words and sketches into a board of reusable parts. This page describes what you can try, where it lives in the code, and what remains limited. Start with the [README](../README.md#run-it).
 
-The **122 features** shown in the catalog are catalog entries, not proven successes. Some are optional views, experiments or prepared demonstrations. Enable features in **Features** (`C`). A switch does not establish that a feature has passed an end-to-end trial.
+The **122 features** shown on the Features page are entries, not proven successes. Some are optional views, experiments or prepared demonstrations. Enable features in **Features** (`C`). A switch does not establish that a feature has passed an end-to-end trial.
 
 ## Say it
 
@@ -34,9 +34,9 @@ Enable **Crew**, open its panel and describe what to build. You can type directl
 
 Crew uses Muse Spark to plan small parts with dependencies. Independent parts build together; dependent parts wait. Each run creates a separate Git repository. Each part has a real branch and commits containing its board specification.
 
-The specification uses a fixed set of blocks: text, a countdown, a checklist, a counter, a note, a completion label or a question. The app checks the title and block fields. If that check fails, Crew asks Spark to repair the part. If repair fails, the part turns off and the remaining work continues.
+The specification uses a fixed set of blocks: text, a time-left display, a checklist, a counter, a note, a completion label or a question. The app checks the title and block fields. If that check fails, Crew asks Spark to repair the part. If repair fails, the part turns off and the remaining work continues.
 
-Accepted parts merge into `dev`, then `staging`, then `main`. The page shows the branches and results. Finished specifications enter a catalog that later plans can reuse. These are board components; Crew does not generate and validate arbitrary application source code.
+Accepted parts merge into `dev`, then `staging`, then `main`. The page shows the Git branches and results. Finished specifications enter a library that later plans can reuse. These are board components; Crew does not generate and validate arbitrary application source code.
 
 The optional `?crewfault` mode removes a title on purpose. The page labels the injected fault. A subsequent repair is a live model call; the initial fault is staged.
 
@@ -44,7 +44,7 @@ Code: [crew.rs](../core/src/crew.rs), [workflow](../ui/src/bricks/crew/index.tsx
 
 ## Parts and recovery
 
-Parts follows the work into source files and functions. The source view reads the local checkout and Git history. Versions describe file history, not independent releases of every function. Repository access is limited to the local host; room guests cannot read the host's source through this view.
+Parts follows the work into source files and functions. The source view reads the local checkout and Git history. Versions describe file history, not independent releases of every function. Repository access is limited to the local host; shared map guests cannot read the host's source through this view.
 
 Features mount behind individual error boundaries. A feature that throws stops rendering while the rest of the page remains available. The recovery panel records the problem and offers a way to try the feature again. Retrying a render is separate from Crew asking Spark to repair a generated specification.
 
