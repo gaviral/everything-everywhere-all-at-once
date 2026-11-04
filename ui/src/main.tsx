@@ -6,9 +6,12 @@ import { REMOTE } from "./remote/flag";
 import { Room } from "./room";
 import "./styles.css";
 import "./legible.css";
+import { FILM, startFilm } from "./film";
+import "./film.css";
 
 // `?recording` in the address dresses the page for a screen recording: big live words, every placing time, a take clock.
-if (new URLSearchParams(location.search).has("recording")) document.documentElement.classList.add("recording");
+if (FILM || new URLSearchParams(location.search).has("recording")) document.documentElement.classList.add("recording");
+if (FILM) startFilm();
 
 // `?remote` opens a phone's page for the AI helpers' work (ui/src/remote/) instead of the map, in the shell's look and in the
 // same room as any window: its code loads only then.
