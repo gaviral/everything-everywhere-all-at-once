@@ -1,7 +1,7 @@
 """Synthetic check adapter. Never creates Native, sends OS input, or captures a screen."""
 import base64
 import json
-import secrets
+from secrets import token_urlsafe
 import threading
 from http.server import ThreadingHTTPServer
 
@@ -40,7 +40,7 @@ def serve():
                   {"kind": "click", "button": "left", "x": 30}, {"kind": "click", "button": []}]:
         assert not valid_input(event), event
     native = ExampleMac()
-    token = secrets.token_urlsafe(32)
+    token = token_urlsafe(32)
     server = ThreadingHTTPServer(("127.0.0.1", 0), None)
     origin = f"http://127.0.0.1:{server.server_port}"
     base = handler(native, token, origin)

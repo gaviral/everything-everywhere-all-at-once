@@ -25,7 +25,7 @@ try {
   const stats = async () => (await fetch(`${origin}/fixture`)).json();
   const set = values => fetch(`${origin}/fixture`, { method: "POST", body: JSON.stringify(values) });
   assert.equal((await fetch(`${origin}/pointer/status`)).status, 403, "unpaired requests refused");
-  assert.equal((await fetch(`${origin}/pointer/status`, { headers: { ...headers, Origin: "https://elsewhere.example" } })).status, 403, "other origins refused");
+  assert.equal((await fetch(`${origin}/pointer/status`, { headers: { ...headers, Origin: "https://elsewhere.test" } })).status, 403, "other origins refused");
   assert.equal((await fetch(`${origin}/pointer/input`, { method: "POST", headers, body: JSON.stringify({ kind: "click", button: "left", x: 200 }) })).status, 400, "absolute-coordinate clicks refused");
   assert.equal((await fetch(`${origin}/pointer/frame`, { method: "POST", headers, body: "{}" })).status, 400, "frame needs explicit start");
   assert.equal((await fetch(`${origin}/native.swift`)).status, 404, "source files never served");

@@ -5,7 +5,7 @@ import hmac
 import json
 import mimetypes
 from pathlib import Path
-import secrets
+from secrets import token_urlsafe
 import select
 import ssl
 import subprocess
@@ -215,7 +215,7 @@ def main():
     executable = build / "phone-pointer"
     subprocess.run(["swiftc", "-parse-as-library", str(HERE / "native.swift"), "-o", str(executable)], check=True)
     native = Native(executable)
-    token = secrets.token_urlsafe(32)
+    token = token_urlsafe(32)
     origin = f"{'https' if args.cert else 'http'}://{args.host}:{args.port}"
     server = None
     try:
