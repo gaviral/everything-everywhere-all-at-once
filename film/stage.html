@@ -13,6 +13,8 @@
   .type { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 152px; font-weight: 650; letter-spacing: -.065em; line-height: 1.05; text-align: center; padding: 100px; }
   .plane { position: absolute; left: 50%; top: 50%; border-radius: 18px; overflow: hidden; background: #fff; box-shadow: 0 55px 90px -30px #0007, 0 12px 28px #0002; border: 1px solid #ffffff80; }
   video { display: block; width: 100%; height: auto; }
+  .wall-tile { position: absolute; width: 1920px; height: 1920px; overflow: hidden; background: #0d1014; outline: 1px solid #48515c; }
+  .wall-tile img, .wall-tile video { display: block; width: 100%; height: 100%; object-fit: contain; }
   .lockup { display: flex; align-items: center; gap: 42px; }
   .mark { width: 144px; height: 144px; background: #0866ff; border-radius: 40px; position: relative; box-shadow: 0 16px 45px #0866ff30; }
   .mark::before, .mark::after { content: ""; position: absolute; width: 62px; height: 22px; background: white; border-radius: 15px; left: 41px; transform: rotate(-28deg); }
@@ -20,10 +22,12 @@
 </style>
 <main id="stage" aria-label="Film frame"><div id="scene"><div id="camera"></div></div></main>
 <script type="module">
+  import { createWall, drawWall } from './wall.mjs';
   const stage = document.querySelector('#stage');
   const camera = document.querySelector('#camera');
   let active = null;
   let videos = [];
+  let wallTiles = [];
   const lerp = (a, b, t) => a + (b - a) * t;
   const ease = t => t * t * (3 - 2 * t);
   const array = value => Array.isArray(value) ? value : [value];
@@ -58,9 +62,10 @@
   }
   async function mount(shot) {
     videos.forEach(({ video }) => { video.pause(); video.removeAttribute('src'); video.load(); });
-    videos = []; camera.replaceChildren();
+    videos = []; wallTiles = []; camera.replaceChildren();
+    camera.style.opacity = '1'; camera.style.transformOrigin = '50% 50%';
     const isText = ['title', 'card', 'list'].includes(shot.kind);
-    stage.style.background = background(shot.background ?? (shot.kind === 'card' || shot.kind === 'list' ? shot.colour ?? '#0866FF' : shot.kind === 'end' ? '#ffffff' : '#08090c'));
+    stage.style.background = background(shot.background ?? (shot.kind === 'card' || shot.kind === 'list' ? shot.colour ?? '#0866FF' : shot.kind === 'end' ? '#ffffff' : shot.kind === 'wall' ? '#000000' : '#08090c'));
     stage.style.color = shot.kind === 'end' ? '#08090c' : '#ffffff';
     if (isText) textPlate('');
     if (shot.kind === 'end') {
@@ -73,6 +78,7 @@
     const clips = shot.kind === 'plane' ? [shot] : shot.kind === 'planes' ? shot.clips : [];
     // Sequential loading keeps plane order stable even when decode times differ.
     for (let i = 0; i < clips.length; i++) await createPlane(clips[i], clips.length, i);
+    if (shot.kind === 'wall') wallTiles = await createWall(shot, camera, videos, bounded);
     active = shot.index;
   }
   async function seek(video, target) {
@@ -99,10 +105,12 @@
     }
     if (shot.kind === 'card') camera.firstChild.textContent = shot.word;
     if (shot.kind === 'list') camera.firstChild.textContent = shot.names[Math.min(shot.names.length - 1, Math.floor((local + 1e-8) / shot.seconds))];
-    await Promise.all(videos.map(({ video, spec }) => seek(video, (spec.start ?? 0) + local)));
+    const wall = shot.kind === 'wall' ? drawWall(shot, local, camera, wallTiles) : null;
+    await Promise.all(videos.map(({ video, spec }) => seek(video, (spec.start ?? 0) +
+      (spec.loop ? local % (spec.loopSeconds ?? video.duration - (spec.start ?? 0)) : local))));
     await document.fonts.ready;
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    return { kind: shot.kind, text: camera.textContent, times: videos.map(({ video }) => video.currentTime) };
+    return { kind: shot.kind, text: camera.textContent, times: videos.map(({ video }) => video.currentTime), wall };
   };
 </script>
 </html>

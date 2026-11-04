@@ -1,6 +1,7 @@
 // Filming is opt-in. Coordinates for the pointer are browser pixels; camera x/y are React Flow viewport offsets.
 import { FILM, driveFilmCamera, type Camera } from "./bricks/spine/film";
 import { filmStage } from "./film-stage";
+import { useEffect, useState } from "react";
 export { FILM } from "./bricks/spine/film";
 
 declare global {
@@ -11,10 +12,23 @@ declare global {
       card: ReturnType<typeof filmStage>["card"];
       list: ReturnType<typeof filmStage>["list"];
       cursor(point: { x: number; y: number; press?: boolean }): void;
+      words(text: string): void;
       caption(text: string): void;
       clear(): void;
     };
   }
+}
+
+/** Film-only transcriber input. Results still come from the normal live services. */
+export function useFilmWords(live: string) {
+  const [words, setWords] = useState<string | null>(null);
+  useEffect(() => {
+    if (!FILM) return;
+    const hear = (event: Event) => setWords((event as CustomEvent<string>).detail);
+    window.addEventListener("e2a2o:film-words", hear);
+    return () => window.removeEventListener("e2a2o:film-words", hear);
+  }, []);
+  return FILM && words !== null ? words : live;
 }
 
 export function startFilm() {
@@ -41,6 +55,9 @@ export function startFilm() {
     stage: presentation.stage,
     card: presentation.card,
     list: presentation.list,
+    words(text) {
+      window.dispatchEvent(new CustomEvent("e2a2o:film-words", { detail: text }));
+    },
     cursor({ x, y, press = false }) {
       pointer.hidden = false;
       pointer.style.transform = `translate(${x}px, ${y}px) scale(${press ? 0.85 : 1})`;
