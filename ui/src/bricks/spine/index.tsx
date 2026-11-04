@@ -6,8 +6,8 @@
 // can be answered in a margin note (margin.tsx). Anything can be dragged where you want it and stays there
 // (map.positions), and the shelf keeps things at hand while the canvas moves. A view brick (docs/bricks.md): its name
 // joins Map and Palace.
-import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Background, BackgroundVariant, EdgeLabelRenderer, ReactFlow, ReactFlowProvider, useReactFlow, useStore, useStoreApi, type NodeChange } from "@xyflow/react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Background, BackgroundVariant, EdgeLabelRenderer, ReactFlow, ReactFlowProvider, useReactFlow, useStore, useStoreApi, type NodeChange, type NodeProps } from "@xyflow/react";
 import "@xyflow/react/dist/base.css";
 import { useBrickEvent, SemanticZoomContext, type BrickEvents, type BrickProps, type Position } from "../contract";
 import { useCamera, type Area } from "./camera";
@@ -22,6 +22,8 @@ import { useStayingHere } from "../../StayHere";
 import { CONVERSATION, conversationLayout } from "./conversation";
 import "./spine.css";
 import { semanticBlend } from "./semantic-zoom";
+import { useBuiltInsOn } from "../../shell/features";
+import { anchorAt, normalAngle, rotatePoint, screenToWorld, turnAt, worldToScreen, type Camera } from "./rotation";
 
 /** A press that moves less than this is a click, not a drag: a hand's wobble on a click is 1–3 px. */
 const DRAG = 4;
@@ -165,7 +167,7 @@ export function landingNote(model: string | undefined, ms: number | null | undef
 
 /** What floats over the canvas at its edges: the shell's four corners (their slots), the Talk pill under Find and
  *  Catalog, the guide's held questions, and the canvas's own corners. */
-const COVERS = '[data-slot="top-left"], [data-slot="top-right"], [data-slot="bottom-left"], [data-slot="bottom-right"], [data-slot="held"], .talk-pill, .guide-held, .spine-corner';
+const COVERS = '[data-slot="top-left"], [data-slot="top-right"], [data-slot="bottom-left"], [data-slot="bottom-right"], [data-slot="held"], .talk-pill, .guide-held, .spine-corner, .spine-rotation';
 
 /** The page's slots (contract.ts `SlotName`), measured: where the stage starts, how tall the status line is. */
 function chromeOf(frameBox: DOMRect | undefined) {
@@ -178,12 +180,21 @@ function chromeOf(frameBox: DOMRect | undefined) {
 
 function Canvas({ map, actions, on, destination, conversation }: BrickProps & { conversation: boolean }) {
   const flow = useReactFlow<ItemNode>();
+  const rotationOn = useBuiltInsOn().has("rotate-canvas");
+  const [localAngle, setLocalAngle] = useState(0);
+  const angleRef = useRef(0);
+  const angle = rotationOn ? localAngle : 0;
   const semantic = useContext(SemanticZoomContext);
   const staying = useStayingHere();
   const reduced = useReducedMotion();
   const shelf = useShelf(map);
   const notes = useMargins(map, actions);
   const frame = useRef<HTMLDivElement>(null);
+  const controlsRef = useRef<HTMLDivElement | null>(null);
+  const rotationControls = useCallback((element: HTMLDivElement | null) => {
+    if (!element && controlsRef.current?.contains(document.activeElement)) frame.current?.focus({ preventScroll: true });
+    controlsRef.current = element;
+  }, []);
   const anchor = useRef<HTMLDivElement>(null);
   const shelfRef = useRef<HTMLDivElement>(null);
   const [dock, setDock] = useState(0);
@@ -291,7 +302,7 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
     // The rail (`data-slot="rail"`, the panel at the right) once the page has one: the camera keeps clear of it.
     const rail = document.querySelector('[data-slot="rail"]')?.getBoundingClientRect();
     // The shell's top buttons and Talk pill float over the map. Leave their measured band clear, just as we do the input.
-    const topCovers = [...document.querySelectorAll('[data-slot="top-left"], [data-slot="top-right"], .talk-pill')]
+    const topCovers = [...document.querySelectorAll('[data-slot="top-left"], [data-slot="top-right"], .talk-pill, .spine-rotation')]
       .map((el) => el.getBoundingClientRect()).filter((r) => r.width && r.height);
     const y0 = Math.max(0, ...topCovers.map((r) => r.bottom - (frameBox?.top ?? 0) + 8));
     const y1 = chrome.stage?.height ? Math.min(h, chrome.stage.top - (frameBox?.top ?? 0) - 8) : h - dock;
@@ -407,7 +418,7 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
 
   // The camera.
   const pane = useCallback(() => frame.current?.querySelector<HTMLElement>(".spine-flow") ?? null, []);
-  const camera = useCamera(flow, area, reduced, pane, (key) => layout.byKey.get(key)?.box);
+  const camera = useCamera(flow, area, reduced, pane, (key) => layout.byKey.get(key)?.box, angle);
   const all = () => bounds(layout.items.map((item) => item.box));
   const minZoom = useMemo(() => {
     const everything = all();
@@ -490,6 +501,68 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
   }, [ready, destination, layout, map.threads, open?.id, originals, camera.aim]);
 
   const stopFollowing = () => { setFollowing(false); camera.hold(); };
+  // The angle belongs to this mounted camera only. Reset/off keep the same world point in the free area's center.
+  const turnTo = (degrees: number) => {
+    if (!Number.isFinite(degrees)) return;
+    stopFollowing();
+    const a = area(), next = normalAngle(degrees);
+    void flow.setViewport(turnAt({ ...flow.getViewport(), angle: angleRef.current }, next,
+      { x: (a.x0 + a.x1) / 2, y: (a.y0 + a.y1) / 2 }), { duration: 0 });
+    angleRef.current = next;
+    setLocalAngle(next);
+  };
+  useLayoutEffect(() => { if (!rotationOn && angleRef.current !== 0) turnTo(0); }, [rotationOn]);
+
+  // Safari's GestureEvent exposes an actual rotation (degrees) and cumulative pinch scale. Wheel input remains
+  // React Flow's pan/zoom input; Ctrl-wheel is never treated as physical rotation. No gesture listeners when off.
+  useEffect(() => {
+    if (!rotationOn) return;
+    const element = pane();
+    if (!element) return;
+    type Gesture = Event & { rotation: number; scale: number; clientX: number; clientY: number };
+    let gesture: { view: Camera; anchor: { x: number; y: number }; rotation: number; scale: number } | null = null;
+    const centroid = (e: Gesture) => {
+      const rect = element.getBoundingClientRect();
+      return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    };
+    const valid = (e: Gesture) => [e.rotation, e.scale, e.clientX, e.clientY].every(Number.isFinite) && e.scale > 0;
+    const start = (event: Event) => {
+      const e = event as Gesture;
+      if (!valid(e)) return;
+      e.preventDefault(); e.stopPropagation();
+      setFollowing(false); camera.hold();
+      const view = { ...flow.getViewport(), angle: angleRef.current };
+      gesture = { view, anchor: screenToWorld(centroid(e), view), rotation: e.rotation, scale: e.scale };
+    };
+    const change = (event: Event) => {
+      const e = event as Gesture;
+      if (!gesture || !valid(e)) return;
+      e.preventDefault(); e.stopPropagation();
+      const next = normalAngle(gesture.view.angle! + e.rotation - gesture.rotation);
+      const zoom = Math.max(minZoom, Math.min(2, gesture.view.zoom * e.scale / gesture.scale));
+      void flow.setViewport(anchorAt(gesture.anchor, centroid(e), zoom, next), { duration: 0 });
+      angleRef.current = next; setLocalAngle(next);
+    };
+    const end = (event: Event) => { if (gesture) { event.preventDefault(); event.stopPropagation(); } gesture = null; };
+    // A browser may emit wheel events alongside its gesture stream: don't zoom twice.
+    const wheel = (event: WheelEvent) => { if (gesture) { event.preventDefault(); event.stopPropagation(); } };
+    const options = { capture: true, passive: false };
+    element.addEventListener("gesturestart", start, options);
+    element.addEventListener("gesturechange", change, options);
+    element.addEventListener("gestureend", end, options);
+    element.addEventListener("wheel", wheel, options);
+    return () => {
+      element.removeEventListener("gesturestart", start, true);
+      element.removeEventListener("gesturechange", change, true);
+      element.removeEventListener("gestureend", end, true);
+      element.removeEventListener("wheel", wheel, true);
+    };
+  }, [rotationOn, flow, pane, minZoom]);
+
+  const worldAt = ({ x, y }: { x: number; y: number }) => {
+    const r = pane()?.getBoundingClientRect();
+    return screenToWorld({ x: x - (r?.left ?? 0), y: y - (r?.top ?? 0) }, { ...flow.getViewport(), angle });
+  };
   const startFollowing = () => {
     setFollowing(true);
     const g = goal();
@@ -498,16 +571,24 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
   /** The item nearest the middle of the view. */
   const middle = () => {
     const a = area();
-    const { x, y, zoom } = flow.getViewport();
+    const view = { ...flow.getViewport(), angle };
     let best: Item | undefined;
     let nearest = Infinity;
     for (const item of layout.items) {
-      const d = Math.hypot(item.box.x * zoom + x + (item.box.w * zoom) / 2 - (a.x0 + a.x1) / 2, item.box.y * zoom + y + (item.box.h * zoom) / 2 - (a.y0 + a.y1) / 2);
+      const p = worldToScreen({ x: item.box.x + item.box.w / 2, y: item.box.y + item.box.h / 2 }, view);
+      const d = Math.hypot(p.x - (a.x0 + a.x1) / 2, p.y - (a.y0 + a.y1) / 2);
       if (d < nearest) { nearest = d; best = item; }
     }
     return best;
   };
   const transform = (): [number, number, number] => { const v = flow.getViewport(); return [v.x, v.y, v.zoom]; };
+  // Cues use the same rotated anchor as input, while their labels stay upright in screen space.
+  const viewItem = (item: Item): Item => {
+    if (!angle) return item;
+    const p = rotatePoint({ x: item.box.x + item.box.w / 2, y: item.box.y + Math.min(item.box.h, 44) / 2 }, angle);
+    return { ...item, box: { ...item.box, x: p.x - item.box.w / 2, y: p.y - Math.min(item.box.h, 44) / 2 } };
+  };
+  const cueLayout = { ...layout, byKey: new Map([...layout.byKey].map(([key, item]) => [key, viewItem(item)])) };
 
   // A thought landing: its slot fills once its flight is in (a ring), the newest landing says what put it there, and
   // out of view an edge chip says where.
@@ -542,7 +623,7 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
       if (mine && !reduced && inAir(thoughtId)) arrive(thoughtId, item);
       else ring(item.key);
     }
-    if (item && !(mine && following) && !onScreen(item, transform(), area()).inside) {
+    if (item && !(mine && following) && !onScreen(viewItem(item), transform(), area()).inside) {
       const title = map.threads.find((t) => t.id === threadId)?.title ?? "";
       setCues((was) => [...was.filter((cue) => cue.thread !== item.thread), { key: item.key, thread: item.thread, title, at: Date.now() }]);
     }
@@ -619,7 +700,7 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
     pick: (item) => { setPicked(item.key); if (item.thread) actions.select(item.thread); },
     words: (item) => { stopFollowing(); setOriginals((was) => { const next = new Set(was); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; }); },
     // Reached by Tab: brought into view, as a pointer would have to go there.
-    focus: (item) => { if (!onScreen(item, transform(), area()).inside) { stopFollowing(); camera.aim(item.box, { ring: item.key }); } },
+    focus: (item) => { if (!onScreen(viewItem(item), transform(), area()).inside) { stopFollowing(); camera.aim(item.box, { ring: item.key }); } },
     openOnMap: (thread) => actions.openThread(thread),
     read: (item) => { stopFollowing(); camera.aim(item.box, { zoom: 1, ring: item.key }); },
     shelve: (item) => keep(item.id),
@@ -667,7 +748,7 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
     topics: topicNames,
     renameTopic: (from, to) => { actions.renameTopic(from, to); },
     moveToTopic: (thread, topic) => { if (actions.moveToTopic(thread, topic)) setMoving((was) => ({ ...was, [thread]: topic })); },
-  }), [actions, put, shelf.items, notes.margins, layout, area, topicNames]);
+  }), [actions, put, shelf.items, notes.margins, layout, area, topicNames, angle]);
 
   // One dim (78%): what isn't the topic you're on while the view follows your talk, or what the Friend isn't pointing at.
   const focusTopic = pointing ? null : following && here && new Set(layout.items.map((item) => item.topic)).size > 1 ? here.topic : null;
@@ -694,7 +775,7 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
   const nodes: ItemNode[] = layout.items.map((item) => ({
     // Its size is known before it's drawn (layout.ts): said as measured, the canvas never measures it again (a node
     // without it is measured on every update, and a moving canvas would loop the browser's resize observer).
-    id: item.key, type: "item", className: "spine-node", position: at(item), data: datas.get(item.key)!, width: item.box.w, height: item.box.h, measured: { width: item.box.w, height: item.box.h },
+    id: item.key, type: "item", className: "spine-node", position: rotatePoint(at(item), angle), data: datas.get(item.key)!, width: item.box.w, height: item.box.h, measured: { width: item.box.w, height: item.box.h },
     draggable: !conversation && item.kind !== "notch" && item.kind !== "slot" && item.kind !== "margin" && item.kind !== "group", selectable: false, focusable: false, connectable: false,
     // Heads over points: far out, a topic's title covers the top of its own spine (in reach of a point, never at it).
     zIndex: (item.kind === "notch" || item.kind === "slot" || item.kind === "group" ? 0 : item.kind === "card" ? 1 : item.kind === "point" || item.kind === "aside" ? (item.look?.variant === "mini" ? 3 : 2) : item.kind === "margin" ? 3 : 4)
@@ -708,10 +789,11 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
       const item = layout.byKey.get(change.id);
       if (!item) continue;
       if (grip.current?.id !== item.id) grip.current = { id: item.id, was: map.positions[item.id] };
-      setDrag({ key: item.key, dx: change.position.x - item.box.x, dy: change.position.y - item.box.y });
-      if (map.connected) actions.position(item.id, change.position.x, change.position.y);
+      const position = screenToWorld(change.position, { x: 0, y: 0, zoom: 1, angle });
+      setDrag({ key: item.key, dx: position.x - item.box.x, dy: position.y - item.box.y });
+      if (map.connected) actions.position(item.id, position.x, position.y);
     }
-  }, [layout, map.positions, map.connected, actions]);
+  }, [layout, map.positions, map.connected, actions, angle]);
   const pointer = (event: MouseEvent | TouchEvent) => ("touches" in event ? event.changedTouches[0] : event);
   /** The named topic whose columns a carried spine is over (anywhere over its header or its columns, a little past
    *  either end), when it isn't the spine's own: dropped there, the spine goes under it. Only a spine laid out by topic,
@@ -719,7 +801,7 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
   const topicUnder = (event: MouseEvent | TouchEvent, item: Item | undefined) => {
     if (!item || item.kind !== "head" || layout.groups.length < 2) return null;
     const { clientX, clientY } = pointer(event);
-    const at = flow.screenToFlowPosition({ x: clientX, y: clientY });
+    const at = worldAt({ x: clientX, y: clientY });
     const over = layout.groups.find(({ box }) => at.x >= box.x - G.laneGap / 2 && at.x <= box.x + box.w + G.laneGap / 2
       && at.y >= box.y - G.groupGap * 3 && at.y <= box.y + box.h + G.rowGap * 3);
     return over && over.name && over.name !== item.group ? over.name : null;
@@ -796,11 +878,12 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
   const rowStyle = { bottom: corner.row };
   return <div className="spine">
     <div ref={anchor} className="spine-anchor" style={{ height: box?.tall ?? 0 }} />
-    <div ref={frame} className={cls("spine-frame", ready_ && "spine-ready", !semantic && shownStop === "pictures" && "spine-stop-pictures", narrow && "spine-narrow")} style={{ top: top ?? 0, left: box?.left ?? 0, right: box?.right ?? 0 }}>
+    <div ref={frame} tabIndex={-1} data-rotation-angle={angle} className={cls("spine-frame", rotationOn && "spine-rotating", ready_ && "spine-ready", !semantic && shownStop === "pictures" && "spine-stop-pictures", narrow && "spine-narrow")} style={{ top: top ?? 0, left: box?.left ?? 0, right: box?.right ?? 0 }}>
       <ActsContext.Provider value={acts}>
       <NowContext.Provider value={now}>
+      <RotationAngle.Provider value={angle}>
       <ReactFlow<ItemNode>
-        className={cls("spine-flow", semantic && "spine-semantic")} nodes={nodes} edges={[]} nodeTypes={NODE_TYPES} onNodesChange={onNodesChange}
+        className={cls("spine-flow", semantic && "spine-semantic")} nodes={nodes} edges={[]} nodeTypes={rotationOn ? ROTATED_NODE_TYPES : NODE_TYPES} onNodesChange={onNodesChange}
         onNodeDragStart={() => { stopFollowing(); unpick(); }}
         onNodeDrag={(event, node) => {
           const shelfHot = overShelfAt(event);
@@ -826,7 +909,10 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
             // it's laid out now: that's where it was dropped).
             put(item.id, null, null);
             acts.moveToTopic(item.thread, to);
-          } else put(item.id, node.position.x, node.position.y);
+          } else {
+            const position = screenToWorld(node.position, { x: 0, y: 0, zoom: 1, angle });
+            put(item.id, position.x, position.y);
+          }
         }}
         onMoveStart={(event) => { if (event) { stopFollowing(); if (!picking?.typing) unpick(); } }}
         onPaneClick={() => { setPicked(null); if (!picking?.typing) unpick(); }}
@@ -838,7 +924,7 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
         <ZoomVar semantic={semantic} />
         <EdgeLabelRenderer>
           <svg className="spine-links" aria-hidden="true">
-            {layout.links.map((link) => {
+            <g transform={`rotate(${angle})`}>{layout.links.map((link) => {
               const d = pathOf(link, linkEnd(link));
               const drawn = fresh.has(link.key) && link.kind !== "pulled" && link.kind !== "slot";
               const dim = pointing ? !!link.topic && layout.byKey.get(link.to.key)?.thread !== pointing.thread : !!focusTopic && link.topic !== focusTopic;
@@ -849,13 +935,20 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
                 {start && <circle className={cls("spine-link-end", link.kind === "note" && "spine-link-end-note")} cx={start.x} cy={start.y} r={2.2}
                   style={{ fill: link.room && link.kind !== "note" ? `var(--room-${link.room})` : undefined }} />}
               </g>;
-            })}
+            })}</g>
           </svg>
         </EdgeLabelRenderer>
       </ReactFlow>
-      {!narrow && <Cues cues={cues} layout={layout} area={area} avoid={avoid} width={width} narrow={false} go={goTo} seen={seenCues} />}
+      </RotationAngle.Provider>
+      {!narrow && <Cues cues={cues} layout={cueLayout} area={area} avoid={avoid} width={width} narrow={false} go={goTo} seen={seenCues} />}
       </NowContext.Provider>
       </ActsContext.Provider>
+      {rotationOn && <div ref={rotationControls} className="spine-rotation" role="group" aria-label="Rotate canvas">
+        <label>Angle <input type="number" aria-label="Canvas angle in degrees" min={-180} max={180} step={5} value={Math.round(angle * 100) / 100}
+          onChange={(e) => { if (e.currentTarget.value !== "") turnTo(e.currentTarget.valueAsNumber); }} />°</label>
+        <button type="button" onClick={() => turnTo(0)}>Reset angle</button>
+        <span>{"GestureEvent" in window ? "Browser rotation gestures available; or use Angle." : "Rotation gestures unavailable here; use Angle."}</span>
+      </div>}
       {picking && <Reply key={`${picking.key}|${picking.quote}`} picking={picking} width={width} start={() => setPicking({ ...picking, typing: true })} cancel={() => { unpick(); getSelection()?.removeAllRanges(); }}
         send={(text) => { notes.add(picking.thoughtId, picking.quote, text); unpick(); getSelection()?.removeAllRanges(); }} />}
       {/* The camera's corner: bottom left in the shell that has a stage (its regions); in the app without one, over the
@@ -864,13 +957,13 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
         <Corner following={following} title={conversation ? "Conversation" : activeThread?.title ?? ""} stop={shownStop} narrow={false} follow={() => (following ? stopFollowing() : startFollowing())} seeAll={seeAll} choose={choose} />
       </div>}
       <div className={cls("spine-corner", narrow ? "spine-corner-row" : "spine-corner-right")} style={narrow ? rowStyle : { bottom: corner.bottomRight }}>
-        {narrow && <Cues cues={cues} layout={layout} area={area} avoid={avoid} width={width} narrow go={goTo} seen={seenCues} />}
+        {narrow && <Cues cues={cues} layout={cueLayout} area={area} avoid={avoid} width={width} narrow go={goTo} seen={seenCues} />}
         {(narrow || !corner.shell) && <Corner following={following} title={conversation ? "Conversation" : activeThread?.title ?? ""} stop={shownStop} narrow={narrow} follow={() => (following ? stopFollowing() : startFollowing())} seeAll={seeAll} choose={choose} />}
         <Shelf ref={shelfRef} entries={layout.shelf} carrying={!!drag} hot={overShelf} open={shelfOpen} setOpen={setShelfOpen} narrow={narrow}
           putBack={(id) => shelf.remove(id)}
           place={(id, x, y) => {
             const frameBox = frame.current?.getBoundingClientRect();
-            const p = flow.screenToFlowPosition({ x, y });
+            const p = worldAt({ x, y });
             if (frameBox && y < frameBox.top + area().y1 && put(id, p.x - G.lineX, p.y - G.dotY)) shelf.remove(id);
           }} />
       </div>
@@ -879,6 +972,14 @@ function Canvas({ map, actions, on, destination, conversation }: BrickProps & { 
 }
 
 const NODE_TYPES = { item: ItemView };
+// React Flow pans/zooms the projected plane. Each item's contents turn around its projected origin; its native
+// drag deltas are inverse-mapped above before any action is sent to World.
+function RotatedItem(props: NodeProps<ItemNode>) {
+  const angle = useContext(RotationAngle);
+  return <div className="spine-rotated-item" style={{ transform: `rotate(${angle}deg)` }}><ItemView {...props} /></div>;
+}
+const RotationAngle = createContext(0);
+const ROTATED_NODE_TYPES = { item: RotatedItem };
 
 /** The zoom, as `--spine-k` (1 / zoom), for what keeps its size on screen however far out you are (a topic's title). */
 function ZoomVar({ semantic }: { semantic: boolean }) {

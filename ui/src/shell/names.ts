@@ -63,6 +63,7 @@ export const FEATURE_NAMES: Record<string, FeatureName> = {
   cards: { name: "Cards", aka: "List view", does: "Every topic as a card of its points, in a list you scroll and search.", lives: "A view" },
   pictures: { name: "Pictures", aka: "Gallery", does: "Every topic as its picture, side by side.", lives: "A view" },
   "semantic-zoom": { name: "Semantic zoom", aka: "Readable overview", does: "Zoom out to topic titles and thought counts; zoom in to read the thoughts.", lives: "The Canvas" },
+  "rotate-canvas": { name: "Rotate canvas", does: "Turn your view with Angle and Reset, or a rotation gesture in browsers that expose one. Thoughts keep their world positions.", lives: "The Canvas" },
   listening: { name: "Listening", aka: "Voice input", does: "The mic: tap it or press ⌘D, and your words land as you talk.", lives: "The input box" },
   recap: { name: "Recap", aka: "Summary", does: "A short summary of this session, on R or “recap”.", lives: "Top right" },
   import: { name: "Import chats", aka: "Import", does: "Brings an exported chat in as thoughts on your map.", lives: "Top right" },
