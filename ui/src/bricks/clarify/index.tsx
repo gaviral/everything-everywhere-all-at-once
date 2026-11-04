@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useBrickEvent, type BrickProps } from "../contract";
 import { askAbout, type Ask } from "./asking";
+import { answeredTerms, rememberAnswer, wasAnswered } from "./answered";
 import { rangeOf, underline } from "./marking";
 import "./clarify.css";
 
@@ -42,22 +43,23 @@ export default function Clarify({ on, map, actions }: BrickProps) {
     const text = map.thoughts.find(thought => thought.id === event.thoughtId)?.text;
     if (!text) return;
     if (shown && shown.thoughtId !== event.thoughtId) {  // What's said next, while a question is up, answers it.
-      actions.annotate(shown.thoughtId, shown.term, text);
+      if (actions.annotate(shown.thoughtId, shown.term, text)) rememberAnswer(map, shown.thoughtId, shown.term);
       setShown(null);
       return;
     }
     const context = map.thoughts.filter(thought => thought.id !== event.thoughtId).slice(-6).map(thought => thought.text);
-    void askAbout(text, context).then(found => {
-      if (found) setWaiting(queue => [...queue, { thoughtId: event.thoughtId, ...found }]);
+    void askAbout(text, context, event.thoughtId, answeredTerms(map, event.thoughtId)).then(found => {
+      if (found && !wasAnswered(answeredTerms(map, event.thoughtId), found.term)) setWaiting(queue => [...queue, { thoughtId: event.thoughtId, ...found }]);
     }).catch(() => {});
   });
 
   // One question at a time, only when the person has stopped.
   useEffect(() => {
     if (shown || talking || !waiting.length) return;
-    setShown(waiting[0]);
-    setWaiting(queue => queue.slice(1));
-  }, [shown, talking, waiting]);
+    const next = waiting.find(ask => !wasAnswered(answeredTerms(map, ask.thoughtId), ask.term));
+    setShown(next ?? null);
+    setWaiting(queue => next ? queue.slice(queue.indexOf(next) + 1) : []);
+  }, [shown, talking, waiting, map]);
 
   // The Canvas moves under the question; the underline and arrow follow the word.
   useEffect(() => {
@@ -81,7 +83,7 @@ export default function Clarify({ on, map, actions }: BrickProps) {
     <svg className="clarify-arrow" aria-hidden="true"><path d={arrowPath(word, noteAt)} /></svg>
     <div className="clarify-note" ref={note} style={{ left, top }} role="status">
       <p>{shown.question}</p>
-      <button onClick={() => setShown(null)}>Got it</button>
+      <button onClick={() => { rememberAnswer(map, shown.thoughtId, shown.term); setShown(null); }}>Got it</button>
     </div>
   </div>;
 }

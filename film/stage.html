@@ -16,11 +16,14 @@
   .wall-tile { position: absolute; width: 1920px; height: 1920px; overflow: hidden; background: #0d1014; outline: 1px solid #48515c; }
   .wall-tile img, .wall-tile video { display: block; width: 100%; height: 100%; object-fit: contain; }
   .lockup { display: flex; align-items: center; gap: 42px; }
+  .caption, .label { position: absolute; z-index: 10; font-size: 27px; letter-spacing: .01em; padding: 12px 20px; border-radius: 10px; background: #101114e8; color: #fff; }
+  .caption { right: 48px; bottom: 34px; } .label { left: 48px; top: 34px; }
+  .brand { width: 172px; height: 172px; border-radius: 38px; }
   .mark { width: 144px; height: 144px; background: #0866ff; border-radius: 40px; position: relative; box-shadow: 0 16px 45px #0866ff30; }
   .mark::before, .mark::after { content: ""; position: absolute; width: 62px; height: 22px; background: white; border-radius: 15px; left: 41px; transform: rotate(-28deg); }
   .mark::before { top: 47px; } .mark::after { top: 78px; }
 </style>
-<main id="stage" aria-label="Film frame"><div id="scene"><div id="camera"></div></div></main>
+<main id="stage" aria-label="Film frame"><div id="scene"><div id="camera"></div></div><div class="label" hidden></div><div class="caption" hidden></div></main>
 <script type="module">
   import { createWall, drawWall } from './wall.mjs';
   const stage = document.querySelector('#stage');
@@ -58,12 +61,21 @@
     });
     video.src = spec.source;
     await bounded(loaded, 'Clip load timed out');
+    if (spec.crop) {
+      const [x, y, w, h] = spec.crop;
+      node.style.aspectRatio = `${video.videoWidth * w} / ${video.videoHeight * h}`;
+      Object.assign(video.style, { position: 'absolute', width: `${100 / w}%`, left: `${-100 * x / w}%`, top: `${-100 * y / h}%` });
+    }
     videos.push({ video, spec });
   }
   async function mount(shot) {
     videos.forEach(({ video }) => { video.pause(); video.removeAttribute('src'); video.load(); });
     videos = []; wallTiles = []; camera.replaceChildren();
     camera.style.opacity = '1'; camera.style.transformOrigin = '50% 50%';
+    for (const key of ['label', 'caption']) {
+      const node = stage.querySelector(`.${key}`);
+      node.textContent = shot[key] ?? ''; node.hidden = !shot[key];
+    }
     const isText = ['title', 'card', 'list'].includes(shot.kind);
     stage.style.background = background(shot.background ?? (shot.kind === 'card' || shot.kind === 'list' ? shot.colour ?? '#0866FF' : shot.kind === 'end' ? '#ffffff' : shot.kind === 'wall' ? '#000000' : '#08090c'));
     stage.style.color = shot.kind === 'end' ? '#08090c' : '#ffffff';
@@ -71,7 +83,7 @@
     if (shot.kind === 'end') {
       const plate = textPlate('');
       const lockup = document.createElement('div'); lockup.className = 'lockup';
-      const mark = document.createElement('div'); mark.className = 'mark';
+      const mark = document.createElement('img'); mark.className = 'brand'; mark.src = '../ui/public/icons/icon-512.png'; mark.alt = '';
       const name = document.createElement('span'); name.textContent = shot.word ?? 'E2A2O';
       lockup.append(mark, name); plate.append(lockup);
     }
@@ -107,8 +119,9 @@
     if (shot.kind === 'list') camera.firstChild.textContent = shot.names[Math.min(shot.names.length - 1, Math.floor((local + 1e-8) / shot.seconds))];
     const wall = shot.kind === 'wall' ? drawWall(shot, local, camera, wallTiles) : null;
     await Promise.all(videos.map(({ video, spec }) => seek(video, (spec.start ?? 0) +
-      (spec.loop ? local % (spec.loopSeconds ?? video.duration - (spec.start ?? 0)) : local))));
+      (spec.loop ? local % (spec.loopSeconds ?? video.duration - (spec.start ?? 0)) : Math.min(local, spec.playSeconds ?? local)))));
     await document.fonts.ready;
+    await Promise.all([...camera.querySelectorAll('img')].map(img => img.decode()));
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     return { kind: shot.kind, text: camera.textContent, times: videos.map(({ video }) => video.currentTime), wall };
   };
