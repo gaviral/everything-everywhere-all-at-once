@@ -62,6 +62,7 @@ export function useBrickHost(world: World, revision: number, me: string, connect
         return sent;
       },
       openThread: (id) => latest.current.openThread(id),
+      openThought: (id) => latest.current.openThought(id),
       select: (id) => latest.current.select(id),
       notify: (text) => latest.current.notify(text),
       position: (id, x, y) => latest.current.position(id, x, y),

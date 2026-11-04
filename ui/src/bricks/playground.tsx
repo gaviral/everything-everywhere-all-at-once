@@ -15,9 +15,10 @@ import { receiveRoute, type RouteMsg } from "../route";
 import { roomColors } from "../rooms";
 import { moveChange, renameChange } from "../topics-core";
 import { receiveJob, type JobMsg } from "../work-jobs";
-import type { BrickActions, BrickEvents } from "./contract";
+import type { BrickActions, BrickEvents, ViewDestination } from "./contract";
 import { ShapesContext } from "./contract";
 import { useShapes } from "../shapes-core";
+import { resolveMerged } from "../merges";
 import "../styles.css";
 import "./playground.css";
 
@@ -78,6 +79,7 @@ function Playground() {
   // Bumped with each map picked, as the core's snapshot count is: a new map's thoughts aren't landings.
   const [revision, setRevision] = useState(1);
   const [connected, setConnected] = useState(true);
+  const [destination, setDestination] = useState<ViewDestination | null>(null);
   // Your words as they're heard (`map.partial`), while "Say a thought" talks.
   const [partial, setPartial] = useState("");
   const talk = useRef<number[]>([]);
@@ -179,6 +181,18 @@ function Playground() {
       said(`openThread ${title(thread)} → in the app: back to the map, that topic open and highlighted`);
       setWorld((w) => apply(w, { type: "active_changed", thread_id: thread, speaker: "you" }));
     },
+    openThought: (id) => {
+      const thought = world.thoughts.find(thought => thought.id === id && thought.placed);
+      const threadId = thought?.thread_id ? resolveMerged(world, thought.thread_id) : null;
+      if (!threadId || !world.threads.some(thread => thread.id === threadId)) {
+        showNotice("Original thought is no longer on this map.");
+        return false;
+      }
+      setDestination(was => ({ threadId, thoughtId: id, revision: (was?.revision ?? 0) + 1 }));
+      setWorld(w => apply(w, { type: "active_changed", thread_id: threadId, speaker: "you" }));
+      said(`openThought ${id} → in the app: back to the map, that exact thought open and highlighted`);
+      return true;
+    },
     select: (thread) => said(`select ${title(thread)} → in the app: “this” for what's said next`),
     notify: (text) => { said(`notify “${text}”`); showNotice(text); },
     // Placed as the core places it: the change comes back through the window's own reducer, with `by` you. A drag's
@@ -211,7 +225,7 @@ function Playground() {
       if (ok) showNotice(`${by}: ${text.trim()}`);
       return ok;
     },
-  });
+  }, destination);
   // What the brick hears, listed as it passes.
   useEffect(() => {
     const names: (keyof BrickEvents)[] = ["landed", "words", "notice", "pointing", "asked", "speaking"];
