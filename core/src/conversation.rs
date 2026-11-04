@@ -1,7 +1,7 @@
-//! Opt-in, question-led conversation. Captions are live only; history is bounded and private to a speaker.
+//! Opt-in, question-led conversation. Completed captions are journaled; history is bounded and private to a speaker.
 use crate::{
     call, guide, model,
-    protocol::{Outgoing, ServerMsg},
+    protocol::ServerMsg,
     Core,
 };
 use serde_json::json;
@@ -218,20 +218,7 @@ pub fn request(core: &Arc<Core>, speaker: &str, window: u64, text: &str) -> bool
                 while state.history.len() > HISTORY_PAIRS {
                     state.history.pop_front();
                 }
-                let message = ServerMsg::Guide {
-                    kind: guide::Kind::Caption,
-                    target: None,
-                    text,
-                    by: NAME.into(),
-                    at_ms: crate::now_ms(),
-                    urgent: false,
-                    from: 0,
-                };
-                let _ = task_core.updates.send(Outgoing {
-                    to: Some(task_speaker.clone()),
-                    message,
-                    speak: true,
-                });
+                guide::completed(&task_core, NAME, 0, text, true, Some(format!("reply-{task_id}")), Some(task_speaker.clone()));
                 tell(
                     &task_core,
                     &task_speaker,

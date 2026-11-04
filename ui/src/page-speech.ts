@@ -9,10 +9,15 @@ type SpeechMessage = {
   state?: string;
   speak?: boolean;
   kind?: string;
+  caption?: { id: string; by: string };
+  world?: { captions?: { id: string; by: string }[] };
   text?: string;
   change?: { type: string; thought?: { text: string } };
   people?: { ai: boolean; remote?: boolean; speaking: boolean }[];
 };
+
+const heardCaptions = new Set<string>();
+const captionKey = (c: { id: string; by: string }) => JSON.stringify([c.by, c.id]);
 
 let utterance: SpeechSynthesisUtterance | null = null;
 let started = false;
@@ -51,6 +56,15 @@ export function hearPageSpeech(data: unknown) {
   if (typeof data !== "string" || typeof window === "undefined" || !window.speechSynthesis) return;
   let msg: SpeechMessage;
   try { msg = JSON.parse(data) as SpeechMessage; } catch { return; }
+  if (msg.type === "snapshot") {
+    for (const caption of msg.world?.captions ?? []) heardCaptions.add(captionKey(caption));
+    return;
+  }
+  if (msg.type === "guide" && msg.caption) {
+    const key = captionKey(msg.caption);
+    if (heardCaptions.has(key)) return;
+    heardCaptions.add(key);
+  }
   if (msg.type === "partner_state" && ["thinking", "cancelled", "error"].includes(msg.state ?? "")) { stopPageSpeech(); return; }
   if ((msg.type === "call" && msg.people?.some((p) => p.speaking && !p.ai && !p.remote))
       || (msg.type === "partial" && msg.text?.trim())) {

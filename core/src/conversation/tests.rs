@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    protocol::ServerMsg,
+    protocol::{Outgoing, ServerMsg},
     world::{Journal, World},
 };
 use axum::{routing::post, Json, Router};
@@ -315,10 +315,10 @@ async fn off_is_inert_then_question_reply_follow_up_and_identity() {
         .unwrap()
         .contains("What should I try?"));
     assert!(
-        !std::fs::read_to_string(&f.path)
+        std::fs::read_to_string(&f.path)
             .unwrap()
             .contains("Try one small step"),
-        "captions stay transient"
+        "completed partner replies are journaled"
     );
 }
 

@@ -117,11 +117,15 @@ pub enum ServerMsg {
         dropped: bool,
     },
     /// Someone pointing at a part of the screen, saying a line as a caption, or holding a question for the person's next
-    /// pause (guide.rs): to every window but the one it came from, as it comes; never journaled. `target`: the part's
+    /// pause (guide.rs): to every window but the one it came from, as it comes. Completed captions are journaled;
+    /// gestures stay transient. `target`: the part's
     /// name (docs/guide.md), none for a caption or to take `by`'s point down; for a held question, what it points at
     /// once asked, if anything. `text`: the point's caption, the caption, or the question (none takes back `by`'s
     /// questions still held).
     Guide {
+        /// Durable caption identity, absent on transient guide gestures.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        caption: Option<crate::world::Caption>,
         kind: crate::guide::Kind,
         target: Option<String>,
         text: String,
@@ -314,7 +318,7 @@ pub enum ClientMsg {
         caption: Option<String>,
     },
     /// A line for every other window, optionally spoken by the page; never a thought on the map.
-    Caption { text: String, #[serde(default)] speak: bool },
+    Caption { text: String, #[serde(default)] speak: bool, #[serde(default)] id: Option<String> },
     /// A question for the other windows to hold until the person pauses, then ask, with an arrow at `target` if given
     /// (guide.rs): never a thought on the map. `urgent` (the Interrupt level) jumps the line of held questions. No words
     /// take back this speaker's questions still held.
