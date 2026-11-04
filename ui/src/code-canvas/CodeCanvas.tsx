@@ -4,6 +4,7 @@ import { Composition } from './Composition';
 import { NeedsYou } from './NeedsYou';
 import { useSnapshot } from './useSnapshot';
 import { WorkStatus } from './WorkStatus';
+import { SystemView } from './system-view/SystemView';
 import './code-canvas.css';
 export default function CodeCanvas() {
   const [tv, setTv] = useState(() => { try { return localStorage.getItem('agent-work-tv') === '1'; } catch { return false; } });
@@ -15,6 +16,7 @@ export default function CodeCanvas() {
     <div className={`cc-live ${stale ? 'cc-stale' : ''}`} role="status"><span>{stale && data ? 'Showing last read · ' : ''}{status}</span><span>{data ? `${data.files} files · ${data.functions.length} functions · ${data.branches.length} branches` : 'Optional local view · no model needed'}</span><button onClick={refresh}>Read again</button></div>
     {data?.warnings.map(w => <p className="cc-warning" key={w}>{w}</p>)}
     <WorkStatus work={data?.agents?.work_status} stale={stale || !data?.agents?.available} />
+    <SystemView />
     <BranchBoard branches={data?.branches ?? []} agents={data?.agents} moments={moments} />
     <Composition data={data} />
     <NeedsYou needs={data?.agents?.needs_you ?? []} refresh={refresh} confirmed={!!data?.agents?.available && !stale} loading={!data && !stale} />

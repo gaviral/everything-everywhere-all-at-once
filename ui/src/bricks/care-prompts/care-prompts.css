@@ -1,0 +1,59 @@
+.care-prompts { position: fixed; left: 28px; bottom: 74px; z-index: 35; color: var(--ink, #243b33); font-family: inherit; }
+.care-prompts button, .care-prompts-settings button, .care-prompts-settings input, .care-prompts-settings select { font: inherit; }
+.care-prompts button, .care-prompts-settings button { cursor: pointer; }
+.care-prompts button:focus-visible, .care-prompts-settings button:focus-visible, .care-prompts-settings input:focus-visible, .care-prompts-settings select:focus-visible { outline: 3px solid #61987e; outline-offset: 4px; }
+.care-prompts-glyph { width: 36px; height: 36px; flex: none; color: #6d9e80; }
+.care-prompts-mark { display: flex; align-items: center; width: fit-content; border: 1px solid var(--line, #d3ded3); border-radius: 28px; background: var(--card, #fffdf6); box-shadow: 0 4px 20px #152c1810; }
+.care-prompts-opener { display: flex; align-items: center; gap: 6px; min-height: 48px; padding: 4px 16px 4px 10px; color: inherit; border: 0; background: transparent; border-radius: 28px; font-size: 17px !important; }
+.care-prompts-opener .care-prompts-glyph { width: 26px; height: 26px; }
+.care-prompts-opener small { font-size: 14px; color: var(--muted, #697a70); }
+.care-prompts-stop-mark { border: 0; border-left: 1px solid var(--line, #d3ded3); border-radius: 0 28px 28px 0; min-height: 44px; padding: 0 16px; background: transparent; color: inherit; }
+.care-prompts-prompt { display: flex; align-items: center; text-align: left; gap: 20px; margin-bottom: 12px; padding: 28px; width: min(420px, calc(100vw - 40px)); border: 1px solid #b6cab7; border-radius: 34px 34px 34px 8px; color: #263f30; background: radial-gradient(ellipse at 5% 0%, #e5eeb8, transparent 70%), #f5f7e9; box-shadow: 0 12px 48px #16352224; }
+.care-prompts-prompt .care-prompts-glyph { width: 55px; height: 55px; }
+.care-prompts-prompt > span { display: grid; gap: 8px; }
+.care-prompts-prompt strong { display: block; font-size: 30px; line-height: 1.15; font-weight: 550; letter-spacing: -.7px; }
+.care-prompts-prompt small { display: block; font-size: 12px; letter-spacing: .8px; }
+.care-prompts-prompt small:last-child { margin-top: 8px; letter-spacing: 0; font-size: 15px; color: #586d57; }
+.care-prompts-settings { box-sizing: border-box; position: fixed; inset: auto auto 74px 28px; margin: 0; width: 460px; max-width: calc(100vw - 32px); max-height: calc(100dvh - 100px); overflow-y: auto; padding: 26px 30px; border: 1px solid #ccd8c7; border-radius: 32px; background: #fcfcf5; color: #293c30; box-shadow: 0 20px 80px #152d2633; font-family: inherit; color-scheme: light; }
+.care-prompts-settings::backdrop { background: #12211838; }
+.care-prompts-settings-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.care-prompts-eyebrow { font-size: 11px; letter-spacing: 1.8px; color: #627560; font-weight: 650; }
+.care-prompts-close { border: 0; background: #edf0e7; color: #40543d; width: 44px; height: 44px; font-size: 26px !important; border-radius: 50%; }
+.care-prompts-heading { display: flex; align-items: center; justify-content: space-between; flex-direction: row-reverse; gap: 12px; margin-top: 10px; }
+.care-prompts-heading h2 { font-size: 36px; line-height: 1.04; letter-spacing: -1px; font-weight: 500; margin: 0; }
+.care-prompts-heading .care-prompts-glyph { width: 75px; height: 75px; transform: rotate(12deg); }
+.care-prompts-intro { font-size: 17px; line-height: 1.5; color: #586653; margin: 14px 0 20px; }
+.care-prompts-example { padding: 18px 20px; border-radius: 24px 24px 24px 6px; background: linear-gradient(115deg, #e8edcd, #edf3e7); }
+.care-prompts-example > span { font-size: 10px; letter-spacing: 1.7px; color: #667651; }
+.care-prompts-example p { display: flex; justify-content: space-between; font-size: 27px; letter-spacing: -.6px; margin: 8px 0; }
+.care-prompts-example p span { color: #749160; }
+.care-prompts-example button { border: 0; background: none; color: #425f38; font-size: 14px !important; padding: 8px 0; text-decoration: underline; text-underline-offset: 4px; min-height: 40px; }
+.care-prompts-timing { border: 0; padding: 0; margin: 22px 0; min-width: 0; }
+.care-prompts-timing legend { font-size: 19px; margin-bottom: 14px; font-weight: 550; }
+.care-prompts-frequency, .care-prompts-toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 15px; }
+.care-prompts-frequency select { min-height: 44px; padding: 8px; border: 1px solid #cdd6c5; border-radius: 12px; background: #fffef8; color: #293c30; }
+.care-prompts-toggle { justify-content: flex-start; margin-top: 16px; }
+.care-prompts-toggle input { accent-color: #55754b; width: 20px; height: 20px; margin: 0; }
+.care-prompts-hours { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; }
+.care-prompts-hours label { display: grid; gap: 6px; font-size: 12px; color: #62735e; min-width: 0; }
+.care-prompts-hours input { box-sizing: border-box; max-width: 145px; min-width: 0; min-height: 44px; padding: 8px 10px; border: 1px solid #cdd6c5; border-radius: 12px; color: #293c30; background: #fffef8; font-size: 17px; }
+.care-prompts-fine { font-size: 12px; line-height: 1.5; color: #65715f; margin: 10px 0 0; }
+.care-prompts-water { background: #edf2ef; border-radius: 22px; padding: 18px; }
+.care-prompts-water-top { display: flex; gap: 12px; align-items: center; }
+.care-prompts-water .care-prompts-glyph { color: #6c9898; }
+.care-prompts-water h3 { font-size: 17px; font-weight: 550; margin: 0 0 4px; }
+.care-prompts-water-top p { margin: 0; font-size: 15px; color: #56726b; }
+.care-prompts-water-button { display: flex; justify-content: space-between; align-items: center; width: 100%; min-height: 46px; border: 1px solid #bdd0c5; border-radius: 12px; padding: 10px 12px; background: #f9fcf8; color: #34594c; margin-top: 14px; font-size: 15px !important; }
+.care-prompts-source { font-size: 12px; margin: 12px 0 0; color: #536a61; }
+.care-prompts-consent { margin-top: 20px; text-align: center; }
+.care-prompts-consent > p:first-child { font-size: 14px; color: #586b4d; }
+.care-prompts-start, .care-prompts-stop { width: 100%; min-height: 50px; border: 0; border-radius: 16px; padding: 12px; font-size: 17px !important; }
+.care-prompts-start { background: #405d3b; color: #fffef3; }
+.care-prompts-stop { background: #e9e9dc; color: #44513b; }
+@media (max-width: 560px) {
+  .care-prompts { left: 16px; bottom: 82px; }
+  .care-prompts-settings { left: 16px; bottom: 24px; max-height: calc(100dvh - 48px); padding: 22px; }
+  .care-prompts-prompt { padding: 24px 20px; gap: 12px; }
+  .care-prompts-prompt strong { font-size: 27px; }
+  .care-prompts-hours input { max-width: 125px; }
+}
