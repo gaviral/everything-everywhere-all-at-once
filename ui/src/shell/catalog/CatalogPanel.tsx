@@ -3,6 +3,8 @@ import { CatalogTab, type CatalogRow } from "../Shell";
 import { NAMES } from "../names";
 import { newCatalogSession, setOrganization, useOrganization, type CatalogSession } from "./preference";
 
+import { RecoveryLog } from "../../bricks/self-heal/RecoveryLog";
+
 export type OrganizedProps = { rows: CatalogRow[]; at: string | null; currentView: string; active: boolean; session: CatalogSession };
 class LoadBoundary extends Component<{ children: ReactNode; fallback: ReactNode }, { failed: boolean }> {
   state = { failed: false };
@@ -23,7 +25,7 @@ export function CatalogPanel({ eligible, ...props }: Omit<OrganizedProps, "sessi
       .catch(() => { if (alive) setFailed(true); });
     return () => { alive = false; };
   }, [eligible, enabled, props.active, Renderer, failed]);
-  if (!eligible) return <CatalogTab rows={props.rows} at={props.at} />;
+  if (!eligible) return <CatalogTab rows={props.rows} at={props.at} header={<RecoveryLog />} />;
   const off = () => {
     setOrganization(false);
     requestAnimationFrame(() => {
@@ -43,10 +45,11 @@ export function CatalogPanel({ eligible, ...props }: Omit<OrganizedProps, "sessi
     <button type="button" className="shell-link" style={{ minHeight: 32 }} role="switch" aria-label={NAMES.catalogTab.organization} aria-checked={enabled}
       onClick={() => enabled ? off() : setOrganization(true)}>{enabled ? "Off · restore original list" : "Enable"}</button>
   </div>;
-  if (!enabled) return <CatalogTab rows={props.rows} at={props.at} header={preference} />;
+  if (!enabled) return <CatalogTab rows={props.rows} at={props.at} header={<>{preference}<RecoveryLog /></>} />;
   const fallback = <><p role="status" className="shell-foot">Organization could not load. The original list is available below.</p><CatalogTab rows={props.rows} at={props.at} /></>;
   return <div className="catalog-presentation">
     {preference}
+    <RecoveryLog />
     {failed ? fallback : Renderer ? <LoadBoundary fallback={fallback}><Renderer {...props} session={session.current} /></LoadBoundary>
       : <p role="status" className="shell-foot">Loading feature organization…</p>}
   </div>;
