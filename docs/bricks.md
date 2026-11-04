@@ -170,4 +170,4 @@ The card says “Saved” only after the core confirms the record. These records
 
 Run `node scripts/f7-questions-check.mjs` after building the core and UI.
 
-- `flow-canvas` (panel, off, demo-safe): **Flow** builds a serial text pipeline with Muse Spark, streams each box with measured times, exposes editable prompts and exact inputs, compares two versions side by side and saves graphs for reopening or link sharing. `?flow` opens it on an empty map. It listens to the existing speaker turn flow and uses the existing microphone action. See [Flow](flow.md) for the runtime and live smoke check.
+- `flow-canvas` (panel, off, demo-safe): **Flow** runs a thought through serial text boxes with Muse Spark, streams each box with measured times, exposes editable prompts and exact inputs, compares two versions side by side and saves graphs for reopening or link sharing. `?flow` opens it on an empty map. It listens to the existing speaker turn flow and uses the existing microphone action. See [Flow](flow.md) for the runtime and live smoke check.

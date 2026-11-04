@@ -1,1 +1,1 @@
-{"id":"flow-canvas","name":"Flow","does":"Talk a pipeline into being. Inspect, change and run every box live.","kind":"panel","defaultOn":false,"demoSafe":true,"flag":"flow","showsLiveWords":true}
+{"id":"flow-canvas","name":"Flow","does":"Run a thought through boxes. Inspect, change and run every box live.","kind":"panel","defaultOn":false,"demoSafe":true,"flag":"flow","showsLiveWords":true}
