@@ -1,0 +1,25 @@
+.demo-variants { color: #172b2b; background: #f8faf8; border: 1px solid #bac9c5; border-radius: 16px; padding: 24px; font: 1rem/1.5 system-ui, sans-serif; max-width: 960px; margin: auto; overflow-wrap: anywhere; }
+.demo-variants * { box-sizing: border-box; }
+.demo-variants h2, .demo-variants h3, .demo-variants p { margin: 0 0 12px; }
+.demo-variants h2 { font-size: 1.7em; }
+.demo-variants h3 { font-size: 1.15em; }
+.demo-variants header, .demo-variants-pickers, .demo-variants-choices { display: flex; flex-wrap: wrap; gap: 16px; }
+.demo-variants header { justify-content: space-between; align-items: start; }
+.demo-variants section { border-top: 1px solid #bac9c5; padding-top: 20px; margin-top: 20px; }
+.demo-variants button, .demo-variants select { font: inherit; min-height: 44px; padding: 8px 12px; border: 1px solid #58706a; border-radius: 8px; color: inherit; background: white; max-width: 100%; }
+.demo-variants button { cursor: pointer; margin-bottom: 12px; }
+.demo-variants button[aria-pressed="true"] { background: #174c42; color: white; }
+.demo-variants button:disabled { color: #53625e; background: #e5eae7; cursor: default; }
+.demo-variants :focus-visible { outline: 3px solid #1865c1; outline-offset: 3px; }
+.demo-variants label { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.demo-variants .demo-variants-switch { flex-direction: row; align-items: center; min-height: 44px; cursor: pointer; }
+.demo-variants input { width: 22px; height: 22px; accent-color: #174c42; }
+.demo-variants-pickers > label, .demo-variants-choices > article { flex: 1 1 240px; min-width: 0; }
+.demo-variants-choices > article { padding: 16px; background: white; border: 1px solid #bac9c5; border-radius: 12px; margin-bottom: 16px; }
+.demo-variants dl { margin: 0 0 12px; }
+.demo-variants dt { font-size: .85em; color: #455d56; }
+.demo-variants dd { margin: 0 0 6px; }
+.demo-variants-differences { margin-top: 20px; }
+.demo-variants ul { padding-inline-start: 20px; }
+.demo-variants li { margin-bottom: 16px; }
+@media (max-width: 480px) { .demo-variants { padding: 16px; border-radius: 10px; } }
