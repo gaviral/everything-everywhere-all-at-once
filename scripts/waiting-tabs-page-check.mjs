@@ -5,7 +5,7 @@ if (ready()) { console.log(`SKIP waiting-tabs-page-check: ${ready()}`); process.
 const world = { threads: [], thoughts: [], active: null, active_by: {}, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: true, recaps: [], notes: {}, proposals: [], topics: {} };
 let online = true;
 const landed = new Map();
-const core = await standInCore(() => online ? [{ type: 'snapshot', world }] : null, {
+const core = await standInCore(() => online ? [{ type: 'map_identity', id: 'waiting-tabs-map' }, { type: 'snapshot', world }] : null, {
   door: { room: true, member: true },
   onMessage(message) {
     if (message.type !== 'text') return;

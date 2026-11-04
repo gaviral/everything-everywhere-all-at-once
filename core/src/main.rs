@@ -1528,6 +1528,7 @@ fn port(value: &str, default: u16) -> Option<u16> {
 
 #[derive(serde::Deserialize)]
 struct Join {
+    identity: Option<String>,
     /// The name this window joined a room with; none alone.
     #[serde(default)]
     name: String,
@@ -1566,7 +1567,13 @@ async fn connect(
     let upgrade = upgrade.max_message_size(protocol::FRAME_MAX).max_frame_size(protocol::FRAME_MAX);
     let ai = join.ai.is_some() && speaker != "you" && speaker != GUEST;
     let remote = join.remote.is_some() && !ai;
-    upgrade.on_upgrade(move |socket| session(socket, core, speaker, link.here(), renamed, ai, remote, seat))
+    upgrade.on_upgrade(move |mut socket| async move {
+        if join.identity.is_some() {
+            let id = core.journal.lock().unwrap().map_id().to_string();
+            if socket.send(Message::Text(serde_json::to_string(&ServerMsg::MapIdentity { id }).unwrap().into())).await.is_err() { return; }
+        }
+        session(socket, core, speaker, link.here(), renamed, ai, remote, seat).await
+    })
 }
 
 /// What another laptop is called when it asks for this machine's name, or for none.
@@ -2056,6 +2063,38 @@ mod tests {
         let (_, reopened) = crate::Journal::open(&path).unwrap();
         assert_eq!(serde_json::to_value(&reopened).unwrap(), serde_json::to_value(&*core.snapshot()).unwrap(), "the map is as it was");
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn delivery_identity_survives_restart_and_is_not_an_address() {
+        let first = std::env::temp_dir().join(format!("e2a2o-identity-{}.jsonl", uuid::Uuid::new_v4()));
+        let other = std::env::temp_dir().join(format!("e2a2o-identity-{}.jsonl", uuid::Uuid::new_v4()));
+        let (journal, _) = crate::Journal::open(&first).unwrap();
+        let id = journal.map_id().to_string();
+        assert!(uuid::Uuid::parse_str(&id).is_ok());
+        drop(journal);
+        assert_eq!(crate::Journal::open(&first).unwrap().0.map_id(), id);
+        assert_ne!(crate::Journal::open(&other).unwrap().0.map_id(), id);
+        for path in [first, other] {
+            std::fs::remove_file(path.with_file_name(format!("{}.map-id", path.file_name().unwrap().to_string_lossy()))).unwrap();
+            std::fs::remove_file(path).unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn delivery_identity_precedes_the_identified_sessions_snapshot() {
+        let (core, _queue, path) = keyless(World::default());
+        let routes = axum::Router::new().route("/ws", axum::routing::get(super::connect)).with_state(core.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, routes.into_make_service_with_connect_info::<Link>()).await });
+        let (mut window, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws?identity=1")).await.unwrap();
+        let first = received(&mut window).await;
+        assert_eq!(first["type"], "map_identity");
+        assert_eq!(first["id"], core.journal.lock().unwrap().map_id());
+        assert_eq!(received(&mut window).await["type"], "snapshot");
+        server.abort();
+        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]

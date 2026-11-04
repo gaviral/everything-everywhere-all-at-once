@@ -970,17 +970,36 @@ impl World {
     }
 }
 
+/// A companion identity belongs to the journal, never to its address or current contents.
+fn map_identity(path: &Path) -> anyhow::Result<String> {
+    let identity = path.with_file_name(format!("{}.map-id", path.file_name().unwrap().to_string_lossy()));
+    if !identity.exists() {
+        let id = uuid::Uuid::new_v4().to_string();
+        let temporary = identity.with_extension(format!("{id}.tmp"));
+        let mut file = OpenOptions::new().create_new(true).write(true).open(&temporary)?;
+        file.write_all(id.as_bytes())?;
+        file.sync_all()?;
+        let linked = std::fs::hard_link(&temporary, &identity);
+        std::fs::remove_file(&temporary)?;
+        if let Err(error) = linked { if error.kind() != std::io::ErrorKind::AlreadyExists { return Err(error.into()); } }
+    }
+    let id = std::fs::read_to_string(identity)?;
+    uuid::Uuid::parse_str(&id)?;
+    Ok(id)
+}
+
 /// Append-only log of changes, written immediately; replayed on start so the app
 /// opens exactly where you left it.
 pub struct Journal {
     file: File,
+    map_id: String,
 }
 
 impl Journal {
     /// An existing test file whose appends fail regardless of the process's permission to change it.
     #[cfg(test)]
     pub(crate) fn read_only(path: &Path) -> anyhow::Result<Journal> {
-        Ok(Journal { file: File::open(path)? })
+        Ok(Journal { file: File::open(path)?, map_id: map_identity(path)? })
     }
 
     pub fn open(path: &Path) -> anyhow::Result<(Journal, World)> {
@@ -1030,8 +1049,10 @@ impl Journal {
                 file.write_all(b"\n")?;
             }
         }
-        Ok((Journal { file }, world))
+        Ok((Journal { file, map_id: map_identity(path)? }, world))
     }
+
+    pub fn map_id(&self) -> &str { &self.map_id }
 
     pub fn append(&mut self, change: &Change) -> anyhow::Result<()> {
         let mut line = serde_json::to_string(change)?;

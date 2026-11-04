@@ -36,6 +36,7 @@ pub const POSITION_MAX: f64 = 1_000_000.0;
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMsg {
+    MapIdentity { id: String },
     /// A bounded spoken command answer; live only, with no journal or snapshot replay.
     CommandReply { text: String },
     PartnerState { state: String, message: String },

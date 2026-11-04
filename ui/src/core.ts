@@ -1,7 +1,7 @@
 import { ignorePartner } from "./partner";
 import { noticeCommand, useNoticeQueue } from "./notice-queue";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { thoughtId, readWaiting, saveWaiting, receivedWaiting } from "./waiting";
+import { thoughtId, readWaiting, saveWaiting, receivedWaiting, waitingKey, quarantined, discardQuarantined, type RecoveryState } from "./waiting";
 import { switchTalk, talkCommand } from "./talk-preset";
 import { receiveStep, resetSteps, stopListeningStep, type StepMsg } from "./model-line";
 import { STOP_WAITS, caughtUp, comesFirst, received as cardReceived, type Card as SendCardShown, type SendCardMsg } from "./send-card";
@@ -239,6 +239,7 @@ type Change =
   | { type: "messages_read"; at_ms: number[] };
 
 type ServerMsg =
+  | { type: "map_identity"; id: string }
   | { type: "command_reply"; text: string; speak?: boolean }
   | { type: "partner_state"; state: string; message: string }
   | { type: "text_received"; id: string }
@@ -762,14 +763,17 @@ export function useCore(speaker?: string) {
   // The core says so on connect when it has no model key, or once the service refused it: the map can be
   // browsed, nothing new is placed. Kept, so it can be said again when the mic is tried.
   const [keyNotice, setKeyNotice] = useState("");
-  const queueKey = `e2a2o.waiting.${speaker ?? "you"}`;
-  const outbox = useRef<string[] | null>(null);
-  if (outbox.current === null) {
-    try {
-      outbox.current = readWaiting(queueKey);
-    } catch { outbox.current = []; }
-  }
-  const [queuedCount, setQueuedCount] = useState(outbox.current.length);
+  const lastMapKey = `e2a2o.last-map.${speaker ?? "you"}`;
+  const mapId = useRef<string | null>(null);
+  const identityReady = useRef(false);
+  const queueKey = useRef<string | null>(null);
+  const outbox = useRef<string[]>([]);
+  const [recovery, setRecovery] = useState<RecoveryState>({ entries: [], storageUnavailable: false });
+  const refreshRecovery = () => {
+    try { setRecovery((state) => ({ ...state, entries: quarantined(speaker ?? "you", mapId.current) })); }
+    catch { setRecovery((state) => ({ ...state, storageUnavailable: true })); }
+  };
+  const [queuedCount, setQueuedCount] = useState(0);
   const [placing, setPlacing] = useState<Placing>({ now: null, retryAt: {} });
   const [explanations, setExplanations] = useState<Record<string, Explanation>>({});
   const [whys, setWhys] = useState<Record<string, WhyAnswer>>({});
@@ -815,7 +819,7 @@ export function useCore(speaker?: string) {
       // A Stop pressed offline rides on the connection itself, so the core applies it before this window counts as
       // open, and a count that ends meanwhile can't send first (core/src/main.rs `connect`, messages.rs `finish`).
       const waiting = stopWaiting.current;
-      const ws = openSocket(`${scheme}://${location.host}/ws`, waiting === null ? {} : { stop: String(waiting) });
+      const ws = openSocket(`${scheme}://${location.host}/ws`, waiting === null ? { identity: "1" } : { identity: "1", stop: String(waiting) });
       ws.binaryType = "arraybuffer";
       socket.current = ws;
       ws.onopen = () => {
@@ -830,15 +834,12 @@ export function useCore(speaker?: string) {
         const late = stopWaiting.current;
         stopWaiting.current = null;
         if (late !== null && late !== waiting) ws.send(JSON.stringify({ type: "stop_send", id: late }));
-        // Thoughts typed while the connection was down go out now, and pictures that failed while it was are fetched again.
-        // A send only hands bytes to the browser. Keep them saved until the core confirms the id.
-        try { outbox.current = readWaiting(queueKey); } catch { /* Keep the last readable copy. */ }
-        setQueuedCount(outbox.current!.length);
-        for (const message of outbox.current!) ws.send(message);
+        identityReady.current = false;
         attention.current.resend((message) => ws.send(message));
         coreBack();
       };
       ws.onmessage = (event) => {
+        if (socket.current !== ws) return;
         if (ignorePartner(event.data)) return;
         const msg = JSON.parse(event.data as string) as ServerMsg;
         // In the same update as the move, so the map follows you there (App.tsx doesn't while Recap is open).
@@ -852,8 +853,21 @@ export function useCore(speaker?: string) {
         if (receiveGuide(msg)) return;
         if (receiveJob(msg)) return;
         switch (msg.type) {
+          case "map_identity": {
+            if (!msg.id) break;
+            mapId.current = msg.id;
+            identityReady.current = true;
+            queueKey.current = waitingKey(speaker ?? "you", msg.id);
+            try { localStorage.setItem(lastMapKey, msg.id); outbox.current = readWaiting(queueKey.current); }
+            catch { outbox.current = []; }
+            setQueuedCount(outbox.current.length);
+            refreshRecovery();
+            for (const message of outbox.current) ws.send(message);
+            break;
+          }
           case "text_received": {
-            try { receivedWaiting(queueKey, msg.id); outbox.current = readWaiting(queueKey); }
+            if (!identityReady.current || !queueKey.current) break;
+            try { receivedWaiting(queueKey.current, msg.id); outbox.current = readWaiting(queueKey.current); }
             catch { break; } // Retrying a saved entry is safe: the core remembers its id.
             setQueuedCount(outbox.current!.length);
             break;
@@ -1015,6 +1029,7 @@ export function useCore(speaker?: string) {
         }
       };
       ws.onclose = () => {
+        identityReady.current = false;
         setUsage(null);
         window.clearTimeout(handoffTimer);
         lastPartial = "";
@@ -1038,10 +1053,17 @@ export function useCore(speaker?: string) {
         if (!closed) timer = window.setTimeout(open, (retry = Math.min(retry * 2, 8000)));
       };
     };
-    const storageChanged = (event: StorageEvent) => {
-      if (event.key !== null && event.key !== queueKey && !event.key.startsWith(`${queueKey}.`)) return;
-      try { outbox.current = readWaiting(queueKey); } catch { return; }
+    try {
+      mapId.current = localStorage.getItem(lastMapKey);
+      queueKey.current = mapId.current ? waitingKey(speaker ?? "you", mapId.current) : null;
+      if (queueKey.current) outbox.current = readWaiting(queueKey.current);
       setQueuedCount(outbox.current.length);
+    } catch { /* A failed save keeps the draft. */ }
+    refreshRecovery();
+    const storageChanged = () => {
+      try { if (queueKey.current) outbox.current = readWaiting(queueKey.current); } catch { return; }
+      setQueuedCount(outbox.current.length);
+      refreshRecovery();
     };
     window.addEventListener("storage", storageChanged);
     open();
@@ -1112,6 +1134,27 @@ export function useCore(speaker?: string) {
   };
 
   return {
+    recovery,
+    deliveryMapId: mapId.current,
+    recover: (id: string) => {
+      const entry = recovery.entries.find((entry) => entry.id === id);
+      if (!entry?.message || !queueKey.current || !identityReady.current) return false;
+      try {
+        const parsed = JSON.parse(entry.message);
+        const message = JSON.stringify({ ...parsed, id: parsed.id ?? thoughtId() });
+        saveWaiting(queueKey.current, [message]);
+        discardQuarantined(entry);
+        outbox.current = readWaiting(queueKey.current);
+        setQueuedCount(outbox.current.length);
+        refreshRecovery();
+        socket.current?.send(message);
+        return true;
+      } catch { return false; }
+    },
+    discardRecovery: (id: string) => {
+      const entry = recovery.entries.find((entry) => entry.id === id);
+      if (entry) { try { discardQuarantined(entry); refreshRecovery(); } catch { /* Retain it if storage fails. */ } }
+    },
     recap,
     requestRecap,
     apps,
@@ -1205,8 +1248,11 @@ export function useCore(speaker?: string) {
       const control = noticeCommand(text);
       if (control !== null) { noticeQueue.control(control); return true; }
       if (isDefaultRecap(text)) { requestRecap(); return true; }
+      if (!queueKey.current || (socket.current?.readyState === WebSocket.OPEN && !identityReady.current)) {
+        sayNotice("Waiting for this map to identify itself. Keep your words here and try again."); return false;
+      }
       const parts = splitThought(text);
-      try { outbox.current = readWaiting(queueKey); } catch { /* A failed save below keeps the draft. */ }
+      try { outbox.current = readWaiting(queueKey.current!); } catch { /* A failed save below keeps the draft. */ }
       const online = socket.current?.readyState === WebSocket.OPEN;
       // Reserve the whole batch before sending: a full offline queue must keep the entire draft for retry.
       if (outbox.current!.length + parts.length > 50) {
@@ -1216,11 +1262,11 @@ export function useCore(speaker?: string) {
       {
         try {
           // Save the entire batch before telling the composer it can clear the draft.
-          saveWaiting(queueKey, messages);
+          saveWaiting(queueKey.current!, messages);
         } catch {
           sayNotice("Couldn't save this thought. Keep it here and try again when connected."); answered(); return false;
         }
-        outbox.current = readWaiting(queueKey);
+        outbox.current = readWaiting(queueKey.current!);
         setQueuedCount(outbox.current.length);
       }
       if (online) for (const message of messages) socket.current!.send(message);
