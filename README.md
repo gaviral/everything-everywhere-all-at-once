@@ -26,7 +26,7 @@ Built during the Meta Global AI Developer Hackathon with Cerebral Valley (Oct 26
 | ask “what did I decide?” | Muse Spark 1.3 | writes the Recap | [recap](docs/trace.md#recap) |
 | let a topic settle | Muse Image 1.0 | draws its picture | [pictures](docs/trace.md#pictures) |
 | say “run that through three boxes” | Muse Spark 1.3 | plans and runs each box | [Flow](docs/flow.md) |
-| say “build all that” | Muse Spark 1.3 | builds each part on its own branch, at once | [Crew](docs/FEATURES.md#crew) |
+| say “build all that” | Muse Spark 1.3 | builds each part at the same time, in its own Git history | [Crew](docs/FEATURES.md#crew) |
 | draw on the sheet | Muse Spark 1.3 | reads the sketch at each pause | [Draw](docs/FEATURES.md#draw) |
 | say “draw it back” | Muse Image 1.0 | draws it cleanly, with your labels | [Draw](docs/FEATURES.md#draw) |
 | say “where was I?” | no model | rules: the jump back | [rules](docs/trace.md#rules) |
