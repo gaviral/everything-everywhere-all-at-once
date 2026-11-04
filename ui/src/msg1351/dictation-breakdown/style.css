@@ -1,0 +1,27 @@
+.dictation-breakdown { color: #192b2a; background: #f6f5ef; padding: clamp(16px, 4vw, 48px); font: 1rem/1.5 system-ui, sans-serif; max-width: 1160px; margin: auto; }
+.dictation-breakdown *, .dictation-breakdown *::before, .dictation-breakdown *::after { box-sizing: border-box; }
+.dictation-breakdown h1 { font-size: clamp(1.7rem, 4vw, 2.7rem); line-height: 1.13; max-width: 650px; margin: 0 0 20px; }
+.dictation-breakdown h2 { font-size: 1.5rem; margin-top: 36px; }
+.dictation-breakdown h3 { margin: 0; font-size: 1.2rem; }
+.dictation-breakdown label { display: grid; gap: 6px; margin-bottom: 16px; font-weight: 600; }
+.dictation-breakdown textarea, .dictation-breakdown input:not([type=checkbox]), .dictation-breakdown select { width: 100%; min-width: 0; padding: 11px; border: 1px solid #7a8c87; border-radius: 6px; font: inherit; color: inherit; background: #fff; }
+.dictation-breakdown textarea { resize: vertical; }
+.dictation-breakdown button { border: 1px solid #27655c; border-radius: 6px; padding: 10px 14px; min-height: 44px; background: #245c52; color: white; font: inherit; cursor: pointer; }
+.dictation-breakdown button:disabled { opacity: .5; cursor: default; }
+.dictation-breakdown :focus-visible { outline: 3px solid #955200; outline-offset: 3px; }
+.dictation-breakdown .db-switch { display: flex; align-items: center; min-height: 44px; gap: 10px; }
+.dictation-breakdown .db-switch input { width: 22px; height: 22px; }
+.db-eyebrow { text-transform: uppercase; letter-spacing: .12em; font-size: .8rem; font-weight: 650; }
+.db-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin: 12px 0; }
+.db-actions label { flex: 1 1 210px; margin: 0; }
+.db-help, .db-item small { color: #465a55; font-size: .875rem; }
+.db-items { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 20px; margin: 24px 0; }
+.db-item { min-width: 0; border: 1px solid #c0ccc6; background: #fffefa; border-radius: 10px; padding: 20px; }
+.db-item header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; margin-bottom: 20px; }
+.db-item header span { font-size: .875rem; color: #465a55; }
+.db-item ul { padding-left: 20px; }
+.db-item li { margin: 10px 0; }
+.db-item small { display: block; }
+.dictation-breakdown pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.dictation-breakdown [role=status] { min-height: 1.5em; font-weight: 600; }
+@media (max-width: 480px) { .db-item { padding: 16px; } .db-actions button { flex: 1 1 100%; } }
