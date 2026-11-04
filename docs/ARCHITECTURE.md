@@ -59,6 +59,8 @@ Browser, one page per window (ui/src)
   rooms.ts       the color of each topic and its tangents, for the map's rails and the Pictures view, as pictures.rs paints it
   apps-core.ts   the apps' types (watchers, publishers) and `useApps`, the window's app state (the build in progress, where it shows, a tune waiting to play)
   apps-audio.ts  the loudness reading sent every 320 ms (the RMS of four mic frames) and the tune a sound app plays
+  AppParts.tsx   read-only app parts disclosure: availability, reuse, source and settings
+  app-parts.ts   derives each saved app's parts, availability reasons and reuse counts
   save-file.ts   hands a file the window made (Export's Markdown, a calendar file) to the browser to save
   bricks-core.ts the features (docs/bricks.md): every folder under bricks/ found by import.meta.glob, its brick.json checked, which are on in this browser, the map and events each is handed
   BrickSlot.tsx  where features mount (a view beside Cards and Pictures, a card in the bottom bar, a panel or an input over the page), each lazily and behind its own boundary

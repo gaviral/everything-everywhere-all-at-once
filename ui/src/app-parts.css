@@ -1,0 +1,28 @@
+.app-parts { flex-basis: 100%; min-width: 0; margin: 2px 0 8px; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.app-parts summary { cursor: pointer; width: fit-content; min-height: 40px; padding: 9px 2px; box-sizing: border-box; }
+.app-parts summary:focus-visible { outline: 2px solid var(--accent, var(--blue)); outline-offset: 2px; border-radius: 4px; }
+.app-parts-body { padding: 8px; border: 1px solid var(--line); border-radius: 8px; }
+.app-parts .app-parts-note { margin: 0 0 12px; color: var(--muted); font-size: 12px; }
+.app-parts ul { list-style: none; margin: 0; padding: 0; }
+.app-parts li > ul, html.shell2 .app-parts li > ul { margin: 6px 0 0 3px; padding-left: 12px; border-left: 1px solid var(--line); }
+.app-parts li { margin: 0; padding: 6px 0; }
+.app-part-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.app-part-heading strong { font-size: 13px; font-weight: 600; }
+.app-parts .part-status { font-size: 11px; color: var(--muted); }
+.app-parts .part-live { color: var(--ink); }
+.app-parts .part-status::before { content: '○ '; }
+.app-parts .part-live::before { content: '● '; }
+.app-parts .part-reason, .app-parts .part-reuse { margin: 3px 0; font-size: 12px; color: var(--muted); }
+.app-parts .part-reuse { color: var(--ink); }
+.app-parts .part-details summary { color: var(--muted); font-size: 12px; }
+.app-parts .part-source { margin: 0 0 6px; font-size: 11px; color: var(--muted); }
+.app-parts pre { margin: 0 0 8px; font: inherit; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+html.shell2 .shell-catalog-row:has(> .app-parts) { flex-wrap: wrap; }
+/* Only the tab panel scrolls. scrollIntoView/focus inside a long tree must not also
+   scroll the clipped rail itself and hide its tabs and close button. */
+html.shell2 .shell-rail:has(.app-parts) { overflow: clip; }
+.catalog-apps { padding: 0 24px; }
+.catalog-apps h3 { font-size: 14px; }
+.catalog-app { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.catalog-app > p { margin: 4px 0; font-size: 13px; color: var(--muted); }
+@media (max-width: 600px) { .catalog-apps { padding-inline: 16px; } }
