@@ -324,16 +324,40 @@ function writeReadme() {
 function writeRunSummary() {
   const path = join(output, 'README.md');
   const existing = readFileSync(path, 'utf8').split('\n').filter(line =>
-    !line.startsWith('Observed app issues (unchanged):') && !line.startsWith('Selected take checks:'));
+    !line.startsWith('Observed app issues (unchanged):') && !line.startsWith('Selected take checks:') && !line.startsWith('Visible fix checks:'));
   const selected = JSON.parse(readFileSync(join(output, 'verification.json'), 'utf8'));
   const checks = selected.flatMap(record => (record.checks || []).map(check => ({ clip: record.clip, ...check })));
   const failed = checks.filter(check => !check.passed).map(check => `${check.clip}: ${check.name}`);
-  existing.push('', `Selected take checks: ${checks.filter(check => check.passed).length}/${checks.length} visible-behavior checks passed.${failed.length ? ` Still wrong: ${failed.join('; ')}.` : ''} Repair still lacks a visible “failed” tree label; its fault disclosure appears only at completion.`, '');
+  const repairLabeled = selected.find(record => record.clip === 'repair')?.checks?.some(check => check.name === 'failed repairing label and fault disclosure stay visible' && check.passed);
+  const repairStatus = repairLabeled ? 'Repair’s warm-red failure label and fault disclosure are verified during the run.' : 'Repair still lacks a verified visible failure label during the run.';
+  existing.push('', `Selected take checks: ${checks.filter(check => check.passed).length}/${checks.length} visible-behavior checks passed.${failed.length ? ` Still wrong: ${failed.join('; ')}.` : ''} ${repairStatus}`, '');
   writeFileSync(path, existing.join('\n').replace('The latest take contains only repair and board; prior eight MP4s were retained.', 'The latest run selects freshly captured clips; all earlier raw takes remain available.'));
 }
 
 // These holds pause delivery of real responses, never change their contents or the UI.
 let faultPart, holdFailure;
+async function repairLabels() {
+  return evaluate(`(()=>{
+    const inspect=el=>{
+      if(!el)return null;
+      const r=el.getBoundingClientRect(),s=getComputedStyle(el),clippedBy=[];
+      for(let parent=el.parentElement;parent;parent=parent.parentElement){
+        const style=getComputedStyle(parent),box=parent.getBoundingClientRect();
+        const clipsX=['hidden','clip','auto','scroll'].includes(style.overflowX);
+        const clipsY=['hidden','clip','auto','scroll'].includes(style.overflowY);
+        if((clipsX&&(r.left<box.left||r.right>box.right))||(clipsY&&(r.top<box.top||r.bottom>box.bottom)))clippedBy.push({tag:parent.tagName,bounds:{x:box.x,y:box.y,width:box.width,height:box.height}});
+      }
+      return {text:el.textContent,fill:s.fill,visible:r.width>0&&r.height>0&&r.left>=0&&r.top>=0&&r.right<=innerWidth&&r.bottom<=innerHeight&&s.display!=='none'&&s.visibility!=='hidden'&&!clippedBy.length,clippedBy,bounds:{x:r.x,y:r.y,width:r.width,height:r.height}};
+    };
+    return {state:inspect(document.querySelector('.crew-fixing .crew-leaf-state')),disclosure:inspect(document.querySelector('.crew-foot'))};
+  })()`);
+}
+function readableRepairLabels(labels) {
+  const color = labels.state?.fill?.match(/[\d.]+/g)?.map(Number) || [];
+  return labels.state?.visible && labels.state.text === 'failed · repairing'
+    && color[0] > color[1] + 50 && color[1] > color[2]
+    && labels.disclosure?.visible && labels.disclosure.text.includes('one fault added on purpose');
+}
 async function holdRepairResponse(event) {
   try {
     const request = JSON.parse(event.request.postData || '{}');
@@ -346,9 +370,12 @@ async function holdRepairResponse(event) {
     }
     if (path === '/crew/build' && request.broke && request.part.id === faultPart) {
       await until('document.querySelector(".crew-fixing")', 10000);
-      note('fixing-visible', { part: faultPart, hold_ms: 3500 });
+      const before = await repairLabels();
+      note('fixing-visible', { part: faultPart, hold_ms: 3500, labels: before });
       await screenshot(join(current.folder, 'fixing.png'));
       await delay(3500);
+      const after = await repairLabels();
+      contentCheck('failed repairing label and fault disclosure stay visible', !!readableRepairLabels(before) && !!readableRepairLabels(after), { before, after, hold_ms: 3500 });
     }
     if (path === '/crew/merge' && request.id === faultPart) {
       await until('[...document.querySelectorAll(".crew-trying")].some(x=>x.textContent.includes("fixed"))', 10000);
@@ -369,7 +396,7 @@ async function prepareRepair() {
 }
 async function repair() {
   await click('.crew-ask button');
-  await until('document.querySelector(".crew-foot")', 180000);
+  await until('document.querySelector(".crew-foot")?.textContent.includes("real commits") && document.querySelectorAll(".crew-level-done").length === 2', 180000);
   await cdp('Fetch.disable');
   if (holdFailure) throw holdFailure;
   const observed = await evaluate(`({ tree: [...document.querySelectorAll('.crew-tree text')].map(x=>x.textContent).join(' '), footer: document.querySelector('.crew-foot').textContent, repaired: document.querySelector('.crew-count').textContent.includes('repaired'), off: document.querySelectorAll('.crew-off').length })`);
@@ -377,7 +404,7 @@ async function repair() {
   assert(observed.footer.includes('one fault added on purpose'), 'Fault label must remain visible');
   assert(current.events.some(e => e.event === 'fixing-visible') && current.events.some(e => e.event === 'repaired-visible'));
   current.observed = observed;
-  current.limitations = ['tree shows fixing motion, then “fixed” and merged checkmark, but no visible “failed” label; fault disclosure appears only at completion; genuine repair/merge responses held 3.5s each'];
+  current.limitations = ['genuine repair/merge responses held 3.5s each for reading'];
   await checkCrewCounts();
   note('merged-visible', { part: faultPart });
   await delay(3500);
@@ -546,7 +573,7 @@ const clips = {
     await until('document.querySelector(".flow-canvas-question")');
     note('held-question-shown');
   }, 'three real Flow boxes and a live Spark question held during a draft'],
-  repair: [repair, 'real intentional fault, checked repair and merge of generated or reused parts; live Spark plan; fault disclosure visible at completion'],
+  repair: [repair, 'real intentional fault, warm-red failed · repairing label, checked repair and merge; live Spark plan; fault disclosure visible during the run'],
   board: [board, 'finished live Repair Night board: two Bring List ticks, live counts and editable answers'],
 };
 if (process.env.FILM_REENCODE === '1') {
@@ -571,7 +598,7 @@ if (process.env.FILM_REENCODE === '1') {
     if (name === 'board') await prepareBoard();
     await capture(name, ...clips[name]);
   }
-  if (scratchData && latestCrewRun) await captureGitGraph();
+  if (scratchData && latestCrewRun && !process.env.FILM_CLIPS) await captureGitGraph();
   writeRunSummary();
   if ([...rows.values()].some(record => record.error || record.checks?.some(check => !check.passed))) process.exitCode = 1;
 } finally {
