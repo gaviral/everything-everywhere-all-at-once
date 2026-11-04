@@ -43,7 +43,7 @@ async function checkReceiptRules(server) {
   }
   for (const value of [null, [], { ...sample, operationId: "bad/identity" }, { ...sample, provider: "other" },
     { ...sample, status: "done" }, { ...sample, origin: "unknown" },
-    { ...sample, reminder: { ...sample.reminder, notes: "person@example.invalid" } }]) assert.equal(ReceiptInput(value), null);
+    { ...sample, reminder: { ...sample.reminder, notes: "person@example.test" } }]) assert.equal(ReceiptInput(value), null);
   const clean = ReceiptInput({ ...native, privateDiagnostic: "DO-NOT-EXPOSE" });
   assert(!JSON.stringify(clean).includes("DO-NOT-EXPOSE"));
   assert(Object.isFrozen(clean.reminder));
