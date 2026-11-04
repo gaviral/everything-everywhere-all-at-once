@@ -1,0 +1,9 @@
+{
+  "id": "crew",
+  "name": "Crew",
+  "does": "Say many things at once. Muse Spark builds each as its own part, and what works merges up.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": true,
+  "flag": "crew"
+}
