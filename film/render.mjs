@@ -53,7 +53,8 @@ async function testClips(directory, duration) {
   return clips;
 }
 async function resolveClips(plan, configFile, clipsDir, directory) {
-  const specs = plan.shots.flatMap(s => s.kind === 'plane' ? [s] : s.kind === 'planes' ? s.clips : []);
+  const clipsOf = s => s.kind === 'plane' ? [s] : s.kind === 'planes' ? s.clips : s.kind === 'wall' ? s.tiles.filter(t => t.clip) : [];
+  const specs = plan.shots.flatMap(clipsOf);
   const numbered = specs.filter(s => /^@clip:\d+$/.test(s.clip));
   let sources = [];
   if (clipsDir) {
@@ -62,7 +63,9 @@ async function resolveClips(plan, configFile, clipsDir, directory) {
       .filter(e => e.isFile() && /\.mp4$/i.test(e.name)).map(e => join(root, e.name)).sort();
   }
   if (numbered.length && !sources.length) {
-    const maxDuration = Math.max(...plan.shots.flatMap(s => (s.kind === 'plane' ? [s] : s.kind === 'planes' ? s.clips : []).map(p => (p.start ?? 0) + s.duration))) + 1;
+    if (plan.shots.some(s => s.kind === 'wall' && s.tiles.some(t => /^@clip:/.test(t.clip ?? ''))))
+      throw new Error('Wall requires supplied real footage');
+    const maxDuration = Math.max(...plan.shots.flatMap(s => clipsOf(s).map(p => (p.start ?? 0) + s.duration))) + 1;
     sources = await testClips(directory, maxDuration);
   }
   for (const spec of specs) {
@@ -73,16 +76,20 @@ async function resolveClips(plan, configFile, clipsDir, directory) {
   // Fail before screenshots when supplied footage cannot cover the chosen shot.
   const durations = new Map();
   for (const shot of plan.shots) {
-    for (const spec of shot.kind === 'plane' ? [shot] : shot.kind === 'planes' ? shot.clips : []) {
+    for (const spec of clipsOf(shot)) {
       if (!durations.has(spec.source)) {
         const probe = JSON.parse(run('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=duration', '-of', 'json', fileURLToPath(spec.source)]));
         const duration = Number(probe.streams?.[0]?.duration);
         if (!Number.isFinite(duration)) throw new Error('Clip has no finite video duration');
         durations.set(spec.source, duration);
       }
-      if ((spec.start ?? 0) + shot.duration > durations.get(spec.source) + 1e-6)
+      spec.mediaDuration = durations.get(spec.source);
+      const needed = shot.kind === 'wall' ? spec.loopSeconds ?? spec.mediaDuration - (spec.start ?? 0) : shot.duration;
+      if (needed <= 0 || (spec.start ?? 0) + needed > spec.mediaDuration + 1e-6)
         throw new Error(`Clip is too short for shot ${shot.index + 1}`);
     }
+    if (shot.kind === 'wall') for (const spec of shot.tiles.filter(t => t.image))
+      spec.source = pathToFileURL(await realpath(resolve(dirname(configFile), spec.image))).href;
   }
 }
 export async function render(args = process.argv.slice(2)) {

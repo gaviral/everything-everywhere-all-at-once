@@ -15,11 +15,12 @@ function executable() {
   return found;
 }
 
-export async function openStage(file, width, height) {
+export async function openPage(url, width, height) {
   const profile = await mkdtemp(join(tmpdir(), 'film-chrome-'));
   const child = spawn(executable(), ['--headless=new', '--remote-debugging-pipe', `--user-data-dir=${profile}`,
     '--no-first-run', '--no-default-browser-check', '--disable-background-networking', '--disable-extensions',
     '--disable-sync', '--hide-scrollbars', '--force-color-profile=srgb', '--force-device-scale-factor=1',
+    '--use-mock-keychain', '--password-store=basic',
     '--allow-file-access-from-files', 'about:blank'], { stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'] });
   let sequence = 0, buffer = '';
   const pending = new Map();
@@ -63,16 +64,26 @@ export async function openStage(file, width, height) {
       return result.result.value;
     };
     await call('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
-    await call('Page.navigate', { url: pathToFileURL(file).href });
-    const deadline = Date.now() + 15000;
-    while (!(await evaluate('typeof window.filmFrame === "function"'))) {
-      if (Date.now() > deadline) throw new Error('Stage did not initialize');
-      await new Promise(resolve => setTimeout(resolve, 20));
-    }
+    if (/^https?:/.test(url)) await send('Browser.setPermission', {
+      permission: { name: 'microphone' }, setting: 'denied', origin: new URL(url).origin,
+    });
+    await call('Page.navigate', { url });
     return {
-      profile, close,
+      profile, close, call, evaluate,
       frame: (shot, local) => evaluate(`window.filmFrame(${JSON.stringify(shot)}, ${local}, ${width / 1920})`),
       screenshot: async () => Buffer.from((await call('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false })).data, 'base64'),
     };
   } catch (error) { await close(); throw error; }
+}
+
+export async function openStage(file, width, height) {
+  const page = await openPage(pathToFileURL(file).href, width, height);
+  try {
+    const deadline = Date.now() + 15000;
+    while (!(await page.evaluate('typeof window.filmFrame === "function"'))) {
+      if (Date.now() > deadline) throw new Error('Stage did not initialize');
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    return page;
+  } catch (error) { await page.close(); throw error; }
 }
