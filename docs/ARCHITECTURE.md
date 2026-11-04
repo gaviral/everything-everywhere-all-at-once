@@ -15,6 +15,7 @@ Browser, one page per window (ui/src)
   Symbols.tsx    Help's legend, drawn with the map's own classes
   Attention.tsx  the one "look here" highlight, the "latest" bar, "New in X ↓", unseen dots, "this" (rules in attention-core.ts)
   this-card.ts   what "this" means: the card selected or under the pointer, told to the core when it changes
+  RecoveryPanel.tsx  words the core never confirmed: put them back in the composer, or discard them
   Undo.tsx       Undo on a notice that answers a request you can take back
   Crash.tsx      what shows if the page throws: "Something broke" and Reload, not a white page (the map is in the core)
   Install.tsx    the once-per-browser line offering the Dock or home screen, after a thought of yours lands, in a lull (held by `scripts/install-check.mjs`; manifest and icons in ui/public, committed as drawn files: icon.svg and four PNGs of one icon)
