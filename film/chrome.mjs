@@ -84,6 +84,11 @@ export async function openStage(file, width, height) {
       if (Date.now() > deadline) throw new Error('Stage did not initialize');
       await new Promise(resolve => setTimeout(resolve, 20));
     }
+    const screenshot=page.screenshot;
+    page.screenshot=async()=>{
+      const raster=await page.evaluate(`window.filmRaster?.(${width/1920}) ?? null`);
+      return raster ? Buffer.from(raster.split(',')[1],'base64') : screenshot();
+    };
     return page;
   } catch (error) { await page.close(); throw error; }
 }
