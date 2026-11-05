@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import "./light-theme.css";
+import "./glass.css";
 
 const looks = [
   { id: "paper", name: "Warm paper" },
   { id: "studio", name: "Cool studio" },
   { id: "contrast", name: "High contrast" },
+  { id: "glass", name: "Glass" },
 ] as const;
 type Look = typeof looks[number]["id"];
 const key = "e2a2o.light-theme.look";
