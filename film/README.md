@@ -111,7 +111,10 @@ retains the original finished Repair Night frame, then crops naturally into
 the first square during a single smooth pull-back. The field holds for one
 second and lifts to white, retaining “Recorded demonstrations”. All movement
 and video seeking are evaluated at frame time. A fixed-resolution software
-canvas keeps image resampling independent of earlier camera frames.
+canvas with fixed bilinear sampling keeps image resampling independent of earlier camera frames.
+Stills are decoded and frozen at native resolution before zooming; field frames
+export directly from that canvas. Checks compare decoded pixels, including a
+second fresh renderer, rather than PNG compression bytes.
 `wall-field-check.mjs` checks
 complete square coverage and writes eight actual review frames; review those
 at film size before accepting a take.
@@ -134,9 +137,8 @@ are retained. The adjacent JSON reports cached/rendered shots and failures.
 
 Planes accept `crop: [x,y,width,height]` in normalized source coordinates and
 `playSeconds` to hold the last real frame after that much source playback.
-`label` and `caption` remain fixed and readable outside camera motion. Mark
-each shortened wait with `caption: "wait shortened"`. Never use a hold or a
-crop to invent a result. The end card uses the current app icon.
+Disclosures appear only on the final signature card; per-shot `label` and
+`caption` metadata are not displayed. Never use a hold or a crop to invent a result. The end card uses the current app icon.
 
 Focused verification: `node film/cut-check.mjs`. It checks cache reuse, isolated
 shot and clip changes, recovery after one missing clip, concatenation, captions,
@@ -176,3 +178,21 @@ with actual frame-aligned start times, stable shot ids, and durations.
 `node film/direction-check.mjs /path/to/shots.json` checks the directed 150-second
 edit's chapter clocks, frame allocations, readable settling, repeatable camera,
 and end-card wording. Its screenshots stay with the external media.
+
+## Investor edit
+
+`pulse` uses `words`, `delay`, and `beat` for the black opening. `feature`
+uses `word` for a compressed, blurred entrance on the blue field, with optional
+`shrink` for the final abundance card. `laptop` uses a real `clip` inside an
+unbranded device; `phase` selects `rise` or `push`. `brand` selects `opening`,
+`assembly`, or `hold` and builds from the canonical icon SVG before crossing
+to the glass PNG. Its final disclosure remains visible through the hold.
+
+A plane may use an `image` instead of a `clip`. Optional `rate` changes source
+playback speed without changing the shot allocation. Each input and source
+window stays with its stable shot id. A fractional final-frame display interval
+lets the stream-copy join hit the specified millisecond endpoint exactly.
+
+`node film/film3-check.mjs /path/to/shots.json` exercises the word timing,
+canonical-shape assembly, matching final hold, laptop motion, clean overlays,
+and fractional endpoint. It uses external media and never starts a microphone.

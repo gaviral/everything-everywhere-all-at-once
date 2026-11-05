@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -84,6 +84,13 @@ export async function openStage(file, width, height) {
       if (Date.now() > deadline) throw new Error('Stage did not initialize');
       await new Promise(resolve => setTimeout(resolve, 20));
     }
+    await page.evaluate(`window.filmBrandSvg = ${JSON.stringify(await readFile(new URL('../ui/public/icon.svg', import.meta.url), 'utf8'))}`);
+    const screenshot=page.screenshot;
+    page.screenshot=async()=>{
+      const raster=await page.evaluate(`window.filmRaster?.(${width/1920}) ?? null`);
+      return raster ? Buffer.from(raster.split(',')[1],'base64') : screenshot();
+    };
+
     return page;
   } catch (error) { await page.close(); throw error; }
 }
