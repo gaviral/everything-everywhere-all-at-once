@@ -58,7 +58,7 @@ Kept as they were: map (the whole), thought, point, Shelf, Why here, Model line,
 
 ## The check
 
-`node scripts/names-check.mjs` (part of `scripts/precheck.sh`) fails when a retired word shows up in text a person reads: a string in the UI, a feature's `brick.json`, or a public doc. It skips code, saved maps, CHANGELOG, `docs/trace.md` and this file, and a line that ends with a `names-ok: reason` marker.
+`node scripts/names-check.mjs` (part of `scripts/precheck.sh`) fails when a retired word shows up in text a person reads: a string in the UI, a feature's `brick.json`, or a public doc. It skips code, saved maps and this file, and a line that ends with a `names-ok: reason` marker.
 
 ## Find and Features controls
 

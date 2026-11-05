@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,6 +8,9 @@ import { openStage } from './chrome.mjs';
 import { timeline, frameRange } from './timeline.mjs';
 import { wallPosition, wallFrame } from './wall.mjs';
 import { run, render } from './render.mjs';
+import { pngPixels } from './png-pixels.mjs';
+
+const pixelsHash = png => createHash('sha256').update(pngPixels(png)).digest('hex');
 
 const directory = await mkdtemp(join(tmpdir(), 'wall-check-'));
 const clip = join(directory, 'motion.mp4'), still = join(directory, 'still.png');
@@ -25,9 +29,9 @@ assert.throws(() => timeline({ shots: [{ kind: 'wall', seconds: 8, tiles: [{ ima
 const stage = await openStage(fileURLToPath(new URL('stage.html', import.meta.url)), 960, 540);
 try {
   await stage.frame(shot, .3); const first = await stage.screenshot();
-  await stage.frame(shot, .6); assert.notDeepEqual(await stage.screenshot(), first, 'Opening clip moves');
+  await stage.frame(shot, .6); assert.notEqual(pixelsHash(await stage.screenshot()), pixelsHash(first), 'Opening clip moves');
   assert.ok((await stage.frame(shot, 1.3)).times.every(t => Math.abs(t - .3) < 1e-6), 'Clips loop using frame time');
-  await stage.frame(shot, .3); assert.deepEqual(await stage.screenshot(), first, 'Reverse seeking reproduces pixels');
+  await stage.frame(shot, .3); assert.equal(pixelsHash(await stage.screenshot()), pixelsHash(first), 'Reverse seeking reproduces pixels');
   await stage.frame(shot, 6.8); await writeFile(join(directory, 'all-tiles.png'), await stage.screenshot());
   await stage.frame(shot, 7.99);
   const black = await stage.screenshot();
