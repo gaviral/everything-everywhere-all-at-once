@@ -1,7 +1,7 @@
 // No extra dependencies: run with `node scripts/samples-check.mjs`.
 // The sample maps the empty map offers (core/src/sample.rs `SAMPLES`): "Try a sample map" opens the first, a
 // student's week; under it, a shorter one per moment where talking into a live map helps (a team meeting that drifts,
-// a bug left mid-sentence for a call, a walk through a house). The core's side has its own tests (sample.rs).
+// a bug left mid-sentence for a call, a walk through a house), plus a full payments API release map. The core's side has its own tests (sample.rs).
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { uiServer } from "./ui-server.mjs";
@@ -22,7 +22,7 @@ for (const { id, label } of offered) {
 }
 
 // 2. The shorter ones read as a moment: 6 to 10 spoken lines, all placed, one left unfinished, an unfinished card.
-for (const { id } of offered.slice(1)) {
+for (const { id } of offered.filter(({ id }) => !["student-week", "developer-day"].includes(id))) {
   const events = read(`samples/${id}.jsonl`).split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l));
   const thoughts = events.filter((e) => e.type === "thought_added").map((e) => e.thought);
   assert.ok(thoughts.length >= 6 && thoughts.length <= 10, `${id}: ${thoughts.length} lines`);
@@ -46,7 +46,7 @@ try {
   assert.match(app, /onClick=\{\(\) => core\.sample\(\)\}/);
   assert.match(app, /onClick=\{\(\) => core\.sample\(choice\.id\)\}/);
   assert.match(read("ui/src/core.ts"), /sample: \(name\?: string\) => sendOrWarn\(JSON\.stringify\(name \? \{ type: "sample", name \} : \{ type: "sample" \}\)\)/);
-  console.log(`samples-check: ${offered.length} samples offered, ${offered.length - 1} shorter ones under the button`);
+  console.log(`samples-check: ${offered.length} samples offered, ${offered.length - 2} shorter ones under the button`);
 } finally {
   await server.close();
 }

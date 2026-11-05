@@ -35,7 +35,7 @@ The map boundary contains `journal.jsonl`, its identity, the core lock, `images/
 
 ## Samples and existing maps
 
-`./run.sh sample` and `./run.sh sample founder` retain their public sample labels and selected fixture identity. A new empty destination may be seeded. An existing nonempty map must have a recognized versioned sample marker and matching journal identity; an override does not bypass this check. Switching between the student and founder fixtures is allowed only on that verified sample destination; its marker records the selected fixture after seeding. The core lock prevents resetting a map while a core has it open. Reset retains the prior journal, images and marker in a uniquely named `sample-backup-*` directory inside the selected map. No destructive reset is performed.
+`./run.sh sample` (developer), `./run.sh sample developer`, `./run.sh sample student` and `./run.sh sample founder` retain their public sample labels and selected fixture identity. A new empty destination may be seeded. An existing nonempty map must have a recognized versioned sample marker and matching journal identity; an override does not bypass this check. Switching between the developer, student and founder fixtures is allowed only on that verified sample destination; its marker records the selected fixture after seeding. The core lock prevents resetting a map while a core has it open. Reset retains the prior journal, images and marker in a uniquely named `sample-backup-*` directory inside the selected map. No destructive reset is performed.
 
 ## Legacy checkout data
 

@@ -190,14 +190,14 @@ const sh = execFileSync("git", ["ls-files", "*.sh"], { cwd: root, encoding: "utf
 assert.ok(sh.includes("run.sh"));
 for (const line of execFileSync("git", ["check-attr", "eol", "--", ...sh], { cwd: root, encoding: "utf8" }).trim().split("\n"))
   assert.match(line, /: eol: lf$/, `${line}: a Windows checkout would give it CRLF line endings`);
-assert.match(readFileSync(join(root, "README.md"), "utf8"), /\*\*Windows:\*\* .*WSL2/);
+assert.match(readFileSync(join(root, "README.md"), "utf8"), /Linux and Windows are not validated here\./);
 
 // Run the real shell entry point in isolated trees, with only Node, basic file commands and harmless stubs.
 // No inherited credentials, developer tools or runtime data; even the sample is a tiny invented fixture.
 const executable = (path, text) => { writeFileSync(path, text); chmodSync(path, 0o755); };
 const fixture = () => {
   const dir = repo("PORT=0\nMODEL_API_KEY=file-key\n");
-  for (const sub of ["scripts", "ui", "bin", "samples/images/student-week"]) mkdirSync(join(dir, sub), { recursive: true });
+  for (const sub of ["scripts", "ui", "bin", "samples/images/developer-day"]) mkdirSync(join(dir, sub), { recursive: true });
   for (const file of ["run.sh", "scripts/start.mjs", "scripts/sample-seed.mjs"]) copyFileSync(join(root, file), join(dir, file));
   chmodSync(join(dir, "run.sh"), 0o755);
   symlinkSync(process.execPath, join(dir, "bin/node"));
@@ -230,8 +230,8 @@ console.log(JSON.stringify({ cwd: process.cwd(), data: process.env.E2A2O_DATA,
   sample: process.env.E2A2O_MODE === 'sample' ? readFileSync(process.env.E2A2O_DATA+'/journal.jsonl', 'utf8') : null }));
 process.exit(Number(process.env.CORE_EXIT ?? 0));
 `);
-  writeFileSync(join(dir, "samples/student-week.jsonl"), "fixture sample\n");
-  writeFileSync(join(dir, "samples/images/student-week/picture.txt"), "fixture picture\n");
+  writeFileSync(join(dir, "samples/developer-day.jsonl"), "fixture sample\n");
+  writeFileSync(join(dir, "samples/images/developer-day/picture.txt"), "fixture picture\n");
   const env = { PATH: join(dir, "bin"), PORT: "0", MODEL_API_KEY: "fixture-env-key",
     FIXTURE_LOG: join(dir, "events"), FIXTURE_MARKER: "kept value", E2A2O_DATA: join(dir, "fixture-data"),
     OPENSSL_DIR: "/fixture/ssl" };
@@ -367,7 +367,7 @@ for (const kind of ["missing", "non-executable", "other-architecture", "director
   for (const cmd of ["rustc", "rustup", "cc", "pkg-config", "xcode-select"]) {
     executable(join(f.dir, "bin", cmd), `#!/bin/sh\necho "probe ${cmd} $*" >> "$FIXTURE_LOG"\necho 'rustc 1.100.0'\n`);
   }
-  executable(join(f.dir, "bin/cargo"), '#!/bin/sh\necho "cargo $*" >> "$FIXTURE_LOG"\ncase "$*" in *--data-path*) exec ../fixture-core --data-path sample ;; *--seed-sample*) exec ../fixture-core --seed-sample student-week ;; esac\nexec ../fixture-core\n');
+  executable(join(f.dir, "bin/cargo"), '#!/bin/sh\necho "cargo $*" >> "$FIXTURE_LOG"\ncase "$*" in *--data-path*) exec ../fixture-core --data-path sample ;; *--seed-sample*) exec ../fixture-core --seed-sample developer-day ;; esac\nexec ../fixture-core\n');
   const sourceRun = f.run(["sample"], { CORE_EXIT: "17" });
   const payload = launched(f, sourceRun, 17);
   assert.match(sourceRun.stdout, /Building UI\.\.\.\nUI build complete\.\n[\s\S]*Building and starting Rust core \(cold source build: about 4 min\)\.\.\./);
