@@ -1,4 +1,4 @@
-# E2A2O
+# Everything Everywhere All at Once
 The IDE from the future, for developers and AI to follow each other.
 Speak, type and sketch; build reusable board parts with Muse Spark; inspect the work across real Git branches.
 
