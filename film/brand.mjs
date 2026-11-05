@@ -1,5 +1,4 @@
 import {clamp,smooth,mix} from './motion.mjs';
-const DISCLOSURE='Example project. Sequences shortened. One fault added for the demonstration. Narration AI-generated.';
 export function createBrand(shot,camera) {
   const box=document.createElement('div');box.className='signature';camera.append(box);
   const icon=document.createElement('div');icon.className='signature-icon';box.append(icon);
@@ -13,8 +12,7 @@ export function createBrand(shot,camera) {
   const name=document.createElement('div');name.className='signature-name';name.textContent=shot.word??'E2A2O';box.append(name);
   const tagline=document.createElement('div');tagline.className='signature-tagline';tagline.textContent=shot.tagline??'Think out loud. Build what you mean.';box.append(tagline);
   const credits=document.createElement('div');credits.className='signature-credits';credits.textContent=shot.credits??'Muse Spark · Muse Image · Muse Voice Transcribe';camera.append(credits);
-  const disclosure=document.createElement('div');disclosure.className='signature-disclosure';disclosure.textContent=shot.disclosure??DISCLOSURE;camera.append(disclosure);
-  return {box,icon,svg,ribbon,bead,length,photo,glint,name,tagline,credits,disclosure};
+  return {box,icon,svg,ribbon,bead,length,photo,glint,name,tagline,credits};
 }
 export function drawBrand(nodes,shot,local) {
   const opening=shot.phase==='opening';
@@ -43,6 +41,6 @@ export function drawBrand(nodes,shot,local) {
   nodes.name.style.filter=`blur(${20*(1-nameProgress)}px)`;
   nodes.name.style.transform=`translateY(-50%) scaleX(${mix(.58,1,nameProgress)})`;
   nodes.tagline.style.opacity=String(opening?0:smooth((t-2.02)/.30));
-  nodes.credits.style.display=opening?'none':'block';nodes.disclosure.style.display=opening?'none':'block';
+  nodes.credits.style.display=opening?'none':'block';
   return {ribbon,bead,photo,nameVisible:nameProgress,settled:opening?t>=1.1:t>=2.4,shellY};
 }

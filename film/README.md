@@ -31,7 +31,7 @@ All direction lives in the JSON `shots` array:
 | `plane` | `clip`, `start` in source seconds, `seconds`, `tilt: [x,y,z]` in degrees |
 | `planes` | `seconds`, two or three `clips`, each with plane fields |
 | `wall` | `seconds` (usually 8), `tiles` array of `{image}` or `{clip, start?, loopSeconds?}`; first tile is a clip |
-| `card` | `word`, `seconds`, `colour` (default Meta blue) |
+| `card` | `word`, `seconds`, `colour` (default black) |
 | `list` | `names`, `seconds` **per name**, `colour`; finish with `and much more` |
 | `end` | `word` (default E2A2O), `seconds`; current app icon and name |
 
@@ -136,7 +136,7 @@ are retained. The adjacent JSON reports cached/rendered shots and failures.
 
 Planes accept `crop: [x,y,width,height]` in normalized source coordinates and
 `playSeconds` to hold the last real frame after that much source playback.
-Disclosures appear only on the final signature card; per-shot `label` and
+No disclosure or fine-print line is displayed; per-shot `label` and
 `caption` metadata are not displayed. Never use a hold or a crop to invent a result. The end card uses the current app icon.
 
 Focused verification: `node film/cut-check.mjs`. It checks cache reuse, isolated
@@ -147,7 +147,7 @@ cropping, and the preview/final profiles without rendering the whole film.
 
 A plane can enter with `tilt: [x,y,z]` and settle to `tiltTo: [x,y,z]` over
 `settleSeconds` (default 0.7). Rotation uses smooth interpolation independently
-of the slow `drift` and `zoom` camera. `background: "meta"` selects the Meta-blue
+of the slow `drift` and `zoom` camera. `background: "meta"` selects the quiet white-to-mist
 stage gradient. `fullFrame: true` removes the plane edge for an already-rendered
 wall movie. The end card has a centered icon/name, a `tagline`, and plain
 `credits` beneath it.
@@ -169,7 +169,7 @@ uses `word` for a compressed, blurred entrance on the blue field, with optional
 `shrink` for the final abundance card. `laptop` uses a real `clip` inside an
 unbranded device; `phase` selects `rise` or `push`. `brand` selects `opening`,
 `assembly`, or `hold` and builds from the canonical icon SVG before crossing
-to the glass PNG. Its final disclosure remains visible through the hold.
+to the glass PNG. Only the quiet model credit remains beneath the final hold.
 
 A plane may use an `image` instead of a `clip`. Optional `rate` changes source
 playback speed without changing the shot allocation. Each input and source
@@ -179,3 +179,14 @@ lets the stream-copy join hit the specified millisecond endpoint exactly.
 `node film/film3-check.mjs /path/to/shots.json` exercises the word timing,
 canonical-shape assembly, matching final hold, laptop motion, clean overlays,
 and fractional endpoint. It uses external media and never starts a microphone.
+
+## Final pass
+
+The stage uses a 68-degree gradient from white to mist, with neutral soft
+shadows and no bright plane edge. Chapter and feature-name cards use black.
+Per-shot headings and disclosure fields are ignored. The only final credit is
+“Muse Spark · Muse Image · Muse Voice Transcribe”. Title exports can be used as
+full-frame planes, split at existing shot boundaries with their final frame held.
+
+`node film/final-check.mjs /path/to/shots.json` checks the final palette,
+credit-only ending, latest source ranges and 1080p/30 export format.
