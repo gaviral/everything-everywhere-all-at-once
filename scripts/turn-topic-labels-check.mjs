@@ -19,7 +19,7 @@ for (const long of [false, true]) {
   const threads = ids.map((id, i) => ({ id, title: titles[i], parent_id: null, status: 'open', last_point: '', touched_ms: at, tags: [], picture: null, dropped_by: '' }));
   const texts = ['Keep the room light.', 'Set aside the rent tonight.', 'Try blue by the window.'];
   const thoughts = ids.map((thread_id, i) => ({ id: `part-${thread_id}`, text: texts[i], point: texts[i], thread_id, speaker: 'you', at_ms: at, placed: true, complete: true, unclear: '', place_ms: 0 }));
-  thoughts.push({ ...thoughts[0], id: 'next', speaker: 'Sam', text: 'Compare the samples tomorrow.', point: 'Compare the samples tomorrow.', at_ms: at + 60000 });
+  thoughts.push({ ...thoughts[0], id: 'next', speaker: 'Colleague', text: 'Compare the samples tomorrow.', point: 'Compare the samples tomorrow.', at_ms: at + 60000 });
   const world = { threads, thoughts, active: 'room', active_by: { you: 'room' }, stay_here: null, anchors: {}, notes: {}, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: true, recaps: [], proposals: [], ai: [] };
   const originalWorld = JSON.stringify(world);
   const core = await standInCore(() => [{ type: 'snapshot', world }]);

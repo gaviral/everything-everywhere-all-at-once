@@ -55,12 +55,12 @@ try {
 
   // "While you were away": every thread row can say why, except a new top-level thread ("New thread" says it).
   const thread = (id, extra = {}) => ({ id, title: id, parent_id: null, status: "open", last_point: "", touched_ms: 1, tags: [], picture: null, dropped_by: "", ...extra });
-  const thought = (id, thread_id, at_ms, extra = {}) => ({ id, thread_id, at_ms, speaker: "Ana", text: id, point: id, placed: true, complete: true, unclear: "", place_ms: 10, ...extra });
+  const thought = (id, thread_id, at_ms, extra = {}) => ({ id, thread_id, at_ms, speaker: "Speaker", text: id, point: id, placed: true, complete: true, unclear: "", place_ms: 10, ...extra });
   const before = { threads: [thread("old")], thoughts: [thought("seen", "old", 1)], suggestions: [], actions: [], merged: {}, active: "old", active_by: {}, recaps: [], apps: [], apps_seeded: true };
   const after = { ...before, threads: [thread("old"), thread("fresh"), thread("branch", { parent_id: "old" })],
     thoughts: [...before.thoughts, thought("more", "old", 10), thought("new", "fresh", 20), thought("tangent", "branch", 30)],
     suggestions: [{ id: "idea", thread_id: "old", text: "Try this", status: "new" }] };
-  const rows = Object.fromEntries(awayItems(before, after, "Ana").map((r) => [r.key, r]));
+  const rows = Object.fromEntries(awayItems(before, after, "Speaker").map((r) => [r.key, r]));
   assert.equal(rows["thread:old"].why, true, "a point added to a thread you had");
   assert.equal(rows["thread:old"].thoughtId, "more", "the reason is for the point the row shows");
   assert.equal(rows["thread:branch"].why, true, "a new tangent says what it branched from");

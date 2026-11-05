@@ -1,4 +1,4 @@
-//! Decisions said out loud: "Decided: I'll study with Priya", "let's go with Thursday", "it's settled". Found by rule
+//! Decisions said out loud: "Decided: I'll study with Partner", "let's go with Thursday", "it's settled". Found by rule
 //! in the words as said, with no model call, so a decision is recorded the moment it's placed, the same way every
 //! time, and Recap can lead with it (recap.rs). The mark is the person's own word echoed back, never a guess: a
 //! point is marked only when the words say they decided, and near misses ("I can't decide", "we'll decide later",
@@ -139,7 +139,7 @@ fn marks(words: &[&str], i: usize, marker: &[&str], strict: bool) -> bool {
 }
 
 /// The words a thought says, read on from the head it carries on across a pause (chunks.rs), so "Decided: I'll
-/// study with" … "Priya on Wednesday night" is one decision, and so is "Okay, decided:" … "the red one".
+/// study with" … "Partner on Wednesday night" is one decision, and so is "Okay, decided:" … "the red one".
 pub fn said_after(head: Option<&str>, text: &str) -> bool {
     match head {
         Some(head) => said(&format!("{} {}", head.trim(), text.trim())),
@@ -218,11 +218,11 @@ pub fn in_words(text: &str) -> Option<String> {
     None
 }
 
-/// Words a period follows without ending the sentence: "Dr. Martens", "e.g. the red one".
+/// Words a period follows without ending the sentence: "Dr. Example", "e.g. the red one".
 const SHORT: [&str; 13] = ["dr", "mr", "mrs", "ms", "mx", "prof", "st", "jr", "sr", "vs", "mt", "e.g", "i.e"];
 
 /// Whether `c`, at byte `i` of `text`, ends a sentence: not a decimal point ("$80.50") or an abbreviation's period
-/// ("Dr. Martens"). The end of the text always does.
+/// ("Dr. Example"). The end of the text always does.
 fn ends(text: &str, i: usize, c: char) -> bool {
     if i >= text.len() {
         return true;
@@ -288,7 +288,7 @@ mod tests {
         let cases = [
             ("Okay, decided: if it's under eighty dollars, I'm booking it tonight.", "If it's under eighty dollars, I'm booking it tonight."),
             ("Okay, decided, if it's under $80, I'm booking it tonight.", "If it's under $80, I'm booking it tonight."),
-            ("Decided: I'll study with Priya on Wednesday night.", "I'll study with Priya on Wednesday night."),
+            ("Decided: I'll study with Partner on Wednesday night.", "I'll study with Partner on Wednesday night."),
             ("I made up my mind, I'm quitting coffee.", "I'm quitting coffee."),
             ("It’s settled, we're doing Lisbon in May.", "We're doing Lisbon in May."),
             ("I can't decide. Okay, decided: the red one.", "The red one."),
@@ -303,7 +303,7 @@ mod tests {
         let kept = [
             ("If it's under $80, I've decided: I'm booking it tonight.", "If it's under $80, I've decided: I'm booking it tonight."),
             ("Decided: if it's under $80.50, I'm booking it tonight.", "If it's under $80.50, I'm booking it tonight."),
-            ("Decided: I'll buy the Dr. Martens boots.", "I'll buy the Dr. Martens boots."),
+            ("Decided: I'll buy the Dr. Example boots.", "I'll buy the Dr. Example boots."),
         ];
         for (said, want) in kept {
             assert_eq!(in_words(said).as_deref(), Some(want), "{said}");
@@ -315,7 +315,7 @@ mod tests {
     /// Decisions as people say them, the demo's two lines first.
     const DECISIONS: [&str; 22] = [
         "Okay, decided: if it's under eighty dollars, I'm booking it tonight.",
-        "Decided: I'll study with Priya on Wednesday night.",
+        "Decided: I'll study with Partner on Wednesday night.",
         "I've decided to take the job in Toronto.",
         "We decided on the blue tiles for the bathroom.",
         "My decision is to skip the party this year.",
@@ -333,7 +333,7 @@ mod tests {
         "OK so I’ve decided — no more late-night email.",
         "We agreed to split the rent fifty-fifty.",
         "Actually no wait, I decided: Lisbon.",
-        "Priya and I decided on Wednesday nights.",
+        "Partner and I decided on Wednesday nights.",
         "I have finally decided to sell the car.",
         "Okay so today, decided: no phone after ten.",
     ];

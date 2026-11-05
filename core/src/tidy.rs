@@ -298,7 +298,7 @@ mod tests {
             active: Some("T2".into()),
             ..World::default()
         };
-        world.active_by.insert("Sam".into(), "T2".into());
+        world.active_by.insert("Colleague".into(), "T2".into());
         world.suggestions.push(Suggestion { id: "sg".into(), thread_id: "T2".into(), text: "idea".into(), status: ItemStatus::New });
         world.actions.push(Action { id: "ac".into(), thread_id: "T2".into(), kind: "reminder".into(), title: "task".into(), when: String::new(), status: ItemStatus::New, done_ms: None });
         world
@@ -313,7 +313,7 @@ mod tests {
             world.suggestions.iter().map(|s| &s.thread_id).collect::<Vec<_>>(),
             world.actions.iter().map(|a| &a.thread_id).collect::<Vec<_>>(),
             world.active,
-            world.active_by.get("Sam"),
+            world.active_by.get("Colleague"),
             world.merged,
         )
     }
@@ -550,7 +550,7 @@ mod tests {
             assert_eq!([on("b"), on("c"), on("a")], ["T2", "T2", "T4"], "T2's points back; T1's stay where T1 went");
             assert_eq!(now.thread("T3").unwrap().parent_id.as_deref(), Some("T2"), "its branch");
             assert_eq!((now.suggestions[0].thread_id.as_str(), now.actions[0].thread_id.as_str()), ("T2", "T2"));
-            assert_eq!((now.active.as_deref(), now.active_by.get("Sam").map(String::as_str)), (Some("T2"), Some("T2")));
+            assert_eq!((now.active.as_deref(), now.active_by.get("Colleague").map(String::as_str)), (Some("T2"), Some("T2")));
             std::fs::remove_file(&path).unwrap();
         }
         // Newest first, as the window's notes allow: the map is exactly as it was.

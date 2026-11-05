@@ -1,4 +1,4 @@
-import type { Item, Review, SourceSpan } from "../../msg1351/dictation-breakdown/contract";
+import type { Item, Review, SourceSpan } from "../../features/dictation-breakdown/contract";
 
 export type MatcherId = "exact" | "regex" | "fuzzy" | "ai";
 export type Candidate = { id: string; source: SourceSpan };

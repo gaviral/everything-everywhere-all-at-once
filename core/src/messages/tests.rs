@@ -69,7 +69,7 @@ impl Drop for Fixture {
 }
 
 fn full(live: bool) -> Settings {
-    Settings { preset: Preset::Full, contacts: contacts("Mia=+15550100, Sam Lee=sam@example.com"), live, ..Settings::default() }
+    Settings { preset: Preset::Full, contacts: contacts("Recipient=+15550100, Colleague Reviewer=colleague@example.com"), live, ..Settings::default() }
 }
 
 /// Lets spawned work run after the clock moves.
@@ -84,8 +84,8 @@ async fn wait(ms: u64) {
     settle().await;
 }
 
-const ASK: &str = "Ask Mia to confirm what to bring";
-const TEXT: &str = "Hi Mia, could you confirm what to bring?";
+const ASK: &str = "Ask Recipient to confirm what to bring";
+const TEXT: &str = "Hi Recipient, could you confirm what to bring?";
 
 #[test]
 fn a_preset_is_demo_unless_full_is_asked_for() {
@@ -100,8 +100,8 @@ fn a_preset_is_demo_unless_full_is_asked_for() {
 #[test]
 fn the_allow_list_reads_names_and_handles_and_skips_half_entries() {
     assert_eq!(
-        contacts("Mia=+15550100, Sam Lee = sam@example.com; =+1555; Bob=; Ann"),
-        vec![("Mia".to_string(), "+15550100".to_string()), ("Sam Lee".to_string(), "sam@example.com".to_string())]
+        contacts("Recipient=+15550100, Colleague Reviewer = colleague@example.com; =+1555; Stranger=; Reader"),
+        vec![("Recipient".to_string(), "+15550100".to_string()), ("Colleague Reviewer".to_string(), "colleague@example.com".to_string())]
     );
     assert!(contacts("").is_empty());
 }
@@ -110,24 +110,24 @@ fn the_allow_list_reads_names_and_handles_and_skips_half_entries() {
 fn a_turn_reads_as_a_message_only_to_someone_on_the_list() {
     let s = full(false);
     let ask = |said: &str| read(said, &s).map(|a| (a.to, a.handle, a.text));
-    assert_eq!(ask(ASK), Some(("Mia".into(), "+15550100".into(), TEXT.into())));
-    assert_eq!(ask("Okay, can you ask Mia to confirm what to bring, please?").map(|a| a.2), Some(TEXT.into()));
-    assert_eq!(ask("Text Sam Lee that I'm running late.").map(|a| (a.0, a.2)), Some(("Sam Lee".into(), "Hi Sam Lee, I'm running late.".into())));
-    assert_eq!(ask("tell mia to bring chips").map(|a| a.2), Some("Hi Mia, could you bring chips?".into()));
+    assert_eq!(ask(ASK), Some(("Recipient".into(), "+15550100".into(), TEXT.into())));
+    assert_eq!(ask("Okay, can you ask Recipient to confirm what to bring, please?").map(|a| a.2), Some(TEXT.into()));
+    assert_eq!(ask("Text Colleague Reviewer that I'm running late.").map(|a| (a.0, a.2)), Some(("Colleague Reviewer".into(), "Hi Colleague Reviewer, I'm running late.".into())));
+    assert_eq!(ask("tell recipient to bring chips").map(|a| a.2), Some("Hi Recipient, could you bring chips?".into()));
     for not in [
-        "Ask Bob to confirm what to bring", // not on the list
-        "Ask Mia what to bring",            // asks nothing it can write as a message
-        "Ask Mia to",
-        "Mia should confirm what to bring",
-        "I need to ask Mia to confirm what to bring", // talk about it, not the request
-        "Tell Mia",
+        "Ask Stranger to confirm what to bring", // not on the list
+        "Ask Recipient what to bring",            // asks nothing it can write as a message
+        "Ask Recipient to",
+        "Recipient should confirm what to bring",
+        "I need to ask Recipient to confirm what to bring", // talk about it, not the request
+        "Tell Recipient",
     ] {
         assert_eq!(ask(not), None, "{not}");
     }
     // The shape alone, which the catalog reads as the act: someone named, then "to" or "that" and the words.
     assert_eq!(kind(ASK), Some(Act::Message));
-    assert_eq!(kind("Ask Bob to confirm what to bring"), Some(Act::Message));
-    for talk in ["Tell me about it", "Ask them to wait", "Message received", "Ask Mia", "Text Mia to", "Ask around"] {
+    assert_eq!(kind("Ask Stranger to confirm what to bring"), Some(Act::Message));
+    for talk in ["Tell me about it", "Ask them to wait", "Message received", "Ask Recipient", "Text Recipient to", "Ask around"] {
         assert_eq!(kind(talk), None, "{talk}");
     }
     assert_eq!(crate::catalog::classify(ASK), Some(Act::Message));
@@ -137,7 +137,7 @@ fn a_turn_reads_as_a_message_only_to_someone_on_the_list() {
 fn the_countdown_is_five_seconds_for_a_short_message_and_longer_for_a_long_one() {
     assert_eq!(countdown_ms(TEXT), COUNTDOWN_MS);
     assert_eq!(countdown_ms("Hi"), COUNTDOWN_MS);
-    let long = "Hi Mia, could you confirm what to bring on Saturday, and whether the park still has the covered tables by the lake?";
+    let long = "Hi Recipient, could you confirm what to bring on Saturday, and whether the park still has the covered tables by the lake?";
     let needed = crate::words(long).len() as u64 * 60_000 / SLOW_WPM + DECIDE_MS + STOP_MS;
     assert!(countdown_ms(long) >= needed && countdown_ms(long) > COUNTDOWN_MS && countdown_ms(long) % 1_000 == 0);
 }
@@ -148,7 +148,7 @@ async fn nothing_is_sent_until_the_countdown_ends_then_it_sends_once() {
     f.core.add_thought("me", ASK);
     settle().await;
     let live = crate::apple::reachable();
-    assert_eq!(f.told(), vec![format!("card Counting Mia: {TEXT} (5000 ms, live {live})")]);
+    assert_eq!(f.told(), vec![format!("card Counting Recipient: {TEXT} (5000 ms, live {live})")]);
     assert!(f.thoughts().is_empty(), "a request, not a thought");
     // The card's count ends at 5 s; a stop still counts for LATE_STOP_MS after, so the window's end is never late.
     wait(4_999 + LATE_STOP_MS).await;
@@ -157,7 +157,7 @@ async fn nothing_is_sent_until_the_countdown_ends_then_it_sends_once() {
     wait(1).await;
     if live {
         assert_eq!(*f.sent.lock().unwrap(), vec![("+15550100".to_string(), TEXT.to_string())]);
-        assert_eq!(f.told(), vec![format!("card Sent Mia: {TEXT} (0 ms, live true)")]);
+        assert_eq!(f.told(), vec![format!("card Sent Recipient: {TEXT} (0 ms, live true)")]);
     } else {
         // Not a Mac (or a hosted core): a dry run, never a send.
         assert_eq!(f.sends(), 0);
@@ -175,7 +175,7 @@ async fn the_cards_stop_or_esc_before_the_end_means_it_is_never_sent() {
     wait(4_900).await;
     assert!(stop(&f.core, 1), "still counting");
     let live = crate::apple::reachable();
-    assert_eq!(f.told(), vec![format!("card Stopped Mia: {TEXT} (0 ms, live {live})")], "a live card stays live once stopped");
+    assert_eq!(f.told(), vec![format!("card Stopped Recipient: {TEXT} (0 ms, live {live})")], "a live card stays live once stopped");
     wait(60_000).await;
     assert_eq!(f.sends(), 0);
     assert!(!stop(&f.core, 1), "already down");
@@ -191,7 +191,7 @@ async fn saying_stop_takes_it_down_and_the_stop_is_no_thought() {
         f.told();
         wait(3_000).await;
         f.core.add_thought("me", word);
-        assert_eq!(f.told(), vec![format!("card Stopped Mia: {TEXT} (0 ms, live {})", crate::apple::reachable())], "{word}");
+        assert_eq!(f.told(), vec![format!("card Stopped Recipient: {TEXT} (0 ms, live {})", crate::apple::reachable())], "{word}");
         wait(60_000).await;
         assert_eq!(f.sends(), 0, "{word}");
         assert!(f.thoughts().is_empty(), "{word}");
@@ -209,7 +209,7 @@ async fn stop_heard_while_still_being_said_stops_it_and_its_turn_is_only_that() 
     heard(&f.core, "other", "Stop");
     assert!(f.told().is_empty(), "someone else's draft, or other words, stop nothing");
     heard(&f.core, "me", "Stop");
-    assert_eq!(f.told(), vec![format!("card Stopped Mia: {TEXT} (0 ms, live {})", crate::apple::reachable())]);
+    assert_eq!(f.told(), vec![format!("card Stopped Recipient: {TEXT} (0 ms, live {})", crate::apple::reachable())]);
     // The turn ends a moment later as "Stop.": already done, so nothing more, and not a thought.
     wait(4_000).await;
     f.core.add_thought("me", "Stop.");
@@ -224,9 +224,9 @@ async fn a_dry_run_counts_down_and_says_what_it_would_have_sent_without_sending(
     let mut f = Fixture::new(full(false));
     f.core.add_thought("me", ASK);
     settle().await;
-    assert_eq!(f.told(), vec![format!("card Counting Mia: {TEXT} (5000 ms, live false)")]);
+    assert_eq!(f.told(), vec![format!("card Counting Recipient: {TEXT} (5000 ms, live false)")]);
     wait(5_000 + LATE_STOP_MS).await;
-    assert_eq!(f.told(), vec![format!("card DryRun Mia: {TEXT} (0 ms, live false)")]);
+    assert_eq!(f.told(), vec![format!("card DryRun Recipient: {TEXT} (0 ms, live false)")]);
     wait(60_000).await;
     assert_eq!(f.sends(), 0);
 }
@@ -244,13 +244,13 @@ async fn the_demo_preset_has_no_messages_the_words_stay_a_thought() {
 #[tokio::test(start_paused = true)]
 async fn no_one_off_the_list_is_ever_sent_to_and_the_person_is_told() {
     let mut f = Fixture::new(full(true));
-    f.core.add_thought("me", "Ask Bob to confirm what to bring");
+    f.core.add_thought("me", "Ask Stranger to confirm what to bring");
     wait(60_000).await;
     assert_eq!(f.sends(), 0);
     let told = f.told();
     assert!(told.iter().all(|t| !t.starts_with("card")), "{told:?}");
     assert!(told.iter().any(|t| t.contains("Not sent: no one by that name")), "{told:?}");
-    assert_eq!(f.thoughts(), vec!["Ask Bob to confirm what to bring".to_string()]);
+    assert_eq!(f.thoughts(), vec!["Ask Stranger to confirm what to bring".to_string()]);
 }
 
 #[tokio::test(start_paused = true)]
@@ -270,7 +270,7 @@ async fn one_at_a_time_a_second_ask_while_counting_is_refused() {
     settle().await;
     f.told();
     wait(1_000).await;
-    f.core.add_thought("me", "Text Sam Lee that I'm running late");
+    f.core.add_thought("me", "Text Colleague Reviewer that I'm running late");
     assert_eq!(f.told(), vec!["notice One message at a time: say “stop”, or wait for it to send.".to_string()]);
     wait(60_000).await;
     let expected = if crate::apple::reachable() { vec![("+15550100".to_string(), TEXT.to_string())] } else { vec![] };
@@ -297,14 +297,14 @@ async fn no_i_meant_takes_the_counting_message_down_before_the_new_one() {
     settle().await;
     f.told();
     wait(1_000).await;
-    f.core.add_thought("me", "No, I meant text Sam Lee that I'm running late");
+    f.core.add_thought("me", "No, I meant text Colleague Reviewer that I'm running late");
     settle().await;
     let live = crate::apple::reachable();
     let told = f.told();
-    assert_eq!(told[0], format!("card Stopped Mia: {TEXT} (0 ms, live {live})"), "{told:?}");
-    assert!(told.contains(&format!("card Counting Sam Lee: Hi Sam Lee, I'm running late. (5000 ms, live {live})")), "{told:?}");
+    assert_eq!(told[0], format!("card Stopped Recipient: {TEXT} (0 ms, live {live})"), "{told:?}");
+    assert!(told.contains(&format!("card Counting Colleague Reviewer: Hi Colleague Reviewer, I'm running late. (5000 ms, live {live})")), "{told:?}");
     wait(60_000).await;
-    let expected = if live { vec![("sam@example.com".to_string(), "Hi Sam Lee, I'm running late.".to_string())] } else { vec![] };
+    let expected = if live { vec![("colleague@example.com".to_string(), "Hi Colleague Reviewer, I'm running late.".to_string())] } else { vec![] };
     assert_eq!(*f.sent.lock().unwrap(), expected, "only the corrected one");
 }
 
@@ -325,7 +325,7 @@ async fn undo_after_a_corrected_message_sent_says_it_is_too_late() {
     let mut f = Fixture::new(full(false));
     f.core.add_thought("me", ASK);
     settle().await;
-    f.core.add_thought("me", "No, I meant text Sam Lee that I'm running late");
+    f.core.add_thought("me", "No, I meant text Colleague Reviewer that I'm running late");
     settle().await;
     wait(60_000).await;
     f.told();
@@ -383,7 +383,7 @@ async fn a_count_that_ends_with_none_of_their_windows_open_never_sends() {
     wait(60_000).await;
     assert_eq!(f.sends(), 0, "nothing goes out unseen");
     let live = crate::apple::reachable();
-    let offline = format!("card Stopped Mia: {TEXT} (0 ms, live {live})");
+    let offline = format!("card Stopped Recipient: {TEXT} (0 ms, live {live})");
     assert_eq!(f.told(), vec![offline]);
     // Back: the window learns why.
     let back = window(&f.core, "me");
@@ -404,26 +404,26 @@ async fn a_count_that_ends_with_none_of_their_windows_open_never_sends() {
 fn stop_said_at_the_end_of_the_ask_is_never_part_of_the_message() {
     let s = full(false);
     for said in [
-        "Ask Mia to confirm what to bring, no, stop.",
-        "Text Sam Lee that I'm running late. Wait, don't send it",
-        "Tell Mia that I'm leaving now — never mind",
+        "Ask Recipient to confirm what to bring, no, stop.",
+        "Text Colleague Reviewer that I'm running late. Wait, don't send it",
+        "Tell Recipient that I'm leaving now — never mind",
         // A closing "please" or "thanks" is said to the app; an en dash is a pause like any other.
-        "Ask Mia to bring chips, no, stop, please",
-        "Ask Mia to bring chips, no, stop please.",
-        "Tell Mia that I'm leaving now, never mind, thanks!",
-        "Tell Mia that I'm leaving now – stop",
+        "Ask Recipient to bring chips, no, stop, please",
+        "Ask Recipient to bring chips, no, stop please.",
+        "Tell Recipient that I'm leaving now, never mind, thanks!",
+        "Tell Recipient that I'm leaving now – stop",
     ] {
         assert_eq!(read(said, &s), None, "{said}");
     }
     // A stop word inside the words is part of them.
-    assert_eq!(read("Tell Mia that the answer is no", &s).map(|a| a.text), Some("Hi Mia, the answer is no.".into()));
-    assert_eq!(read("Ask Mia to wait for me", &s).map(|a| a.text), Some("Hi Mia, could you wait for me?".into()));
+    assert_eq!(read("Tell Recipient that the answer is no", &s).map(|a| a.text), Some("Hi Recipient, the answer is no.".into()));
+    assert_eq!(read("Ask Recipient to wait for me", &s).map(|a| a.text), Some("Hi Recipient, could you wait for me?".into()));
 }
 
 #[tokio::test(start_paused = true)]
 async fn an_ask_taken_back_in_the_same_breath_counts_nothing_down_and_is_no_thought() {
     let mut f = Fixture::new(full(true));
-    f.core.add_thought("me", "Ask Mia to confirm what to bring, no, stop.");
+    f.core.add_thought("me", "Ask Recipient to confirm what to bring, no, stop.");
     wait(60_000).await;
     assert_eq!(f.sends(), 0);
     assert_eq!(f.told(), vec!["notice Not sent: you said “stop” at the end.".to_string()]);
@@ -447,7 +447,7 @@ async fn a_stopped_messages_late_timer_leaves_one_at_a_time_holding() {
     let mut f = Fixture::sending(full(true), sender, Arc::default(), |core| core);
     let core = f.core.clone();
     // A long message (a longer count), stopped; then a short one, whose count ends first and goes to Messages.
-    let long = "Ask Mia to confirm what to bring on Saturday, and whether the park still has the covered tables by the lake";
+    let long = "Ask Recipient to confirm what to bring on Saturday, and whether the park still has the covered tables by the lake";
     core.add_thought("me", long);
     settle().await;
     let long_ms = countdown_ms(&read(long, &full(true)).unwrap().text);
@@ -459,7 +459,7 @@ async fn a_stopped_messages_late_timer_leaves_one_at_a_time_holding() {
     // Messages has the short one and hasn't answered; the long one's timer ends now.
     wait(long_ms).await;
     f.told();
-    core.add_thought("me", "Text Sam Lee that I'm running late");
+    core.add_thought("me", "Text Colleague Reviewer that I'm running late");
     assert_eq!(f.told(), vec!["notice One message at a time: say “stop”, or wait for it to send.".to_string()]);
     gate.notify_one();
 }
@@ -468,12 +468,12 @@ async fn a_stopped_messages_late_timer_leaves_one_at_a_time_holding() {
 fn the_words_sent_are_the_words_said() {
     let s = full(false);
     let text = |said: &str| read(said, &s).map(|a| a.text);
-    assert_eq!(text("Text Mia that it's for me"), Some("Hi Mia, it's for me.".into()));
-    assert_eq!(text("Text Mia that -5 is the answer"), Some("Hi Mia, -5 is the answer.".into()));
-    assert_eq!(text("Tell Mia that I'm leaving now."), Some("Hi Mia, I'm leaving now.".into()));
-    assert_eq!(text("Tell Mia that, $20 is fine!"), Some("Hi Mia, $20 is fine.".into()));
-    assert_eq!(text("Ask Mia to bring chips, please"), Some("Hi Mia, could you bring chips?".into()));
-    assert_eq!(text("Tell Mia that ..."), None, "no words to send");
+    assert_eq!(text("Text Recipient that it's for me"), Some("Hi Recipient, it's for me.".into()));
+    assert_eq!(text("Text Recipient that -5 is the answer"), Some("Hi Recipient, -5 is the answer.".into()));
+    assert_eq!(text("Tell Recipient that I'm leaving now."), Some("Hi Recipient, I'm leaving now.".into()));
+    assert_eq!(text("Tell Recipient that, $20 is fine!"), Some("Hi Recipient, $20 is fine.".into()));
+    assert_eq!(text("Ask Recipient to bring chips, please"), Some("Hi Recipient, could you bring chips?".into()));
+    assert_eq!(text("Tell Recipient that ..."), None, "no words to send");
 }
 
 #[tokio::test(start_paused = true)]
@@ -499,13 +499,13 @@ async fn one_at_a_time_holds_while_messages_is_still_sending() {
     wait(5_000 + LATE_STOP_MS).await;
     assert_eq!(*calls.lock().unwrap(), 1, "Messages has it, and hasn't answered");
     f.told();
-    core.add_thought("me", "Text Sam Lee that I'm running late");
+    core.add_thought("me", "Text Colleague Reviewer that I'm running late");
     assert_eq!(f.told(), vec!["notice One message at a time: say “stop”, or wait for it to send.".to_string()]);
     gate.notify_one();
     settle().await;
-    assert!(f.told().iter().any(|t| t.starts_with("card Sent Mia")));
-    core.add_thought("me", "Text Sam Lee that I'm running late");
-    assert!(f.told().iter().any(|t| t.starts_with("card Counting Sam Lee")), "free again once Messages answered");
+    assert!(f.told().iter().any(|t| t.starts_with("card Sent Recipient")));
+    core.add_thought("me", "Text Colleague Reviewer that I'm running late");
+    assert!(f.told().iter().any(|t| t.starts_with("card Counting Colleague Reviewer")), "free again once Messages answered");
 }
 
 #[tokio::test(start_paused = true)]
@@ -533,17 +533,17 @@ async fn a_window_back_while_messages_still_has_it_shows_sending_then_how_it_end
     assert!(card_for(&f.core, "guest").is_none(), "only the asker's windows");
     gate.notify_one();
     settle().await;
-    assert!(f.told().iter().any(|t| t.starts_with("card Sent Mia")));
+    assert!(f.told().iter().any(|t| t.starts_with("card Sent Recipient")));
     assert!(matches!(card_for(&f.core, "me"), Some(ServerMsg::SendCard { id: 1, state: SendState::Sent, .. })));
 }
 
 #[tokio::test(start_paused = true)]
 async fn a_name_on_the_list_said_another_way_is_not_called_unknown() {
     let mut f = Fixture::new(full(true));
-    f.core.add_thought("me", "Ask Mia what to bring to the picnic");
+    f.core.add_thought("me", "Ask Recipient what to bring to the picnic");
     settle().await;
     let told = f.told();
-    assert!(told.iter().any(|t| t.contains("say it as “ask Mia to …”")), "{told:?}");
+    assert!(told.iter().any(|t| t.contains("say it as “ask Recipient to …”")), "{told:?}");
     assert!(told.iter().all(|t| !t.contains("no one by that name")), "{told:?}");
     assert_eq!(f.sends(), 0);
 }
@@ -553,8 +553,8 @@ fn only_the_error_number_reaches_the_log_and_a_dry_run_says_why() {
     assert_eq!(error_number("execution error: Messages got an error: Can’t get participant \"+15550100\". (-1728)"), "-1728");
     assert_eq!(error_number("Not authorized to send Apple events to Messages. (-1743)"), "-1743");
     assert_eq!(error_number("participant \"+15550100\" went wrong"), "unknown");
-    assert!(dry_run("Mia", false, Channel::Messages).contains("With MESSAGES_SEND=on"));
-    let on = dry_run("Mia", true, Channel::Messages);
+    assert!(dry_run("Recipient", false, Channel::Messages).contains("With MESSAGES_SEND=on"));
+    let on = dry_run("Recipient", true, Channel::Messages);
     assert!(!on.contains("MESSAGES_SEND") && on.contains("only from a Mac"), "{on}");
 }
 

@@ -80,7 +80,7 @@ export const FEATURE_NAMES: Record<string, FeatureName> = {
   "compare-return-controls": { name: "Compare return controls", does: "Compare Card and Compact for the same unfinished words. Card starts each visit; choose the feeling yourself.", lives: "Above the input box" },
   plugins: { name: "Plugins", does: "Load, unload and add local plugins." },
   // Built in: switched here, as the features are.
-  email: { name: "Email", does: "Email an allowed contact from this laptop after a countdown you can stop. Say ‘Email Mia that the cut is ready’.", lives: "Above your words" },
+  email: { name: "Email", does: "Email an allowed contact from this laptop after a countdown you can stop. Say ‘Email Recipient that the cut is ready’.", lives: "Above your words" },
   helpers: { name: "Thinking helpers", does: "Say ‘put five helpers on the pitch’. Stop during the countdown; read their answers in Work spine.", lives: "Work spine and the topic" },
   "canvas-tools": { name: "Canvas tools", does: "Move Type a thought, Features and History onto the Canvas. Focus a tool to read it; Exit restores the ordinary shell.", lives: "The Canvas" },
   "reuse-explanations": { name: "Reuse explanations", does: "Reopen the same Explain answer immediately while its source context is unchanged, for up to five minutes. Off? clears that answer." },

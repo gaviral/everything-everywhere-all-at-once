@@ -1,4 +1,4 @@
-import type { Contribution } from '../../msg1351/part-dimensions';
+import type { Contribution } from '../../features/part-dimensions';
 import type { Explanation, PartTree } from './tree';
 
 // Synthetic content, visibly labelled in every lens. Identity and topology use the

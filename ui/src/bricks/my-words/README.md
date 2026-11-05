@@ -10,4 +10,4 @@ Only exact terms join the existing Meta Voice Transcribe keywords; explanations 
 
 Small shared hooks: `main.rs` mounts the gated endpoint and snapshots terms; `asr.rs` adds those terms to the existing handshake. App.tsx, core.ts, contract and protocol files are unchanged. The existing Vite `/ws` proxy also carries the feature connection.
 
-Focused checks: `cargo test --manifest-path core/Cargo.toml glossary` covers storage, scope, revisions, bounds, failure preservation and the recognizer message. After `npm --prefix ui run build`, `PRECHECK_PAGES=1 node scripts/c10-glossary-check.mjs` exercises the built UI with synthetic server replies and desktop/phone screenshots. Neither check enables a microphone or certifies live recognition accuracy.
+Focused checks: `cargo test --manifest-path core/Cargo.toml glossary` covers storage, scope, revisions, bounds, failure preservation and the recognizer message. After `npm --prefix ui run build`, `PRECHECK_PAGES=1 node scripts/features-glossary-check.mjs` exercises the built UI with synthetic server replies and desktop/phone screenshots. Neither check enables a microphone or certifies live recognition accuracy.

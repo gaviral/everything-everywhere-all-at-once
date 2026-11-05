@@ -14,29 +14,29 @@ try {
   assert.equal(readMs("Rent Due Friday Rent is due Friday, not sent yet"), LOOK_MS + Math.round((10 * 60_000) / READ_WPM));
   assert.ok(readMs("one two three") < readMs("one two three four five six seven eight"), "longer words, longer look");
 
-  const thought = (id, thread_id, speaker = "Ana", extra = {}) => ({ id, thread_id, speaker, text: id, point: `p ${id}`, placed: !!thread_id,
+  const thought = (id, thread_id, speaker = "Speaker", extra = {}) => ({ id, thread_id, speaker, text: id, point: `p ${id}`, placed: !!thread_id,
     complete: true, unclear: "", at_ms: 1, place_ms: 10, ...extra });
   const thread = (id, title = id) => ({ id, title, parent_id: null, status: "open", tags: [], picture: null });
   const world = (extra) => ({ threads: [thread("T1"), thread("T2")], thoughts: [], suggestions: [], actions: [], merged: {}, active: "T1", active_by: {}, ...extra });
 
   // Your own words landing aren't "unseen": they get the landing's highlight and the latest mark.
   const before = world({ thoughts: [thought("a", "T1")] });
-  assert.deepEqual(changes(before, world({ thoughts: [thought("a", "T1"), thought("b", "T2")] }), "Ana"), []);
+  assert.deepEqual(changes(before, world({ thoughts: [thought("a", "T1"), thought("b", "T2")] }), "Speaker"), []);
   // Someone else's thought in a room is.
-  assert.deepEqual(changes(before, world({ thoughts: [thought("a", "T1"), thought("b", "T2", "Sam")] }), "Ana"),
+  assert.deepEqual(changes(before, world({ thoughts: [thought("a", "T1"), thought("b", "T2", "Colleague")] }), "Speaker"),
     [{ thread: "T2", element: "point-b", line: "p b" }]);
   // A new proposal or suggestion, and a new title (the AI tidied it), are.
-  assert.deepEqual(changes(before, world({ thoughts: before.thoughts, suggestions: [{ id: "s", thread_id: "T1", text: "Call the landlord", status: "new" }] }), "Ana"),
+  assert.deepEqual(changes(before, world({ thoughts: before.thoughts, suggestions: [{ id: "s", thread_id: "T1", text: "Call the landlord", status: "new" }] }), "Speaker"),
     [{ thread: "T1", element: "item-s", line: "Call the landlord" }]);
-  assert.deepEqual(changes(before, world({ thoughts: before.thoughts, actions: [{ id: "x", thread_id: "T2", title: "Pay rent", status: "new" }] }), "Ana"),
+  assert.deepEqual(changes(before, world({ thoughts: before.thoughts, actions: [{ id: "x", thread_id: "T2", title: "Pay rent", status: "new" }] }), "Speaker"),
     [{ thread: "T2", element: "item-x", line: "Pay rent" }]);
-  assert.deepEqual(changes(before, world({ thoughts: before.thoughts, threads: [thread("T1", "Rent Due Friday"), thread("T2")] }), "Ana"),
+  assert.deepEqual(changes(before, world({ thoughts: before.thoughts, threads: [thread("T1", "Rent Due Friday"), thread("T2")] }), "Speaker"),
     [{ thread: "T1", element: "title-T1", line: "Rent Due Friday" }]);
   // A kept or dismissed item isn't new.
-  assert.deepEqual(changes(before, world({ thoughts: before.thoughts, suggestions: [{ id: "s", thread_id: "T1", text: "x", status: "kept" }] }), "Ana"), []);
+  assert.deepEqual(changes(before, world({ thoughts: before.thoughts, suggestions: [{ id: "s", thread_id: "T1", text: "x", status: "kept" }] }), "Speaker"), []);
   // A merge moves your thought into another thread: that thread changed.
   const merged = world({ threads: [thread("T2")], merged: { T1: "T2" }, thoughts: [thought("a", "T2")] });
-  assert.deepEqual(changes(before, merged, "Ana"), [{ thread: "T2", element: "point-a", line: "p a" }]);
+  assert.deepEqual(changes(before, merged, "Speaker"), [{ thread: "T2", element: "point-a", line: "p a" }]);
   // A mark follows its thread into the merge, and goes with a thread that's gone.
   assert.deepEqual(carry([{ thread: "T1", element: "point-a", line: "x" }], merged), [{ thread: "T2", element: "point-a", line: "x" }]);
   // A new title's mark points at the joined thread's title: the old title's card is gone, so it could never be read.
@@ -52,12 +52,12 @@ try {
   assert.equal((attentionSource.match(/setUnseen\(\(marks\) => sameOr\(marks, carry\(/g) ?? []).length, 2, "both carries keep an unchanged list");
 
   // "Latest" moves to your newest landing only; someone else's leaves it where it was.
-  assert.equal(newestOwn([thought("a", "T1"), thought("b", "T1"), thought("c", "T2", "Sam")], "Ana"), "b");
-  assert.equal(newestOwn([thought("c", "T2", "Sam")], "Ana"), null);
+  assert.equal(newestOwn([thought("a", "T1"), thought("b", "T1"), thought("c", "T2", "Colleague")], "Speaker"), "b");
+  assert.equal(newestOwn([thought("c", "T2", "Colleague")], "Speaker"), null);
   // On a page that didn't see them land (fresh, or a reconnect), by when you said them; a sample's future time counts least.
-  assert.equal(newestSaid([thought("a", "T1", "Ana", { at_ms: 5 }), thought("b", "T1", "Ana", { at_ms: 9 }), thought("c", "T1", "Sam", { at_ms: 20 })], "Ana", 100), "b");
-  assert.equal(newestSaid([thought("a", "T1", "Ana", { at_ms: 5 }), thought("s", "T1", "Ana", { at_ms: 500 })], "Ana", 100), "a");
-  assert.equal(newestSaid([thought("c", "T1", "Sam")], "Ana", 100), null);
+  assert.equal(newestSaid([thought("a", "T1", "Speaker", { at_ms: 5 }), thought("b", "T1", "Speaker", { at_ms: 9 }), thought("c", "T1", "Colleague", { at_ms: 20 })], "Speaker", 100), "b");
+  assert.equal(newestSaid([thought("a", "T1", "Speaker", { at_ms: 5 }), thought("s", "T1", "Speaker", { at_ms: 500 })], "Speaker", 100), "a");
+  assert.equal(newestSaid([thought("c", "T1", "Colleague")], "Speaker", 100), null);
 
   // "This": only a whole command the core acts on "this" with (spoken.rs `unfold`, main.rs `FOCUS_ON`), also after a
   // correction's lead (catalog.rs `correction`).

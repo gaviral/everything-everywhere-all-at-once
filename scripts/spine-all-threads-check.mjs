@@ -49,7 +49,7 @@ for (const line of readFileSync(sample("student-week.jsonl"), "utf8").split("\n"
   say("x3", "Two seats, one for Mom and one for me", "T10", 3);
   say("x4", "Pay online if the site allows it", "T10", 4);
   say("x5", "Slides for Thursday's meeting", "T11", 5);
-  say("x6", "Ask Priya for her chart", "T11", 6);
+  say("x6", "Ask Partner for her chart", "T11", 6);
   say("x7", "Send the deck to the group the night before", "T11", 7);
 }
 const ids = world.threads.map((t) => t.id);

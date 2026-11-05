@@ -4,7 +4,7 @@
 //! Calendar beat; Full is every connector, today Messages, Email, GitHub (github.rs) and Notes (notes.rs). `PRESET=full` in
 //! the environment or `.env` switches it.
 //!
-//! Messages: a whole turn like "ask Mia to confirm what to bring" puts a ready-to-send card up, with the message, who
+//! Messages: a whole turn like "ask Recipient to confirm what to bring" puts a ready-to-send card up, with the message, who
 //! it goes to and a visible countdown (`countdown_ms`). "Stop" (said, typed, or heard as it is being said), Esc or the
 //! card's Stop takes it down unsent. Only when the countdown ends does it go, and then only:
 //! - to a contact on the allow-list (`MESSAGES_TO`, names and handles; a handle never leaves the core),
@@ -61,7 +61,7 @@ impl Channel {
 #[derive(Clone, Debug, Default)]
 pub struct Settings {
     pub preset: Preset,
-    /// The allow-list: each contact's name as said ("Mia") and the handle Messages sends to (a phone number or an
+    /// The allow-list: each contact's name as said ("Recipient") and the handle Messages sends to (a phone number or an
     /// Apple ID email). No one else is ever sent to.
     pub contacts: Vec<(String, String)>,
     /// `MESSAGES_SEND=on`: a countdown that ends really sends. Off, it's a dry run.
@@ -85,7 +85,7 @@ impl Settings {
         }
     }
 
-    /// The contact `words` (said, lowercased) start with, longest name first ("Mia Chen" before "Mia"), with how many
+    /// The contact `words` (said, lowercased) start with, longest name first ("Recipient Example" before "Recipient"), with how many
     /// words its name took.
     fn channel_contact(&self, channel: Channel, words: &[String]) -> Option<(&str, &str, usize)> {
         let contacts = if channel == Channel::Email { &self.email_contacts } else { &self.contacts };
@@ -99,7 +99,7 @@ impl Settings {
     }
 }
 
-/// `MESSAGES_TO`: "Mia=+15551234567, Sam=sam@example.com". An entry without both a name and a handle is left out.
+/// `MESSAGES_TO`: "Recipient=+15551234567, Colleague=colleague@example.com". An entry without both a name and a handle is left out.
 pub fn contacts(list: &str) -> Vec<(String, String)> {
     list.split([',', ';'])
         .filter_map(|entry| {
@@ -118,7 +118,7 @@ fn valid_address(address: &str) -> bool {
 }
 
 /// The shortest countdown: it sends in 5 seconds unless you say something. It is what the demo's message
-/// needs, worked back from the person: "Hi Mia, could you confirm what to bring?" is 8 words, 2.7 s for a slow reader
+/// needs, worked back from the person: "Hi Recipient, could you confirm what to bring?" is 8 words, 2.7 s for a slow reader
 /// (`SLOW_WPM`), then 1.35 s to decide (`DECIDE_MS`) and 0.9 s for "stop" to reach the core (0.4 s to say it, the
 /// speech service's draft words ≈ 0.3 s behind the audio, asr.rs, ≈ 0.2 s there and back): 4.95 s.
 pub const COUNTDOWN_MS: u64 = 5_000;
@@ -318,8 +318,8 @@ pub fn kind(text: &str) -> Option<Act> {
     (2..=4).any(|i| i + 1 < words.len() && joined(i)).then_some(Act::Message)
 }
 
-/// Reads a whole turn as a message to a contact on the list: "ask Mia to confirm what to bring" → to Mia, "Hi Mia,
-/// could you confirm what to bring?". "Tell Sam that I'm running late" → "Hi Sam, I'm running late." None when the
+/// Reads a whole turn as a message to a contact on the list: "ask Recipient to confirm what to bring" → to Recipient, "Hi Recipient,
+/// could you confirm what to bring?". "Tell Colleague that I'm running late" → "Hi Colleague, I'm running late." None when the
 /// turn isn't one, or names no one on the list.
 pub fn read(text: &str, settings: &Settings) -> Option<Ask> {
     if withdrawn(text) {
@@ -339,7 +339,7 @@ pub fn read(text: &str, settings: &Settings) -> Option<Ask> {
     if channel == Channel::Email && (to.contains('@') || !valid_address(handle)) { return None; }
     let link = words.get(1 + n)?;
     let asking = ASKING.contains(&link.as_str());
-    // "Ask Mia what to bring" asks nothing this can write as a message to her; only "ask Mia to …".
+    // "Ask Recipient what to bring" asks nothing this can write as a message to her; only "ask Recipient to …".
     if !asking && (verb == "ask" || !SAYING.contains(&link.as_str())) {
         return None;
     }
@@ -355,7 +355,7 @@ pub fn read(text: &str, settings: &Settings) -> Option<Ask> {
 /// Whether the turn's last clause stops it ("…, no, stop."): the request was taken back as it was said, so those words
 /// are never part of a message. A clause ends where speech-to-text punctuates a pause (main.rs `PAUSE`); a closing
 /// "please" or "thanks" is said to the app, so the clause before it counts ("…, stop, please"). A stop word inside a
-/// clause ("tell Mia the answer is no") is words.
+/// clause ("tell Recipient the answer is no") is words.
 pub(crate) fn withdrawn(text: &str) -> bool {
     let pause = |c: char| crate::PAUSE.contains(&c);
     let mut said = text;
@@ -399,7 +399,7 @@ pub fn act(core: &Arc<Core>, speaker: &str, text: &str) -> Option<Done> {
     }
     let email = crate::words(crate::spoken::plain(text)).first().is_some_and(|w| w == "email");
     if email && (settings.hosted || core.messages.state.lock().unwrap().email_off.contains(speaker)) { return None; }
-    // "Ask Mia to bring chips, no, stop": taken back in the same breath, so nothing counts down, and it's no thought.
+    // "Ask Recipient to bring chips, no, stop": taken back in the same breath, so nothing counts down, and it's no thought.
     if kind(text).is_some() && withdrawn(text) {
         core.send_to(speaker, ServerMsg::Notice { message: "Not sent: you said “stop” at the end.".into() });
         return Some(Done::missed(Act::Message));

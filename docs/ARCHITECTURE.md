@@ -177,7 +177,7 @@ Core, one process (core/src: axum, tokio)
   usage.rs       reads USAGE_FILE at startup and every 60 seconds, pushes usage messages and replays the latest on joining, with model.rs's own rolling-hour call count; never journaled
   import.rs      past AI chats into topics
   apple.rs       AppleScript into Reminders and Calendar; off a Mac, or hosted (E2A2O_HOSTED=1), the window's calendar file instead
-  messages.rs    presets (Demo: the core alone; Full: every connector, PRESET=full) and the shared Messages/Email card: "ask Mia to …" or "email Mia that …" counts down, "stop", Esc or Stop takes it down, and only an ended count sends, to an allow-listed contact (MESSAGES_TO), from the host, with MESSAGES_SEND=on or EMAIL_SEND=on for its channel (else a dry run); email is Full/local only, has a Features switch, uses EMAIL_TO and Mail.app, and derives the subject by rule
+  messages.rs    presets (Demo: the core alone; Full: every connector, PRESET=full) and the shared Messages/Email card: "ask Recipient to …" or "email Recipient that …" counts down, "stop", Esc or Stop takes it down, and only an ended count sends, to an allow-listed contact (MESSAGES_TO), from the host, with MESSAGES_SEND=on or EMAIL_SEND=on for its channel (else a dry run); email is Full/local only, has a Features switch, uses EMAIL_TO and Mail.app, and derives the subject by rule
   github.rs      the GitHub card (Full only, not hosted, the host's only): "show me the open pull requests" reads gh pr list / view, read-only, and says in one line when gh is missing, signed out or slow
   notes.rs       Full preset: "save this topic as a note" shows the note (points in order, decisions and unfinished marked, tangents under headings) and writes it into Apple Notes from the host with NOTES_WRITE=on (else a dry run); Open in Notes; it never changes or deletes a note; off when hosted
   sample.rs      "Try a sample map": an empty map filled with the student's week, or a shorter sample, from samples/
@@ -204,7 +204,7 @@ The shell's `Rail` starts closed. Outside a call, its Talk tab uses `TalkTurns`:
 Usage starts off and can be enabled on the Features page. The core reads the JSON file named by `USAGE_FILE` at startup and every 60 seconds, sends it over the existing WebSocket, and includes the latest data when a window joins. The file's shape is:
 
 ```json
-{"updated":"2026-11-03T14:40:00Z","rows":[{"label":"Claude weekly","used_pct":67},{"label":"ChatGPT","left":"25 messages left"},{"label":"Meta API","spent_usd":12.3,"cap_usd":100},{"label":"Muse","left":"10 credits left"}]}
+{"updated":"2026-11-03T14:40:00Z","rows":[{"label":"Weekly plan","used_pct":67},{"label":"Chat plan","left":"25 messages left"},{"label":"Meta API","spent_usd":12.3,"cap_usd":100},{"label":"Muse","left":"10 credits left"}]}
 ```
 
 `updated` is an ISO timestamp. Each row has a label and either `used_pct`, free text in `left`, or `spent_usd` with `cap_usd`. The panel shows remaining percent or dollars (at least zero), or the supplied text, with the file's as-of time. Its additional **Meta API · core (1h)** row uses the core's existing rolling 60-minute model-call counter and `MODEL_CALLS_PER_HOUR` limit, with its own timestamp; a zero limit says “no cap” while still counting calls. This counts this core's budgeted calls, including retries, and resets when the core restarts.

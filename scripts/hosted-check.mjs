@@ -91,7 +91,7 @@ try {
   assert.ok(site.icsFor({ id: "x", title: "NYE", when: "2026-12-31" }, now).includes("DTEND;VALUE=DATE:20270101"));
   assert.ok(!/[^\r]\n/.test(ics), "every line ends in CRLF");
   // Text is escaped; a long title folds at 75 bytes, never inside a character, and unfolds to itself.
-  const title = "Call Dr. Chen's office; book Mom's follow-up, then text Priya — “slides” 🎤 ".repeat(3).trim();
+  const title = "Call Dr. Example's office; book Mom's follow-up, then text Partner — “slides” 🎤 ".repeat(3).trim();
   const long = site.icsFor({ id: "ac-2", title, when: "2026-11-03" }, now);
   const encoder = new TextEncoder();
   for (const line of long.split("\r\n")) assert.ok(encoder.encode(line).length <= 75, `${encoder.encode(line).length}: ${line}`);
@@ -101,7 +101,7 @@ try {
   for (const when of ["", "tomorrow", "2026-11-31", "2026-02-29", "1999-01-01", "2026-11"]) {
     assert.equal(site.icsFor({ id: "x", title: "t", when }, now), null, when);
   }
-  assert.equal(site.icsName("Call Dr. Chen's office!"), "Call-Dr-Chens-office.ics");
+  assert.equal(site.icsName("Call Dr. Example's office!"), "Call-Dr-Examples-office.ics");
   assert.equal(site.icsName("🎤"), "event.ics");
 
   // The row, where Apple's apps can't be reached: Download .ics on a dated item, nothing to press without a day,

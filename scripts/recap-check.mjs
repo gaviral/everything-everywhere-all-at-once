@@ -60,7 +60,7 @@ try {
   assert.deepEqual(closes([notice("On to Topic T3"), moved("T3")], { ...empty, active: "T2", active_by: { you: "T2" } }),
     [false, true], "once you have a place, “next one” is yours");
   // In a room, someone else's words and moves are theirs.
-  assert.deepEqual(closes([said("theirs", "Sam"), placed("theirs", "T3"), touched("T3"), moved("T3", "Sam"), moved("T1", "Sam")]),
+  assert.deepEqual(closes([said("theirs", "Colleague"), placed("theirs", "T3"), touched("T3"), moved("T3", "Colleague"), moved("T1", "Colleague")]),
     [false, false, false, false, false], "another speaker");
   // Only the rest of the landing's commit counts as it. A landing that didn't move you (you clicked away while it was
   // placed) leaves nothing behind: the next move to that thread is asked for.

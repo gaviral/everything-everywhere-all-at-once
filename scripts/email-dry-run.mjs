@@ -9,7 +9,7 @@ import { join } from "node:path";
 
 const root = new URL("../", import.meta.url).pathname;
 const scratch = mkdtempSync(join(tmpdir(), "e2a2o-email-"));
-const turn = "Email Mia that the cut is ready";
+const turn = "Email Recipient that the cut is ready";
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function until(test, ms = 15_000) {
   const start = Date.now();
@@ -31,7 +31,7 @@ async function freePort() {
     const dir = join(scratch, mode); mkdirSync(dir);
     const port = await freePort();
     const env = { ...process.env, PORT: String(port), MODEL_API_KEY: "", E2A2O_DATA: dir, E2A2O_UI: join(root, "ui/dist"),
-      EMAIL_TO: "Mia=mia@example.com", EMAIL_SEND: "off", MESSAGES_SEND: "off", NOTES_WRITE: "off", PICTURES: "off",
+      EMAIL_TO: "Recipient=recipient@example.com", EMAIL_SEND: "off", MESSAGES_SEND: "off", NOTES_WRITE: "off", PICTURES: "off",
       E2A2O_TRACE: "1", E2A2O_HOSTED: mode === "hosted" ? "1" : "0" };
     delete env.ROOM_CODE; delete env.ROOM_HTTPS; delete env.TUNNEL_ORIGIN;
     if (mode === "unset") delete env.PRESET; else env.PRESET = "full";
@@ -57,8 +57,8 @@ async function freePort() {
         await until(() => messages.some((m) => m.type === "send_card"));
         const card = messages.find((m) => m.type === "send_card");
         assert.equal(card.channel, "email");
-        assert.equal(card.to, "Mia"); assert.equal(card.subject, "the cut is ready");
-        assert.equal(card.text, "Hi Mia, the cut is ready."); assert.equal(card.live, false);
+        assert.equal(card.to, "Recipient"); assert.equal(card.subject, "the cut is ready");
+        assert.equal(card.text, "Hi Recipient, the cut is ready."); assert.equal(card.live, false);
         await until(() => messages.some((m) => m.type === "send_card" && m.state === "dry_run"));
         assert.ok(messages.some((m) => m.message?.includes("EMAIL_SEND=on")));
         send({ type: "text", text: turn });
@@ -69,12 +69,12 @@ async function freePort() {
         await until(() => readFileSync(join(dir, "journal.jsonl"), "utf8").includes(turn));
         const trace = readFileSync(join(dir, "trace.jsonl"), "utf8");
         assert.ok(trace.includes('"event":"card"') && trace.includes('"event":"dry_run"'));
-        assert.ok(!trace.includes("mia@example.com"));
+        assert.ok(!trace.includes("recipient@example.com"));
       } else {
         await until(() => readFileSync(join(dir, "journal.jsonl"), "utf8").includes(turn));
         assert.ok(!messages.some((m) => m.type === "send_card"), `${mode} stays talk`);
       }
-      assert.ok(!JSON.stringify(messages).includes("mia@example.com"), "address stays in core");
+      assert.ok(!JSON.stringify(messages).includes("recipient@example.com"), "address stays in core");
       console.log(`email-dry-run: ${mode} on ${port}: ${mode === "full" ? "card → dry run; typed Stop; Features off → talk" : "words stay talk"}`);
     } finally {
       ws?.close();

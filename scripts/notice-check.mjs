@@ -121,7 +121,7 @@ try {
   // Active sends interrupt reading: Stop cannot wait behind an old completion or another card.
   const { noticeQueue } = await server.ssrLoadModule("/src/notice-queue.ts");
   const priority = noticeQueue();
-  const older = { id: 1, to: "Sam", text: "Earlier send", state: "stopped", live: false, message: "Stopped: not sent", until: 0, total: 5000 };
+  const older = { id: 1, to: "Colleague", text: "Earlier send", state: "stopped", live: false, message: "Stopped: not sent", until: 0, total: 5000 };
   priority.push("send", "1", older);
   priority.push("notice", "answer", { text: "Unread answer", undo: null });
   const active = { ...older, id: 2, state: "counting", until: Date.now() + 5000 };

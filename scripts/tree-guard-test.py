@@ -67,7 +67,7 @@ class Boundary(unittest.TestCase):
         self.run_guard(False)
 
     def test_raw_report_and_changed_synthetic(self):
-        self.stage('docs/meeting-report.md', 'Inbox report\nJordan said the appointment moved.\n')
+        self.stage('docs/meeting-report.md', 'Inbox report\nCoordinator said the appointment moved.\n')
         self.run_guard(False)
         self.write('docs/meeting-report.md', 'Fictional workshop scenario.\n')
         data = (self.root/'docs/meeting-report.md').read_bytes()
@@ -105,7 +105,7 @@ class Boundary(unittest.TestCase):
         notice = """Copyright (c) 2026 gaviral
 Copyright (c) 2020 Upstream <author@upstream.invalid>
 https://github.com/gaviral/e2a2o
-sam@example.com
+colleague@example.com
 fixture@users.noreply.github.com
 +15551234567
 """

@@ -122,10 +122,10 @@ mod tests {
         let mut world = demo();
         let mut own = world.thoughts[0].clone();
         own.id = "own".into();
-        own.speaker = "Sam".into();
+        own.speaker = "Colleague".into();
         own.text = "The lighting still needs".into();
         world.thoughts.push(own);
-        assert_eq!(anchor(&world, "Sam", "demo", "Back to", 10),
+        assert_eq!(anchor(&world, "Colleague", "demo", "Back to", 10),
             (Some("own".into()), "Back to Demo: “The lighting still needs”".into()));
     }
 

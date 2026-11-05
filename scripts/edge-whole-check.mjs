@@ -35,7 +35,7 @@ const world = {
     thought("th-4", "Mom's birthday is Saturday. She keeps talking about that pottery class on Main Street.", "Mom's birthday Saturday; pottery class on Main Street", "T3", 100),
     thought("th-5", "Decided: if it's under eighty dollars, I'm booking it tonight.", "Decided: book it tonight if under $80", "T3", 80, { decided: true }),
     thought("th-6", "My stats midterm is Thursday.", "Stats midterm Thursday", "T4", 60),
-    thought("th-7", "Decided: I'll study with Priya on Wednesday.", "Decided: study with Priya Wednesday", "T3", 40, { decided: true }),
+    thought("th-7", "Decided: I'll study with Partner on Wednesday.", "Decided: study with Partner Wednesday", "T3", 40, { decided: true }),
   ],
   active: "T4", active_by: { you: "T4" }, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: true, recaps: [], notes: {}, proposals: [], ai: [],
 };
@@ -184,7 +184,7 @@ try {
           let n = 0;
           for (const k of ["R", "D", "U", "L"]) {
             const id = `n${++n}`, text = `New words on ${farWorld.titles[k]}`;
-            far.send({ type: "change", change: { type: "thought_added", thought: { ...thought(id, text, text, null, 0, { speaker: "Maya" }), placed: false, at_ms: Date.now() } } });
+            far.send({ type: "change", change: { type: "thought_added", thought: { ...thought(id, text, text, null, 0, { speaker: "Designer" }), placed: false, at_ms: Date.now() } } });
             far.send({ type: "change", change: { type: "thought_placed", thought_id: id, thread_id: `T${k}`, point: text, unclear: "", complete: true, place_ms: 1500 } });
             await sleep(320);
           }

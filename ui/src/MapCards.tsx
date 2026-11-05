@@ -218,7 +218,7 @@ export function ThreadPicture({ thread, marked = false }: { thread: Thread; mark
 }
 
 const Point = memo(function Point({ thought, heads, on }: { thought: Thought; heads: Thought[]; on: Handlers }) {
-  // Your own thoughts need no name; anyone else's (a person in the room, or Claude) shows who said it.
+  // Your own thoughts need no name; anyone else's (a person in the room, or Helper) shows who said it.
   const me = useMe();
   const other = thought.speaker !== me && thought.speaker !== "you";
   const reducedMotion = useReducedMotion();

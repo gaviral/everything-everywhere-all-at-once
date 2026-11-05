@@ -1,5 +1,5 @@
-import type { CanonicalGraph, Contribution } from '../../msg1351/part-dimensions';
-import { resolvePart } from '../../msg1351/part-dimensions/PartReference';
+import type { CanonicalGraph, Contribution } from '../../features/part-dimensions';
+import { resolvePart } from '../../features/part-dimensions/PartReference';
 
 export type Lens = 'plain' | 'developer' | 'founder';
 export type Explanation = Readonly<{

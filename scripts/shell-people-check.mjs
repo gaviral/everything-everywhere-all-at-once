@@ -41,7 +41,7 @@ async function raw(core, query) {
 
 try {
   for (const [width, height] of [[1440, 900], [390, 844]]) {
-    for (const host of ["you", "Sam"]) {
+    for (const host of ["you", "Colleague"]) {
       const people = [];
       let started = 0;
       const messages = () => started || people.some((p) => p.remote)
@@ -126,12 +126,12 @@ try {
         opened.push(await raw(core, "name=Helper2&ai=1"));
         opened.push(await raw(core, "name=Phone2&remote=1"));
         await state("several-helpers-and-remotes", false);
-        const human = await raw(core, "name=Maya");
+        const human = await raw(core, "name=Designer");
         opened.push(human);
         await state("two-human", true, true);
         human.close();
         await state("human-left", false);
-        assert.equal(people.find((p) => p.name === "Maya").here, false, "absent human remains in call history");
+        assert.equal(people.find((p) => p.name === "Designer").here, false, "absent human remains in call history");
       } finally {
         for (const window of opened.reverse()) await window.close();
         core.close();

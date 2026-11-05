@@ -28,7 +28,7 @@ assert(!(spokenMode || allMode) || !process.env.FILM_PROFILE, 'Voice/all mode re
 let profile = process.env.FILM_PROFILE || mkdtempSync(join(tmpdir(), 'film-chrome-'));
 const take = join(output, 'takes', new Date().toISOString().replaceAll(':', '-'));
 mkdirSync(take, { recursive: true });
-const story = 'Saturday is our free repair night at the hall and Mira wants a plan by tonight.';
+const story = 'Saturday is our free repair night at the hall and Organizer wants a plan by tonight.';
 const flags = '?film&bricks=quiet-screen,clarify,draw,crew';
 const repairBrief = 'Repair Night needs three parts: Volunteer Shifts with a volunteer count; Bring List with tools, gloves and spare parts to tick plus packed progress; Flyer Words with our free repair night invitation and a note for the welcome team.';
 const runFile = promisify(execFile);
@@ -259,7 +259,7 @@ async function checkNoSecondQuestion() {
     if (!activeClarify.size && Date.now() - quietSince >= 4000) break;
     await delay(150);
   }
-  contentCheck('no second question after answering Mira', !appeared && !activeClarify.size, { questions, pending: activeClarify.size });
+  contentCheck('no second question after answering Organizer', !appeared && !activeClarify.size, { questions, pending: activeClarify.size });
 }
 async function checkDrawClearance() {
   await delay(700); // Let the visible sheet transition finish before measuring it.
@@ -503,14 +503,14 @@ async function spokenClips() {
       await until('document.querySelector(".clarify-note")', 35000);
       const question = await evaluate('document.querySelector(".clarify-note").innerText');
       note('real-question-in-place', { question });
-      contentCheck('Who is Mira appears in place', question.includes('Who is Mira?'), { question });
+      contentCheck('Who is Organizer appears in place', question.includes('Who is Organizer?'), { question });
       await waitVoice(()=>heardThoughts().length >= 2, 'spoken answer');
       const answer = heardThoughts()[1];
       note('transcribed-answer', { text: answer.text, thought_id: answer.id });
       await waitVoice(()=>voiceEvents.some(e=>e.value.type==='change' && e.value.change.type==='thought_placed' && e.value.change.thought_id===answer.id), 'answer placement');
       note('spoken-answer-placed', { thought_id: answer.id });
       const normal = text => text.toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
-      contentCheck('spoken words match supplied thought and answer', normal(heardThoughts()[0].text) === normal(story) && normal(heardThoughts()[1].text) === normal('Mira runs the volunteers'), heardThoughts().map(t=>t.text));
+      contentCheck('spoken words match supplied thought and answer', normal(heardThoughts()[0].text) === normal(story) && normal(heardThoughts()[1].text) === normal('Organizer runs the volunteers'), heardThoughts().map(t=>t.text));
       await checkNoSecondQuestion();
       await delay(2000);
     } finally { await stopFileVoice(); }
@@ -800,10 +800,10 @@ const clips = {
     await until('document.querySelectorAll("[data-thought]").length > 0');
   }, 'real typed thought, live Spark placement'],
   ask: [async () => {
-    await until('document.querySelector(".clarify-note")?.textContent.includes("Mira")');
-    assert(await evaluate('document.querySelector(".clarify-note p").textContent') === 'Who is Mira?', 'Expected Who is Mira?');
+    await until('document.querySelector(".clarify-note")?.textContent.includes("Organizer")');
+    assert(await evaluate('document.querySelector(".clarify-note p").textContent') === 'Who is Organizer?', 'Expected Who is Organizer?');
     note('question-visible'); await delay(2500);
-    await type('Mira runs the volunteers');
+    await type('Organizer runs the volunteers');
     await until('!document.querySelector(".clarify-note")');
     note('question-answered');
     await checkNoSecondQuestion();

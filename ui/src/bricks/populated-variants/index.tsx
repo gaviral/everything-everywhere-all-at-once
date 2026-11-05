@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { PopulatedVariants } from "../../intake1417/populated-variants";
-import { syntheticCandidates } from "../../intake1417/populated-variants/ExamplePopulation";
-import { browserPreferenceStore } from "../../intake1417/populated-variants/preferences";
+import { PopulatedVariants } from "../../features/populated-variants";
+import { syntheticCandidates } from "../../features/populated-variants/ExamplePopulation";
+import { browserPreferenceStore } from "../../features/populated-variants/preferences";
 import type { BrickProps } from "../contract";
 import "./example.css";
 

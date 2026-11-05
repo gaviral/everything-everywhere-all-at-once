@@ -1235,7 +1235,7 @@ pub(crate) fn starts(text: &str) -> Vec<usize> {
 /// Where "where was I?" takes a speaker: where their last line trailed off, even the thread they're on (that's
 /// where they left off; moving them away would also keep it from being marked unfinished when they move on);
 /// else the thread they most recently dropped; else back from a detour: one line said away from where they were
-/// ("sorry, Leo spilled juice") goes back to where they were, and a thread they went to without speaking ("next
+/// ("sorry, Child spilled juice") goes back to where they were, and a thread they went to without speaking ("next
 /// one") goes back to where they last spoke. Otherwise nowhere: they're where they were ("this" with nothing
 /// pointed at, catalog.rs `this`), and `go_back` shows where on it: two lines on the thread they're on is staying,
 /// not a detour, and back from one already, asking again doesn't send them away again. Not the card they point at:
@@ -1361,7 +1361,7 @@ fn view(text: &str) -> Option<View> {
     let focus: Vec<String> = ["focus", "let s focus", "turn on focus"].map(String::from).into_iter().chain(focus_this_asks()).collect();
     let focus: Vec<&str> = focus.iter().map(String::as_str).collect();
     // "Export my map" and its kin: a file of the map ("save my map" too, as a Save button would). Only the whole turn,
-    // so "export the photos" and "I should save the map for Dana" stay thoughts.
+    // so "export the photos" and "I should save the map for Collaborator" stay thoughts.
     let export = [
         "export", "export map", "export my map", "export the map", "export this map", "download my map", "download the map",
         "save my map", "save the map",
@@ -3039,13 +3039,13 @@ mod tests {
     fn an_off_mark_is_journaled_for_later_and_changes_nothing_else() {
         let (core, _queue, path) = test_core(None);
         let mut updates = core.updates.subscribe();
-        super::mark(&core, "Ana", "explain".into(), "x1a2b".into(), true);
-        super::mark(&core, "Ana", "recap".into(), "today-1793547629176".into(), true);
-        super::mark(&core, "Ana", "recap".into(), "today-1793547629176".into(), false);
+        super::mark(&core, "Speaker", "explain".into(), "x1a2b".into(), true);
+        super::mark(&core, "Speaker", "recap".into(), "today-1793547629176".into(), true);
+        super::mark(&core, "Speaker", "recap".into(), "today-1793547629176".into(), false);
         // Only the two kinds, with an id an answer could have.
-        super::mark(&core, "Ana", "thread".into(), "T1".into(), true);
-        super::mark(&core, "Ana", "explain".into(), "../../etc".into(), true);
-        super::mark(&core, "Ana", "explain".into(), "x".repeat(81), true);
+        super::mark(&core, "Speaker", "thread".into(), "T1".into(), true);
+        super::mark(&core, "Speaker", "explain".into(), "../../etc".into(), true);
+        super::mark(&core, "Speaker", "explain".into(), "x".repeat(81), true);
         let lines: Vec<serde_json::Value> =
             std::fs::read_to_string(&path).unwrap().lines()
                 .flat_map(|line| crate::world::journal_record(line.as_bytes(), true).unwrap())
@@ -3056,7 +3056,7 @@ mod tests {
             .map(|l| (l["kind"].as_str().unwrap(), l["id"].as_str().unwrap(), l["off"].as_bool().unwrap()))
             .collect();
         assert_eq!(marks, [("explain", "x1a2b", true), ("recap", "today-1793547629176", true), ("recap", "today-1793547629176", false)]);
-        assert!(lines.iter().all(|l| l["speaker"] == "Ana" && l["at_ms"].as_u64().is_some()));
+        assert!(lines.iter().all(|l| l["speaker"] == "Speaker" && l["at_ms"].as_u64().is_some()));
         assert!(updates.try_recv().is_err(), "no window is sent a mark");
         let (_, reopened) = crate::Journal::open(&path).unwrap();
         assert_eq!(serde_json::to_value(&reopened).unwrap(), serde_json::to_value(&*core.snapshot()).unwrap(), "the map is as it was");
@@ -3102,7 +3102,7 @@ mod tests {
             core.go_back("you");assert_eq!(return_result(&mut updates).thought_id,target.thought_id,"repeated return cannot bounce");
             core.resume_pause("you","pause-a-1",Some("named".into()));assert_eq!(return_result(&mut updates).thought_id,"a");
             assert!(core.snapshot().pauses.iter().all(|pause|!pause.resolved),"navigation does not complete a departure");
-            core.go_back("Sam");assert!(std::iter::from_fn(||updates.try_recv().ok()).all(|out|!matches!(out.message,ServerMsg::Returned {anchor:Some(_),..})),"never another speaker's source");
+            core.go_back("Colleague");assert!(std::iter::from_fn(||updates.try_recv().ok()).all(|out|!matches!(out.message,ServerMsg::Returned {anchor:Some(_),..})),"never another speaker's source");
             return_turn(&core,"d","D",false,now+3);core.go_back("you");assert_eq!(return_result(&mut updates).thought_id,"d","current trailing-off thought wins");
             std::fs::remove_file(path).unwrap();
         }
@@ -3689,14 +3689,14 @@ mod tests {
         }
         for text in [
             "Let's go to the palace of Versailles", "The palace was beautiful", "map out the week", "I can't focus today",
-            "The pictures were great", "These cards are old", "show all the topics to Dana", "Focus on this topic for me",
-            "focus on the budget", "show all the receipts to Dana", "the map is wrong", "help me move the couch on Saturday",
-            "I need help with the budget", "what can you do about the rent", "what can I say to Dana", "what can we do about the lease",
+            "The pictures were great", "These cards are old", "show all the topics to Collaborator", "Focus on this topic for me",
+            "focus on the budget", "show all the receipts to Collaborator", "the map is wrong", "help me move the couch on Saturday",
+            "I need help with the budget", "what can you do about the rent", "what can I say to Collaborator", "what can we do about the lease",
             "What can I do?", "Please focus on the budget.", "I see the palace", "You know the map?",
             // Focus takes only "mode" after it: ui/src/attention-core.ts shows no "this" mark for these either.
             "Let's focus on that card now", "Focus on this for me", "Focus on this please mode",
             // Export takes only the map, whole: these are talk.
-            "export the photos to Dana", "I should save the map for Dana", "export my map to Google Drive", "the export failed",
+            "export the photos to Collaborator", "I should save the map for Collaborator", "export my map to Google Drive", "the export failed",
         ] {
             assert_eq!(view(text), None, "{text}");
         }
@@ -3750,9 +3750,9 @@ mod tests {
             assert_eq!(view(text), Some(asked), "{text}");
         }
         for text in [
-            "The pictures were great", "I sent the pictures to Dana", "show me the pictures from the trip", "Show the pictures to Dana",
+            "The pictures were great", "I sent the pictures to Collaborator", "show me the pictures from the trip", "Show the pictures to Collaborator",
             "pictures of the garden", "Let's go to the pictures of Versailles", "I see the pictures", "You know the pictures?", "Like the pictures",
-            "These cards are old", "pay the cards off", "business cards", "The cards are on the table", "Show the cards to Dana",
+            "These cards are old", "pay the cards off", "business cards", "The cards are on the table", "Show the cards to Collaborator",
             "cards against humanity", "Switch to the cards from the other deck", "I see the cards", "You know the cards?", "Like the cards",
         ] {
             assert_eq!(view(text), None, "{text}");
@@ -3780,9 +3780,9 @@ mod tests {
             (one.clone(), "you", "Where was I?", "Garden a You're on Garden: “Plant the tomatoes”".into()),
             (one.clone(), "you", "Next one", "Garden is the only topic so far".into()),
             (one.clone(), "you", "Last one", "Garden is the only topic so far".into()),
-            (one.clone(), "Sam", "Where was I?", "Nothing to go back to yet: say a thought first".into()),
+            (one.clone(), "Colleague", "Where was I?", "Nothing to go back to yet: say a thought first".into()),
             // A guest with no thread of their own yet starts at the first.
-            (one.clone(), "Sam", "Next one", "On to Garden".into()),
+            (one.clone(), "Colleague", "Next one", "On to Garden".into()),
         ] {
             let (core, mut queue, path) = keyless(map);
             let mut updates = core.updates.subscribe();
@@ -3936,12 +3936,12 @@ mod tests {
             "Let's make an app that helps students find housing",
             "Let's go to the palace of Versailles",
             "The pictures were great",
-            "I sent the pictures to Dana",
+            "I sent the pictures to Collaborator",
             "These cards are old",
             "Pay the cards off",
             "Create a new one for the kitchen",
             "Help me move the couch on Saturday",
-            "What can I say to Dana?",
+            "What can I say to Collaborator?",
             "What did I decide about the venue?",
             "Find a dentist near the office",
             "Take me to the airport Friday",
@@ -4085,7 +4085,7 @@ mod tests {
             "Forget it, I'll just buy a new one",
             "Never mind the weather, the trip is on",
             "Expand the business into Europe",
-            "Show Dana the photos",
+            "Show Collaborator the photos",
             "Hide the presents",
             "Fold the laundry",
             "Close everything before you leave",
@@ -4253,7 +4253,7 @@ mod tests {
                 tunnel: tunneled.then(|| crate::tunnel::Tunnel::parse("https://quiet-river-12.trycloudflare.com").unwrap()),
                 ..Room::from("k7m2x9qpab")
             };
-            let settings = messages::Settings { preset: messages::Preset::Full, contacts: vec![("Mia".into(), "+15550100".into())], live: false, ..messages::Settings::default() };
+            let settings = messages::Settings { preset: messages::Preset::Full, contacts: vec![("Recipient".into(), "+15550100".into())], live: false, ..messages::Settings::default() };
             let sender: messages::Sender = Arc::new(|_, _| Box::pin(async { panic!("the test must never send a message") }));
             let core = Arc::new(Core { room: Some(room), messages: messages::Runtime::with(settings, sender), ..Core::test(journal, world) });
             let routes = axum::Router::new()
@@ -4296,7 +4296,7 @@ mod tests {
             while received(&mut phone).await["type"] != "snapshot" {}
             let before_call = serde_json::to_value(super::call::message(&core).unwrap()).unwrap();
             core.hosts.lock().unwrap().insert("you".into());
-            assert!(messages::act(&core, "you", &format!("Ask Mia to confirm {}", "the plan ".repeat(100))).is_some());
+            assert!(messages::act(&core, "you", &format!("Ask Recipient to confirm {}", "the plan ".repeat(100))).is_some());
             assert!(messages::is_counting(&core, 1));
             let before_journal = std::fs::read_to_string(&path).unwrap();
             // A conflicting name proves refusal also precedes Seat::take's name-conflict response.
@@ -4522,7 +4522,7 @@ mod tests {
             seconds / 3600 % 24, seconds / 60 % 60, seconds % 60, at % 1000));
         assert_eq!(received(&mut window).await["message"], "MODEL_API_KEY is not set: listening and placement are off.");
         // Alone, this window is "you".
-        core.send_to("Sam", ServerMsg::Notice { message: "for Sam".into() });
+        core.send_to("Colleague", ServerMsg::Notice { message: "for Colleague".into() });
         core.send(ServerMsg::Notice { message: "for everyone".into() });
         core.send_to("you", ServerMsg::Notice { message: "for you".into() });
         assert_eq!(received(&mut window).await["message"], "for everyone");
@@ -4565,9 +4565,9 @@ mod tests {
             *count.lock().unwrap() += 1;
             Box::pin(async { Ok(()) })
         });
-        let settings = messages::Settings { preset: messages::Preset::Full, contacts: vec![("Mia".into(), "+15550100".into())], live: true, ..messages::Settings::default() };
+        let settings = messages::Settings { preset: messages::Preset::Full, contacts: vec![("Recipient".into(), "+15550100".into())], live: true, ..messages::Settings::default() };
         let core = Arc::new(Core { messages: messages::Runtime::with(settings, sender), ..Core::test(journal, world) });
-        core.add_thought("you", "Ask Mia to confirm what to bring");
+        core.add_thought("you", "Ask Recipient to confirm what to bring");
         for _ in 0..100 {
             if messages::is_counting(&core, 1) { break; }
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
@@ -4805,7 +4805,7 @@ mod tests {
 
     #[test]
     fn names_label_thoughts() {
-        assert_eq!(speaker_name("  Sam \n Lee ", false), "Sam Lee");
+        assert_eq!(speaker_name("  Colleague \n Reviewer ", false), "Colleague Reviewer");
         assert_eq!(speaker_name("", true), "you");
         assert_eq!(speaker_name(&"x".repeat(40), false), "x".repeat(40));
         assert_eq!(speaker_name(&"界".repeat(45), false), "界".repeat(40));
@@ -4814,8 +4814,8 @@ mod tests {
         assert_eq!(speaker_name(" \t\n\u{200B}\u{FEFF} ", true), "you");
         assert_eq!(speaker_name(" \t\n", false), GUEST);
         assert_eq!(speaker_name("\u{200B}\u{FEFF}\u{00AD}", false), GUEST);
-        assert_eq!(speaker_name("李明 مرحبا Зоя", false), "李明 مرحبا Зоя");
-        assert_eq!(normalized_speaker_name("Sam \u{200B} Lee"), "Sam Lee");
+        assert_eq!(speaker_name("你好 مرحبا Привет", false), "你好 مرحبا Привет");
+        assert_eq!(normalized_speaker_name("Colleague \u{200B} Reviewer"), "Colleague Reviewer");
     }
 
     #[test]
@@ -4840,7 +4840,7 @@ mod tests {
         for name in ["", "you", " YOU ", "You\n", "yo\u{0}u", "y\u{200B}ou", "\u{2066}you\u{2069}", "yo\u{FEFF}u", "yo\u{00AD}u"] {
             assert_eq!(speaker_name(name, false), "Guest", "{name:?}");
         }
-        assert_eq!(speaker_name("Youssef", false), "Youssef");
+        assert_eq!(speaker_name("Youngster", false), "Youngster");
     }
 
     #[test]
@@ -4848,29 +4848,29 @@ mod tests {
         let said = |id: &str, speaker: &str, thread: &str| said(id, speaker, thread, 0);
         let now = 1;
         let mut world = World {
-            threads: vec![thread("T1", 1, "Ana"), thread("T2", 2, "Sam"), thread("T3", 3, ""), thread("T4", 4, "")],
-            thoughts: vec![said("a", "Lee", "T3"), said("b", "Sam", "T4"), said("c", "Lee", "T4")],
+            threads: vec![thread("T1", 1, "Speaker"), thread("T2", 2, "Colleague"), thread("T3", 3, ""), thread("T4", 4, "")],
+            thoughts: vec![said("a", "Reviewer", "T3"), said("b", "Colleague", "T4"), said("c", "Reviewer", "T4")],
             ..World::default()
         };
-        world.active_by.insert("Lee".into(), "T4".into());
-        // Sam dropped T2 more recently, but Ana's way back is Ana's own.
-        assert_eq!(way_back(&world, "Ana", now).as_deref(), Some("T1"));
-        assert_eq!(way_back(&world, "Sam", now).as_deref(), Some("T2"));
-        // Nothing dropped: the last other thread Lee spoke on.
-        assert_eq!(way_back(&world, "Lee", now).as_deref(), Some("T3"));
+        world.active_by.insert("Reviewer".into(), "T4".into());
+        // Colleague dropped T2 more recently, but Speaker's way back is Speaker's own.
+        assert_eq!(way_back(&world, "Speaker", now).as_deref(), Some("T1"));
+        assert_eq!(way_back(&world, "Colleague", now).as_deref(), Some("T2"));
+        // Nothing dropped: the last other thread Reviewer spoke on.
+        assert_eq!(way_back(&world, "Reviewer", now).as_deref(), Some("T3"));
         // Right after a line of theirs trailed off, it's where they said it, even the thread they're on and
         // even with an older loose end; someone else's unfinished line doesn't count.
-        world.threads.push(thread("T5", 5, "Lee"));
-        world.thoughts.push(Thought { complete: false, ..said("d", "Sam", "T4") });
-        assert_eq!(way_back(&world, "Lee", now).as_deref(), Some("T5"));
-        world.thoughts.push(Thought { complete: false, ..said("e", "Lee", "T4") });
-        assert_eq!(way_back(&world, "Lee", now).as_deref(), Some("T4"));
-        assert_eq!(way_back(&world, "Sam", now).as_deref(), Some("T4"), "Sam's last line trailed off too, on T4");
+        world.threads.push(thread("T5", 5, "Reviewer"));
+        world.thoughts.push(Thought { complete: false, ..said("d", "Colleague", "T4") });
+        assert_eq!(way_back(&world, "Reviewer", now).as_deref(), Some("T5"));
+        world.thoughts.push(Thought { complete: false, ..said("e", "Reviewer", "T4") });
+        assert_eq!(way_back(&world, "Reviewer", now).as_deref(), Some("T4"));
+        assert_eq!(way_back(&world, "Colleague", now).as_deref(), Some("T4"), "Colleague's last line trailed off too, on T4");
     }
 
     /// "Where was I?" means the thread you're on ("this" with nothing pointed at: catalog.rs `this`) unless you
     /// detoured: a line that trailed off, a thread you dropped, or one line said away from where you were. The
-    /// persona runs of 2026-11-01 (synthetic): a parent's two finished lines on Maya's shoes went "Back to" the cake
+    /// persona runs of 2026-11-01 (synthetic): a parent's two finished lines on Designer's shoes went "Back to" the cake
     /// thread before; a PM asking twice was sent back and forth.
     #[test]
     fn where_was_i_stays_on_this_thread_unless_you_detoured() {
@@ -4888,36 +4888,36 @@ mod tests {
                 .collect()
         };
         let map = |thoughts: Vec<Thought>, on: &str| World {
-            threads: vec![thread("Groceries", 1, ""), thread("Cake", 2, ""), thread("Maya", 3, "")],
+            threads: vec![thread("Groceries", 1, ""), thread("Cake", 2, ""), thread("Designer", 3, "")],
             thoughts,
             active_by: HashMap::from([("you".into(), on.into())]),
             ..World::default()
         };
-        // Two finished lines on Maya's shoes: you're there, so it shows where, and doesn't move you to the cake.
+        // Two finished lines on Designer's shoes: you're there, so it shows where, and doesn't move you to the cake.
         let (core, _queue, path) = keyless(map(
             vec![line("g", "Groceries", 60_000, "Eggs and dish soap"), line("c", "Cake", 40_000, "Cake from Safeway or bake one"),
-                line("m1", "Maya", 20_000, "Maya needs gym shoes"), line("m2", "Maya", 10_000, "Gym shoes on the Target run")],
-            "Maya",
+                line("m1", "Designer", 20_000, "Designer needs gym shoes"), line("m2", "Designer", 10_000, "Gym shoes on the Target run")],
+            "Designer",
         ));
-        assert_eq!(ask(&core), ["Maya: You're on Maya: “Gym shoes on the Target run”"]);
-        assert_eq!(core.snapshot().active_by.get("you").map(String::as_str), Some("Maya"));
+        assert_eq!(ask(&core), ["Designer: You're on Designer: “Gym shoes on the Target run”"]);
+        assert_eq!(core.snapshot().active_by.get("you").map(String::as_str), Some("Designer"));
         let _ = std::fs::remove_file(&path);
-        // One line away from Groceries ("sorry, Leo spilled juice"): back; asked again, you stay (no back and forth).
+        // One line away from Groceries ("sorry, Child spilled juice"): back; asked again, you stay (no back and forth).
         let (core, _queue, path) = keyless(map(
             vec![line("g1", "Groceries", 60_000, "Bananas"), line("g2", "Groceries", 40_000, "Eggs and dish soap"),
-                line("j", "Cake", 10_000, "Leo spilled juice")],
+                line("j", "Cake", 10_000, "Child spilled juice")],
             "Cake",
         ));
         assert_eq!(ask(&core), ["Groceries: Back to Groceries: “Eggs and dish soap”"]);
         assert_eq!(ask(&core), ["Groceries: You're on Groceries: “Eggs and dish soap”"]);
         assert_eq!(core.snapshot().active_by.get("you").map(String::as_str), Some("Groceries"));
         let _ = std::fs::remove_file(&path);
-        // Two lines on Groceries, one on Cake, then to Maya without speaking: back to Cake, where you last spoke;
+        // Two lines on Groceries, one on Cake, then to Designer without speaking: back to Cake, where you last spoke;
         // asked again, you stay on Cake (it now looks like one line away from Groceries, but you just came back).
         let (core, _queue, path) = keyless(map(
             vec![line("g1", "Groceries", 60_000, "Bananas"), line("g2", "Groceries", 40_000, "Eggs and dish soap"),
                 line("c", "Cake", 10_000, "Cake from Safeway or bake one")],
-            "Maya",
+            "Designer",
         ));
         assert_eq!(ask(&core), ["Cake: Back to Cake: “Cake from Safeway or bake one”"]);
         assert_eq!(ask(&core), ["Cake: You're on Cake: “Cake from Safeway or bake one”"]);
@@ -4933,7 +4933,7 @@ mod tests {
             threads: vec![thread("Workshop", 1, "you"), thread("Supplies", 2, "")],
             thoughts: vec![
                 Thought { text: original.into(), point: "Book workshop".into(), complete: false, ..said("half", "you", "Workshop", now - 2000) },
-                Thought { text: "Someone else's words".into(), ..said("other", "Sam", "Workshop", now - 1000) },
+                Thought { text: "Someone else's words".into(), ..said("other", "Colleague", "Workshop", now - 1000) },
                 said("detour", "you", "Supplies", now),
             ],
             active_by: HashMap::from([("you".into(), "Supplies".into())]),
@@ -4999,26 +4999,26 @@ mod tests {
         let unplaced = |id: &str, speaker: &str, at_ms| Thought { placed: false, thread_id: None, ..said(id, speaker, "", at_ms) };
         let now = super::now_ms();
         core.commit(vec![
-            Change::ThreadAdded { thread: thread("T1", 1, "Ana") },
+            Change::ThreadAdded { thread: thread("T1", 1, "Speaker") },
             Change::ThreadAdded { thread: thread("T2", 2, "") },
-            Change::ActiveChanged { thread_id: "T2".into(), speaker: "Ana".into() },
-            // Sam's words are being placed, and one of Ana's failed and waits for a retry.
-            Change::ThoughtAdded { thought: unplaced("sam", "Sam", now) },
-            Change::ThoughtAdded { thought: unplaced("old", "Ana", now - 61_000) },
+            Change::ActiveChanged { thread_id: "T2".into(), speaker: "Speaker".into() },
+            // Colleague's words are being placed, and one of Speaker's failed and waits for a retry.
+            Change::ThoughtAdded { thought: unplaced("colleague", "Colleague", now) },
+            Change::ThoughtAdded { thought: unplaced("old", "Speaker", now - 61_000) },
         ]);
-        core.placing.retry(&core, "old", "Ana", std::time::Duration::from_secs(15));
-        // Neither holds Ana up: no wait behind the other person's placements or a retry.
-        core.add_thought("Ana", "Where was I?");
+        core.placing.retry(&core, "old", "Speaker", std::time::Duration::from_secs(15));
+        // Neither holds Speaker up: no wait behind the other person's placements or a retry.
+        core.add_thought("Speaker", "Where was I?");
         assert!(jobs().is_empty());
-        assert_eq!(core.snapshot().active_for("Ana").map(String::as_str), Some("T1"));
-        core.add_thought("Ana", "Okay, next one");
-        assert_eq!(core.snapshot().active_for("Ana").map(String::as_str), Some("T2"));
-        // Ana's own words still placing: landing would undo the command, so it waits behind them.
-        core.add_thought("Ana", "The caterer needs the head count by Friday, okay, where was I?");
+        assert_eq!(core.snapshot().active_for("Speaker").map(String::as_str), Some("T1"));
+        core.add_thought("Speaker", "Okay, next one");
+        assert_eq!(core.snapshot().active_for("Speaker").map(String::as_str), Some("T2"));
+        // Speaker's own words still placing: landing would undo the command, so it waits behind them.
+        core.add_thought("Speaker", "The caterer needs the head count by Friday, okay, where was I?");
         assert_eq!(jobs(), ["place", "back"]);
-        core.add_thought("Ana", "Where was I? The menu is final.");
+        core.add_thought("Speaker", "Where was I? The menu is final.");
         assert_eq!(jobs(), ["back", "place"]);
-        assert_eq!(core.snapshot().active_for("Ana").map(String::as_str), Some("T2"), "not yet");
+        assert_eq!(core.snapshot().active_for("Speaker").map(String::as_str), Some("T2"), "not yet");
         let _ = std::fs::remove_file(&path);
     }
 
@@ -5099,9 +5099,9 @@ mod tests {
         core.commit(vec![
             Change::ThreadAdded { thread: thread("Rent", 1, "") },
             Change::ThreadAdded { thread: thread("Party", 2, "") },
-            Change::ActiveChanged { thread_id: "Rent".into(), speaker: "Ana".into() },
+            Change::ActiveChanged { thread_id: "Rent".into(), speaker: "Speaker".into() },
         ]);
-        core.add_thought("Ana", "Create a new one.");
+        core.add_thought("Speaker", "Create a new one.");
         assert!(core.snapshot().thoughts.is_empty() && queue.try_recv().is_err(), "nothing to place");
         let told: Vec<(Option<String>, String)> = std::iter::from_fn(|| updates.try_recv().ok())
             .filter_map(|out| match out.message {
@@ -5109,21 +5109,21 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(told, [(Some("Ana".into()), "New topic: your next thought starts it".into())]);
-        // Sam's thought is Sam's; Ana's next one starts the thread, and only that one.
-        core.add_thought("Sam", "The DJ wants a deposit");
-        core.add_thought("Ana", "The kitchen needs paint");
-        core.add_thought("Ana", "Blue, I think");
+        assert_eq!(told, [(Some("Speaker".into()), "New topic: your next thought starts it".into())]);
+        // Colleague's thought is Colleague's; Speaker's next one starts the thread, and only that one.
+        core.add_thought("Colleague", "The DJ wants a deposit");
+        core.add_thought("Speaker", "The kitchen needs paint");
+        core.add_thought("Speaker", "Blue, I think");
         let starts = |core: &Core| core.snapshot().thoughts.iter().map(|t| core.new_threads.starts(&t.id)).collect::<Vec<_>>();
         assert_eq!(starts(&core), [false, true, false]);
-        // Moving to a thread first, by voice or by a click, ends it: the next thought goes where Ana went.
-        core.add_thought("Ana", "New topic");
-        core.add_thought("Ana", "Where was I?");
-        core.add_thought("Ana", "The landlord called");
-        core.add_thought("Ana", "New thread");
-        core.focus("Ana", "Party");
-        core.add_thought("Ana", "The cake is ordered");
-        core.add_thought("Ana", "create a new one for the kitchen");
+        // Moving to a thread first, by voice or by a click, ends it: the next thought goes where Speaker went.
+        core.add_thought("Speaker", "New topic");
+        core.add_thought("Speaker", "Where was I?");
+        core.add_thought("Speaker", "The landlord called");
+        core.add_thought("Speaker", "New thread");
+        core.focus("Speaker", "Party");
+        core.add_thought("Speaker", "The cake is ordered");
+        core.add_thought("Speaker", "create a new one for the kitchen");
         assert_eq!(starts(&core), [false, true, false, false, false, false]);
         assert_eq!(core.snapshot().thoughts[5].text, "create a new one for the kitchen");
         let _ = std::fs::remove_file(&path);
@@ -5135,8 +5135,8 @@ mod tests {
     fn a_view_said_aloud_goes_only_to_the_speakers_windows() {
         let (core, _queue, path) = test_core(None);
         let mut updates = core.updates.subscribe();
-        core.add_thought("Sam", "Let's go to the palace!");
-        core.add_thought("Sam", "Okay, focus.");
+        core.add_thought("Colleague", "Let's go to the palace!");
+        core.add_thought("Colleague", "Okay, focus.");
         let views: Vec<(Option<String>, String)> = std::iter::from_fn(|| updates.try_recv().ok())
             .filter_map(|out| match out.message {
                 ServerMsg::View { view } => Some((out.to, format!("{view:?}"))),
@@ -5145,14 +5145,14 @@ mod tests {
                 _ => panic!("only views and answers"),
             })
             .collect();
-        let sam = |said: &str| (Some("Sam".to_string()), said.to_string());
-        let empty = sam("Nothing on the map yet: say a thought first");
+        let colleague = |said: &str| (Some("Colleague".to_string()), said.to_string());
+        let empty = colleague("Nothing on the map yet: say a thought first");
         assert_eq!(views, [empty.clone(), empty]);
         core.commit(vec![Change::ThreadAdded { thread: thread("T1", 1, "") }]);
-        core.add_thought("Sam", "Palace.");
+        core.add_thought("Colleague", "Palace.");
         assert!(std::iter::from_fn(|| updates.try_recv().ok()).any(|out| matches!(out.message, ServerMsg::View { view: View::Palace })));
         assert!(core.snapshot().thoughts.is_empty());
-        core.add_thought("Sam", "Let's go to the palace of Versailles");
+        core.add_thought("Colleague", "Let's go to the palace of Versailles");
         assert_eq!(core.snapshot().thoughts.len(), 1);
         let _ = std::fs::remove_file(&path);
     }
@@ -5217,23 +5217,23 @@ mod tests {
         let other_window = link("192.168.1.20:51002");
         let other_guest = link("192.168.1.21:51001");
         let taken = |name: &str, link| core.room.as_ref().unwrap().names.lock().unwrap().taken(name, link);
-        // The host joined as Ana: another laptop can't be Ana, in any case, even while the host's window reconnects.
-        drop(Seat::take(&core, "Ana", host).unwrap());
-        assert!(Seat::take(&core, "ana", guest).is_none() && taken("ANA", guest));
-        assert!(Seat::take(&core, "Ana", host).is_some(), "the host's other windows share it");
-        // A second tab or overlapping reload shares Sam's name only from the same laptop's IP.
-        let sam = Seat::take(&core, "Sam", guest).unwrap();
-        let another_tab = Seat::take(&core, "sAM", other_window).unwrap();
-        assert!(!taken("SAM", other_window));
-        assert!(Seat::take(&core, "sam", other_guest).is_none() && taken("SAM", other_guest));
-        assert!(Seat::take(&core, "sam", host).is_none() && taken("SAM", host));
-        drop(sam);
-        assert!(taken("Sam", host) && taken("Sam", other_guest), "one window is still open");
-        assert!(Seat::take(&core, "sam", other_guest).is_none());
+        // The host joined as Speaker: another laptop can't be Speaker, in any case, even while the host's window reconnects.
+        drop(Seat::take(&core, "Speaker", host).unwrap());
+        assert!(Seat::take(&core, "speaker", guest).is_none() && taken("SPEAKER", guest));
+        assert!(Seat::take(&core, "Speaker", host).is_some(), "the host's other windows share it");
+        // A second tab or overlapping reload shares Colleague's name only from the same laptop's IP.
+        let colleague = Seat::take(&core, "Colleague", guest).unwrap();
+        let another_tab = Seat::take(&core, "Colleague", other_window).unwrap();
+        assert!(!taken("COLLEAGUE", other_window));
+        assert!(Seat::take(&core, "colleague", other_guest).is_none() && taken("COLLEAGUE", other_guest));
+        assert!(Seat::take(&core, "colleague", host).is_none() && taken("COLLEAGUE", host));
+        drop(colleague);
+        assert!(taken("Colleague", host) && taken("Colleague", other_guest), "one window is still open");
+        assert!(Seat::take(&core, "colleague", other_guest).is_none());
         drop(another_tab);
-        assert!(!taken("Sam", host) && !taken("Sam", other_guest));
-        assert!(Seat::take(&core, "sAM", other_guest).is_some(), "the last window frees the name for another address");
-        assert!(Seat::take(&core, "Sam", host).is_some(), "the host can take the freed name too");
+        assert!(!taken("Colleague", host) && !taken("Colleague", other_guest));
+        assert!(Seat::take(&core, "Colleague", other_guest).is_some(), "the last window frees the name for another address");
+        assert!(Seat::take(&core, "Colleague", host).is_some(), "the host can take the freed name too");
         // Alone, every window is this machine's.
         let (alone, _queue, alone_path) = test_core(None);
         assert!(Seat::take(&alone, "you", host).is_some());
@@ -5325,7 +5325,7 @@ mod notice_control_tests {
         for (words, show) in [("Stop showing this", false), ("Can you stop showing this, please?", false), ("Show those again.", true)] {
             assert_eq!(notice_control(words), Some(show));
         }
-        for words in ["I said stop showing this yesterday", "Show those again to Dana"] {
+        for words in ["I said stop showing this yesterday", "Show those again to Collaborator"] {
             assert_eq!(notice_control(words), None);
         }
     }
@@ -5365,7 +5365,7 @@ mod c10_estimates_tests {
         assert_eq!(a.minutes.unwrap() + b.minutes.unwrap(), 55);
         let mut other = request("a", 0, Some(90));
         other.reason = "Another speaker's estimate".into();
-        core.set_action_estimate("Sam", &enabled, other).unwrap();
+        core.set_action_estimate("Colleague", &enabled, other).unwrap();
         assert_eq!(core.snapshot().action_estimates.iter().find(|e| e.owner == "you" && e.action_id == "a").unwrap().minutes, Some(15));
         let edited = core.set_action_estimate("you", &enabled, request("a", 1, Some(20))).unwrap();
         assert_eq!(edited.revision, 2);
@@ -5405,7 +5405,7 @@ mod c10_estimates_tests {
             core.commit(vec![Change::ActionEstimateSet { estimate }]);
         }
         assert!(core.set_action_estimate("you", &enabled, request("b", 0, Some(40))).unwrap_err().contains("100-record"));
-        assert!(core.set_action_estimate("Sam", &enabled, request("b", 0, Some(40))).is_ok());
+        assert!(core.set_action_estimate("Colleague", &enabled, request("b", 0, Some(40))).is_ok());
         // A removed action retains its captured source instead of binding to a matching title.
         { let mut world = core.world.lock().unwrap(); Arc::make_mut(&mut world).actions.retain(|a| a.id != "a"); }
         assert!(core.set_action_estimate("you", &enabled, request("a", 1, Some(10))).is_err());
@@ -5424,7 +5424,7 @@ mod c10_arguments_tests {
         let path = std::env::temp_dir().join(format!("c10-arguments-{}.jsonl", uuid::Uuid::new_v4()));
         let (journal, world) = Journal::open(&path).unwrap();
         let core = Core::test(journal, world);
-        for (id, text, speaker) in [("q","How should we travel?","Sam"),("a","Take the train","Sam"),("b","Take the bus","Lee"),("pro","Train is quicker","Lee"),("con","Train costs more","Sam")] {
+        for (id, text, speaker) in [("q","How should we travel?","Colleague"),("a","Take the train","Colleague"),("b","Take the bus","Reviewer"),("pro","Train is quicker","Reviewer"),("con","Train costs more","Colleague")] {
             core.commit(vec![Change::ThoughtAdded { thought: world::Thought { id:id.into(),text:text.into(),speaker:speaker.into(),point:text.into(),thread_id:None,placed:false,unclear:String::new(),guess:String::new(),heard:String::new(),fixed:String::new(),complete:true,at_ms:1,place_ms:None,decided:false } }]);
         }
         (core,path)
@@ -5437,42 +5437,42 @@ mod c10_arguments_tests {
     fn c10_arguments_roles_votes_remove_undo_replay_and_refusals() {
         let (core,path)=fixture();
         let first=add(&core,"q","question",None);
-        assert!(core.save_choice("Sam",false,first.clone()).is_err());
-        core.save_choice("Sam",true,first.clone()).unwrap();
-        core.save_choice("Sam",true,first.clone()).unwrap();
+        assert!(core.save_choice("Colleague",false,first.clone()).is_err());
+        core.save_choice("Colleague",true,first.clone()).unwrap();
+        core.save_choice("Colleague",true,first.clone()).unwrap();
         assert_eq!(core.snapshot().choice_maps[0].revision,1);
-        for (id,role,opt) in [("a","option",None),("b","option",None),("pro","supports",Some("a")),("con","challenges",Some("a"))] {core.save_choice("Sam",true,add(&core,id,role,opt)).unwrap();}
+        for (id,role,opt) in [("a","option",None),("b","option",None),("pro","supports",Some("a")),("con","challenges",Some("a"))] {core.save_choice("Colleague",true,add(&core,id,role,opt)).unwrap();}
         let words=serde_json::to_string(&core.snapshot().thoughts).unwrap();
         let mut req=add(&core,"pro","supports",Some("pro"));
-        assert!(core.save_choice("Sam",true,req.clone()).is_err(),"reason cannot target another reason or itself");
-        req.option_id=Some("missing".into()); assert!(core.save_choice("Sam",true,req.clone()).is_err());
-        req=add(&core,"q","option",None);req.observed="changed".into();assert!(core.save_choice("Sam",true,req).is_err());
-        for (actor,id) in [("Sam","a"),("Lee","b")] {
+        assert!(core.save_choice("Colleague",true,req.clone()).is_err(),"reason cannot target another reason or itself");
+        req.option_id=Some("missing".into()); assert!(core.save_choice("Colleague",true,req.clone()).is_err());
+        req=add(&core,"q","option",None);req.observed="changed".into();assert!(core.save_choice("Colleague",true,req).is_err());
+        for (actor,id) in [("Colleague","a"),("Reviewer","b")] {
             let mut req=add(&core,id,"option",None);req.operation="choose".into();core.save_choice(actor,true,req).unwrap();
         }
         assert_eq!(core.snapshot().choice_maps[0].votes.len(),2);
         assert!(core.snapshot().thoughts.iter().all(|t|!t.decided));
         let mut req=add(&core,"a","option",None);req.operation="remove".into();let removal=req.request_id.clone();
-        core.save_choice("Sam",true,req.clone()).unwrap();
+        core.save_choice("Colleague",true,req.clone()).unwrap();
         assert_eq!(core.snapshot().choice_maps[0].relations.iter().filter(|r|r.removed_by.is_some()).count(),3);
         req.operation="undo".into();req.request_id=uuid::Uuid::new_v4().to_string();req.undo_of=Some(removal);req.revision+=1;
-        assert!(core.save_choice("Lee",true,req.clone()).is_err());
-        core.save_choice("Sam",true,req).unwrap();
+        assert!(core.save_choice("Reviewer",true,req.clone()).is_err());
+        core.save_choice("Colleague",true,req).unwrap();
         assert!(core.snapshot().choice_maps[0].relations.iter().all(|r|r.removed_by.is_none()));
-        assert!(core.save_choice("Sam",true,first).is_ok(),"old exact request remains idempotent");
+        assert!(core.save_choice("Colleague",true,first).is_ok(),"old exact request remains idempotent");
         assert_eq!(serde_json::to_string(&core.snapshot().thoughts).unwrap(),words);
         let (_,replayed)=Journal::open(&path).unwrap();
         assert_eq!(replayed.choice_maps,core.snapshot().choice_maps);
-        let stale=add(&core,"q","option",None);let mut bad=stale.clone();bad.revision-=1;assert!(core.save_choice("Sam",true,bad).is_err());
+        let stale=add(&core,"q","option",None);let mut bad=stale.clone();bad.revision-=1;assert!(core.save_choice("Colleague",true,bad).is_err());
     }
     #[test]
     fn c10_arguments_bounds_and_write_failure() {
-        let (core,_)=fixture();core.save_choice("Sam",true,add(&core,"q","question",None)).unwrap();
-        for n in 1..40 {let mut req=add(&core,"a","option",None);req.relation_id=format!("option-{n}");core.save_choice("Sam",true,req).unwrap();}
-        assert!(core.save_choice("Sam",true,add(&core,"b","option",None)).is_err());
+        let (core,_)=fixture();core.save_choice("Colleague",true,add(&core,"q","question",None)).unwrap();
+        for n in 1..40 {let mut req=add(&core,"a","option",None);req.relation_id=format!("option-{n}");core.save_choice("Colleague",true,req).unwrap();}
+        assert!(core.save_choice("Colleague",true,add(&core,"b","option",None)).is_err());
         let (mut broken,path)=fixture();
         broken.journal=Mutex::new(Journal::read_only(&path).unwrap());
-        assert!(broken.save_choice("Sam",true,add(&broken,"q","question",None)).is_err());
+        assert!(broken.save_choice("Colleague",true,add(&broken,"q","question",None)).is_err());
         assert!(broken.snapshot().choice_maps.is_empty(),"failed journal write cannot become saved state");
     }
 }

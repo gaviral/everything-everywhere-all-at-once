@@ -27,11 +27,11 @@ export function stopTime(at: number): string {
 }
 
 export const exampleTrail: Stop[] = [
-  { id: "example-1", threadId: "example-launch", topic: "The first impression", speaker: "Alex", at: 0,
+  { id: "example-1", threadId: "example-launch", topic: "The first impression", speaker: "Visitor", at: 0,
     point: "Start with one thought worth following.", text: "When someone opens the demo, give them one thought they can follow all the way through." },
-  { id: "example-2", threadId: "example-proof", topic: "Make it tangible", speaker: "Sam", at: 0,
+  { id: "example-2", threadId: "example-proof", topic: "Make it tangible", speaker: "Colleague", at: 0,
     point: "Show how the idea became a decision.", text: "Let’s walk from the first idea to the decision. Leave enough time at each stop to read what we actually said." },
-  { id: "example-3", threadId: "example-launch", topic: "The first impression", speaker: "Alex", at: 0,
+  { id: "example-3", threadId: "example-launch", topic: "The first impression", speaker: "Visitor", at: 0,
     point: "Keep the original within reach.", text: "And from any stop, take me back to that exact thought on the map, even if we have added more since then." },
 ];
 

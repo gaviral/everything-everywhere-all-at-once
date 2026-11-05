@@ -9,12 +9,12 @@ const thought = (id, text, thread_id, n, speaker = 'you') => ({ id, text, point:
 const threads = [topic('room', 'Paint the room'), topic('rent', 'Rent on Friday'), topic('blue', 'Try blue by the window', 'room')];
 const thoughts = [
   thought('p1', 'Keep the room light. Let’s look at the paint samples together.', 'room', 1),
-  thought('p2', 'One tangent: rent is due Friday. I can send my half tonight.', 'rent', 2, 'Sam'),
+  thought('p2', 'One tangent: rent is due Friday. I can send my half tonight.', 'rent', 2, 'Colleague'),
   thought('p3', 'Back to the room: try this blue by the window before we decide.', 'blue', 3),
   thought('p4', 'Yes, the blue looks warmer in daylight. Keep both samples until sunset.', 'blue', 4, 'Helper'),
   thought('p5a', 'Keep the walls light.', 'room', 5),
   thought('p5b', 'And set aside the rent tonight.', 'rent', 5),
-  thought('p6', 'Let’s leave the ceiling white and test the wall color tomorrow morning.', null, 6, 'Sam'),
+  thought('p6', 'Let’s leave the ceiling white and test the wall color tomorrow morning.', null, 6, 'Colleague'),
 ];
 const input = { threads, thoughts, notes: {}, rooms: new Map(), positions: {}, shelf: new Map(), open: null, me: 'you', speakers: new Map([['Helper', { ai: true }]]) };
 const server = await uiServer();

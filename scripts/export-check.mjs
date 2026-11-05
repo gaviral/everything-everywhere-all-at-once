@@ -26,7 +26,7 @@ try {
     thoughts: [
       thought("b", "T1", "water the tomatoes", at(1, 9, 5)),
       thought("a", "T1", "plant beans this week", at(1, 9, 0)),
-      thought("c", "T1", "compost from Dana", at(2, 8, 0)),
+      thought("c", "T1", "compost from Collaborator", at(2, 8, 0)),
       thought("d", "T2", "electric bill due Friday", at(1, 10, 0), { text: "so the electric bill is due on Friday I think" }),
       thought("e", "T3", "pole beans", at(1, 11, 0)),
       thought("f", null, "call the landlord", at(1, 12, 0)),
@@ -39,7 +39,7 @@ try {
 
   // Thoughts in the order said; the first bullet on a thread carries its date, later ones only the time unless the day changed.
   const garden = out.split("## Garden\n\n")[1].split("\n\n")[0].split("\n");
-  assert.deepEqual(garden, ["- Nov 1, 9:00 AM · Plant beans this week", "- 9:05 AM · Water the tomatoes", "- Nov 2, 8:00 AM · Compost from Dana"]);
+  assert.deepEqual(garden, ["- Nov 1, 9:00 AM · Plant beans this week", "- 9:05 AM · Water the tomatoes", "- Nov 2, 8:00 AM · Compost from Collaborator"]);
   // The point as the card shows it, not the longer words behind it.
   assert.match(out, /## Bills\n\n- Nov 1, 10:00 AM · Electric bill due Friday\n/);
   assert.ok(!out.includes("I think"), "the words behind a point stay on its card");
@@ -54,7 +54,7 @@ try {
   // Decisions: said outright, they're marked on their point; a recap's decision lands on the point it restates, or
   // under the heading when no point does; said once even when both recaps have it; a merged thread's goes where it went.
   for (const yes of ["I decided to rent the van", "We've decided: Lisbon", "we have finally settled on the blue tiles", "I've made up my mind", "We chose the earlier flight", "I’ve decided"]) assert.ok(saysDecided(yes), yes);
-  for (const no of ["I can't decide", "I haven't decided yet", "have you decided?", "I'm going with Sam to Tahoe", "decide by Friday", "undecided",
+  for (const no of ["I can't decide", "I haven't decided yet", "have you decided?", "I'm going with Colleague to Tahoe", "decide by Friday", "undecided",
     "I haven't made up my mind", "Have we decided on the train", "Have we decided on the train?", "not sure we chose the right one", "if we chose the van it'd fit", "I never settled on a name"]) assert.ok(!saysDecided(no), no);
   for (const yes of ["I'm not sure, but I decided to go", "Not the bus. We chose the train", "I decided not to go"]) assert.ok(saysDecided(yes), yes);
   const decided = md({
@@ -88,8 +88,8 @@ try {
   assert.equal(joined.thoughts, 1, "counted as the card counts points");
 
   // Who said it, only when more than one person did; Markdown in the words stays literal, on one line.
-  const two = md({ threads: [thread("T1", "Plan")], thoughts: [thought("s1", "T1", "a", at(1, 9, 0)), { ...thought("s2", "T1", "b", at(1, 9, 1)), speaker: "Sam" }] }).text;
-  assert.match(two, /- Nov 1, 9:00 AM · you: A\n- 9:01 AM · Sam: B/);
+  const two = md({ threads: [thread("T1", "Plan")], thoughts: [thought("s1", "T1", "a", at(1, 9, 0)), { ...thought("s2", "T1", "b", at(1, 9, 1)), speaker: "Colleague" }] }).text;
+  assert.match(two, /- Nov 1, 9:00 AM · you: A\n- 9:01 AM · Colleague: B/);
   assert.ok(!md(world).text.includes("you:"), "alone, no names");
   assert.equal(inline("*bold* _x_ [link](y) <b>\n next"), "\\*bold\\* \\_x\\_ \\[link\\](y) \\<b\\> next");
 

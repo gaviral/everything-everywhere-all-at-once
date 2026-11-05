@@ -66,7 +66,7 @@ function sampleWorld(name: string): World {
 }
 
 // What "Add a thought" says: lines a person might, each landing on the thread you're on.
-const LINES = ["Ask Priya about the slides before Friday", "Maybe the bus is faster than biking in the rain", "Write down the three numbers for the budget"];
+const LINES = ["Ask Partner about the slides before Friday", "Maybe the bus is faster than biking in the rain", "Write down the three numbers for the budget"];
 // "Say a thought": a word heard every 250 ms (talk at about 150 words a minute, as the transcriber sends its drafts),
 // and the turn's end 600 ms after the last (the pause the transcriber waits for before it calls a turn done).
 const WORD_MS = 250;
@@ -397,8 +397,8 @@ function Playground() {
       }}>{pointed ? "Stop pointing" : "Point at a topic"}</button>
       <button type="button" onClick={() => host.emit("asked", { what: "notices" })}>Ask what just happened</button>
       <button type="button" onClick={() => {
-        host.emit("speaking", { speaker: "Maya", on: true, mine: false });
-        window.setTimeout(() => host.emit("speaking", { speaker: "Maya", on: false, mine: false }), 1500);
+        host.emit("speaking", { speaker: "Designer", on: true, mine: false });
+        window.setTimeout(() => host.emit("speaking", { speaker: "Designer", on: false, mine: false }), 1500);
       }}>Someone speaks</button>
       <label className="playground-check"><input type="checkbox" checked={!connected} onChange={(event) => setConnected(!event.target.checked)} /> Core away</label>
     </div>

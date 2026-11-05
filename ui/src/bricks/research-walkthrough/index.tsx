@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { researchWalkthrough } from "../../msg1351/research-walkthrough";
+import { researchWalkthrough } from "../../features/research-walkthrough";
 function useResearchExample() {
   const [view, setView] = useState("Cards");
   const [filter, setFilter] = useState("Garden");

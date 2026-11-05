@@ -10,8 +10,8 @@ if (why) { console.log(`SKIP phone-remote-check: ${why}`); process.exit(3); }
 const now = Date.now();
 const world = {
   threads: ["Garden plans", "Train tickets", "Weekend picnic"].map((title, i) => ({ id: `T${i}`, title, parent_id: null, status: "open", last_point: "", touched_ms: now, tags: [], picture: null, dropped_by: "" })),
-  thoughts: Array.from({ length: 6 }, (_, i) => ({ id: `p${i}`, thread_id: `T${Math.floor(i / 2)}`, speaker: "Sam", text: `Thought ${i + 1}, with the original words to read when opened.`, point: `Thought ${i + 1}`, placed: true, unclear: "", complete: true, at_ms: now + i, place_ms: 1000 })),
-  active: "T0", active_by: { Sam: "T0" }, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: true, recaps: [], notes: {}, proposals: [], topics: {},
+  thoughts: Array.from({ length: 6 }, (_, i) => ({ id: `p${i}`, thread_id: `T${Math.floor(i / 2)}`, speaker: "Colleague", text: `Thought ${i + 1}, with the original words to read when opened.`, point: `Thought ${i + 1}`, placed: true, unclear: "", complete: true, at_ms: now + i, place_ms: 1000 })),
+  active: "T0", active_by: { Colleague: "T0" }, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: true, recaps: [], notes: {}, proposals: [], topics: {},
 };
 // Allows the same acceptance against a real keyless Rust process, with no personal journal.
 if (process.env.PHONE_REMOTE_FIXTURE) {
@@ -59,7 +59,7 @@ async function setup(width, height, name = "") {
 }
 let count = 0;
 try {
-  desktop = await setup(1440, 900, "Sam");
+  desktop = await setup(1440, 900, "Colleague");
   await desktop.page("Page.navigate", { url: `${base}/?room=${code}` });
   await check(desktop, `!!document.querySelector('.spine-ready')`, "desktop Canvas loaded");
   await key(desktop, "c");
@@ -70,13 +70,13 @@ try {
   await desktop.evaluate(`${toggle}.click()`);
   await check(desktop, `!!document.querySelector('.phone-pair img')`, "pairing QR rendered");
   const qrLink = await desktop.evaluate(`document.querySelector('.phone-pair a').href`);
-  assert.ok(qrLink.includes(`room=${code}`) && qrLink.includes("remote=Sam") && qrLink.includes("touchpad=1"), "QR pairs by room and device name");
+  assert.ok(qrLink.includes(`room=${code}`) && qrLink.includes("remote=Colleague") && qrLink.includes("touchpad=1"), "QR pairs by room and device name");
   assert.ok(!qrLink.includes("localhost") && !qrLink.includes("127.0.0.1"), "invite has a LAN address");
   await desktop.evaluate(`document.querySelector('.phone-pair').scrollIntoView({block:'center'})`);
   await shot(desktop, "pairing-desktop");
   await key(desktop, "Escape");
   phone = await setup(390, 844);
-  await phone.page("Page.navigate", { url: `${base}/?room=${code}&remote=Sam%27s%20phone&touchpad=1` });
+  await phone.page("Page.navigate", { url: `${base}/?room=${code}&remote=Colleague%27s%20phone&touchpad=1` });
   await check(phone, `!!document.querySelector('.phone-touchpad') && document.querySelector('.phone-touchpad-label').textContent.includes('Garden plans')`, "one scan pairs without a name form; selection returns");
   assert.equal(await phone.evaluate(`document.querySelector('.phone-touchpad').children.length`), 1, "phone shows only its huge label");
   assert.ok(await phone.evaluate(`localStorage.getItem('e2a2o.phone-pair').includes('touchpad')`), "phone remembers pair");
@@ -162,7 +162,7 @@ try {
   assert.equal(await desktop.evaluate(`document.body.textContent.includes('Call started')`), false, "a returning paired phone stays a device instead of starting a call");
   await phone.evaluate(`document.querySelector('.phone-return').click()`);
   await check(phone, `!!document.querySelector('.phone-touchpad')`, "remembered Remote opens");
-  assert.equal(await phone.evaluate(`sessionStorage.getItem('e2a2o.joined')`), "Sam's phone", "one tap restores the paired device session");
+  assert.equal(await phone.evaluate(`sessionStorage.getItem('e2a2o.joined')`), "Colleague's phone", "one tap restores the paired device session");
   assert.equal(await phone.evaluate(`!!document.querySelector('.phone-return')`), false, "Remote page has no return offer over its gesture surface");
   await key(desktop, "c"); await desktop.evaluate(`${toggle}.click()`); await key(desktop, "Escape");
   await check(desktop, `!document.querySelector('.spine-phone-ring,.spine-phone-caption,.phone-pair')`, "switch off removes new UI");

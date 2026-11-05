@@ -37,35 +37,35 @@ if (shots) mkdirSync(shots, { recursive: true });
     const F = await server.ssrLoadModule("/src/remote/flag.ts");
     const person = (name, extra = {}) => ({ name, ai: false, remote: false, joined_ms: 1, here: true, left_ms: null, mic: false, speaking: false, read: null, ...extra });
     const call = (...people) => ({ started_ms: 1, level: "speak", level_by: "", people });
-    const lone = call(person("Sam"), person("Sam's phone", { remote: true }));
+    const lone = call(person("Colleague"), person("Colleague's phone", { remote: true }));
     assert.equal(C.inCall(lone), false, "a person and their Remote are not a call");
-    assert.equal(C.inCall(call(person("Sam"), person("Sam's phone", { remote: true }), person("Ana's phone", { remote: true }))), false, "nor are Remotes, however many");
-    const helped = call(person("Sam"), person("Sam's phone", { remote: true }), person("agent", { ai: true }));
+    assert.equal(C.inCall(call(person("Colleague"), person("Colleague's phone", { remote: true }), person("Speaker's phone", { remote: true }))), false, "nor are Remotes, however many");
+    const helped = call(person("Colleague"), person("Colleague's phone", { remote: true }), person("agent", { ai: true }));
     assert.equal(C.inCall(helped), true, "a person and an AI helper are, as they were");
     assert.equal(C.peopleHere(helped), 1, "and the Remote is not a second person");
-    assert.equal(C.peopleHere(call(person("Sam"), person("Maya"), person("Sam's phone", { remote: true }))), 2, "a second person is");
-    assert.deepEqual(C.ordered(helped, "Sam").map((p) => p.name), ["Sam", "agent"], "the people row lists no Remote");
-    assert.deepEqual(C.hereNow(helped, "Sam").map((p) => p.name), ["Sam", "agent"]);
-    assert.equal(C.heardBy(helped, "Sam"), "agent hears you", "a Remote hears nothing");
-    assert.deepEqual(C.remotesHere(helped).map((p) => p.name), ["Sam's phone"], "the Remote is listed apart");
-    assert.deepEqual(C.remotesHere(call(person("Sam"), person("Sam's phone", { remote: true, here: false, left_ms: 5 }))), [], "a Remote that closed is gone, not someone who left");
-    const old = { started_ms: 1, level: "speak", level_by: "", people: [{ name: "Sam", ai: false, joined_ms: 1, here: true, left_ms: null, mic: false, speaking: false, read: null }, { name: "Maya", ai: false, joined_ms: 2, here: true, left_ms: null, mic: false, speaking: false, read: null }] };
+    assert.equal(C.peopleHere(call(person("Colleague"), person("Designer"), person("Colleague's phone", { remote: true }))), 2, "a second person is");
+    assert.deepEqual(C.ordered(helped, "Colleague").map((p) => p.name), ["Colleague", "agent"], "the people row lists no Remote");
+    assert.deepEqual(C.hereNow(helped, "Colleague").map((p) => p.name), ["Colleague", "agent"]);
+    assert.equal(C.heardBy(helped, "Colleague"), "agent hears you", "a Remote hears nothing");
+    assert.deepEqual(C.remotesHere(helped).map((p) => p.name), ["Colleague's phone"], "the Remote is listed apart");
+    assert.deepEqual(C.remotesHere(call(person("Colleague"), person("Colleague's phone", { remote: true, here: false, left_ms: 5 }))), [], "a Remote that closed is gone, not someone who left");
+    const old = { started_ms: 1, level: "speak", level_by: "", people: [{ name: "Colleague", ai: false, joined_ms: 1, here: true, left_ms: null, mic: false, speaking: false, read: null }, { name: "Designer", ai: false, joined_ms: 2, here: true, left_ms: null, mic: false, speaking: false, read: null }] };
     assert.equal(C.inCall(old), true, "a core that doesn't know Remotes sends people, and they are");
     assert.deepEqual(C.remotesHere(old), []);
     const invite = "http://192.168.1.5:4321/?room=k7m2x9qp";
-    assert.equal(F.remoteLink(invite, "Sam"), `${invite}&remote=Sam's%20phone`, "the invite, and the name the phone joins under");
+    assert.equal(F.remoteLink(invite, "Colleague"), `${invite}&remote=Colleague's%20phone`, "the invite, and the name the phone joins under");
     assert.equal(F.remoteLink(invite, "Maria José"), `${invite}&remote=Maria%20Jos%C3%A9's%20phone`);
-    assert.equal(F.remoteLink(invite, "Alexandria-Catherine"), `${invite}&remote=My%20phone`, "a name too long for the room's 24 characters becomes My phone");
-    assert.equal(F.remoteLink("https://quiet-river-12.trycloudflare.com", "Sam"), "https://quiet-river-12.trycloudflare.com?remote=Sam's%20phone", "an address with no query gets one");
+    assert.equal(F.remoteLink(invite, "Example-Participant-With-A-Long-Name"), `${invite}&remote=My%20phone`, "a name too long for the room's 24 characters becomes My phone");
+    assert.equal(F.remoteLink("https://quiet-river-12.trycloudflare.com", "Colleague"), "https://quiet-river-12.trycloudflare.com?remote=Colleague's%20phone", "an address with no query gets one");
   } finally { await server.close(); }
 }
 
 // ── 2. The pages. ──
 const now = Date.now();
 const thread = (n, title) => ({ id: `T${n}`, title, parent_id: null, status: "open", last_point: "", touched_ms: now, tags: [], picture: null, dropped_by: "" });
-const thought = (id, text, thread_id, i) => ({ id, speaker: "Sam", text, point: text, thread_id, placed: true, unclear: "", complete: true, at_ms: now - 60_000 + i * 1000, place_ms: 2400 });
+const thought = (id, text, thread_id, i) => ({ id, speaker: "Colleague", text, point: text, thread_id, placed: true, unclear: "", complete: true, at_ms: now - 60_000 + i * 1000, place_ms: 2400 });
 const world = {
-  threads: [thread(1, "Mom's birthday"), thread(2, "Stats midterm")], active: "T1", active_by: { Sam: "T1" }, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: true, recaps: [], notes: {}, proposals: [], ai: [],
+  threads: [thread(1, "Mom's birthday"), thread(2, "Stats midterm")], active: "T1", active_by: { Colleague: "T1" }, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: true, recaps: [], notes: {}, proposals: [], ai: [],
   thoughts: [thought("a1", "Mom's birthday is Saturday", "T1", 1), thought("a2", "She keeps talking about the pottery class on Main Street", "T1", 2), thought("b1", "My stats midterm is Thursday", "T2", 3)],
 };
 const ASK = "Mention the pottery class in Mom's card, or keep it a surprise?";
@@ -191,12 +191,12 @@ const raw = (query) => new Promise((resolve, reject) => {
 
 try {
   // The laptop, in a room under its own name, the Work spine on.
-  const laptop = await openWindow({ width: 1440, height: 900, joined: "Sam" });
+  const laptop = await openWindow({ width: 1440, height: 900, joined: "Colleague" });
   await laptop.go("?shell=2&bricks=work-spine");
   await laptop.check('!!document.querySelector("[data-guide=composer] textarea") && !!document.querySelector(".spine-ready")', "the map and the composer are up", 15_000);
   await laptop.evaluate('[...document.querySelectorAll("button")].find((b) => b.textContent === "Skip tour")?.click()');
   await laptop.check('!document.querySelector(".tour-tip") && !!document.querySelector(".work-spine-lane")', "no hint is up and the Work spine's lane is beside the map");
-  assert.deepEqual(joins.map((j) => [j.name, "remote" in j]), [["Sam", false]], "the laptop's socket is a person's: it does not say Remote");
+  assert.deepEqual(joins.map((j) => [j.name, "remote" in j]), [["Colleague", false]], "the laptop's socket is a person's: it does not say Remote");
   const alone = await seen(laptop);
   assert.deepEqual([alone.rail, alone.pill, alone.lane, alone.card], [false, false, true, false], "alone: the lane, and no Talk");
   assert.notEqual(alone.room, "", "the lane has its room");
@@ -213,7 +213,7 @@ try {
   await laptop.check('window.copied.length === 2', "both copied");
   const [copiedInvite, copiedRemote] = await laptop.evaluate("window.copied");
   assert.equal(copiedInvite, invite, "the join code's copy is the invite, as before");
-  assert.equal(copiedRemote, `${invite}&remote=Sam's%20phone`, "the Remote's copy is the invite with the Remote and a name for the phone");
+  assert.equal(copiedRemote, `${invite}&remote=Colleague's%20phone`, "the Remote's copy is the invite with the Remote and a name for the phone");
   await laptop.check('document.querySelector(".room-remote .room-copy")?.textContent === "Link copied"', "and says so");
   assert.equal(await laptop.evaluate('(() => { const r = document.querySelector(".room-panel").getBoundingClientRect(), b = document.querySelector(".room-remote .room-copy").getBoundingClientRect(); return b.right <= r.right && b.left >= r.left && b.bottom <= r.bottom; })()'), true, "the button is inside the panel");
   assert.equal(await laptop.evaluate('document.querySelectorAll(".room-link").length'), 0, "copied, so no link is spelled out");
@@ -226,21 +226,21 @@ try {
   await phone.go(link.search);
   await phone.check('!!document.querySelector(".join input")', "a phone in a room is asked its name");
   assert.equal(await phone.evaluate('document.querySelectorAll(".join input").length'), 1, "only its name: the link carried the code");
-  assert.equal(await phone.evaluate('document.querySelector(".join input").value'), "Sam's phone", "the name is already there");
+  assert.equal(await phone.evaluate('document.querySelector(".join input").value'), "Colleague's phone", "the name is already there");
   assert.equal(await phone.text(".join-kicker"), "Remote");
   assert.equal(await phone.text(".join h1"), "Answer from your phone.");
   assert.equal(await phone.text("#name-hint"), "Your helpers see this next to your answers.");
   await phone.shotBoth("phone-join");
   await phone.click(".join-card > button");
   await phone.check('!!document.querySelector(".remote")', "joined: the Remote");
-  await phone.check('document.querySelector(".remote-status")?.textContent === "On the shared map as Sam\'s phone"', "connected, under its name");
-  const mine = joins.findLast((j) => j.name === "Sam's phone");
+  await phone.check('document.querySelector(".remote-status")?.textContent === "On the shared map as Colleague\'s phone"', "connected, under its name");
+  const mine = joins.findLast((j) => j.name === "Colleague's phone");
   assert.deepEqual([mine.room, mine.remote], [code, "1"], `its socket comes in by name and room and says it is a Remote: ${JSON.stringify(mine)}`);
 
   // The laptop: nothing new. No Talk (not even its pill), the lane where it was, the phone listed as a device.
   await laptop.click(".room-menu summary");
   await laptop.check('document.querySelectorAll(".room-panel li").length === 1', "one row in the room menu");
-  assert.deepEqual(await hereRows(laptop), ["◇ Sam's phone · remote"], "the phone is listed once, as a Remote");
+  assert.deepEqual(await hereRows(laptop), ["◇ Colleague's phone · remote"], "the phone is listed once, as a Remote");
   assert.equal(await laptop.evaluate('document.querySelector(".room-panel").textContent.includes("oined")'), false, "and nothing says anyone joined");
   assert.equal(await laptop.evaluate('document.querySelector(".room-panel-label").textContent'), "Here now");
   const withPhone = await seen(laptop);
@@ -267,17 +267,17 @@ try {
   const answered = await seen(laptop);
   assert.deepEqual([answered.rail, answered.pill, answered.lane, answered.card], [false, true, true, false], "the laptop is as it was");
   await laptop.click(".room-menu summary");
-  assert.deepEqual(await hereRows(laptop), ["✦ agent · here", "◇ Sam's phone · remote"], "the people first, the phone last");
+  assert.deepEqual(await hereRows(laptop), ["✦ agent · here", "◇ Colleague's phone · remote"], "the people first, the phone last");
   await laptop.shotBoth("laptop-helper-phone");
   await laptop.click(".room-menu summary");
   await laptop.sound("laptop with the phone");
   await phone.sound("phone");
 
   // A second person is a different thing: Talk's rail opens and the lane gives way to its card.
-  const maya = await raw(`name=Maya&room=${code}`);
+  const designer = await raw(`name=Designer&room=${code}`);
   await laptop.check('!!document.querySelector(".talk-rail") && !document.querySelector(".work-spine-lane") && !!document.querySelector(".work-spine-card")', "a second person: Talk's rail, and the Work spine is the card");
   await laptop.shotBoth("laptop-second-person");
-  maya.close();
+  designer.close();
   await laptop.check('!document.querySelector(".talk-rail") && !!document.querySelector(".work-spine-lane") && !!document.querySelector(".talk-pill")', "they leave: the lane is back");
 
   // The phone closes: its row goes (a Remote is a device, not someone who left), and the call goes on for the helper.

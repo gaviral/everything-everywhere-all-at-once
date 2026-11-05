@@ -109,7 +109,7 @@ try {
   await until(() => core.noteCard?.state === "saved", "the reused note receives its own completion");
 
   // Who said a point shows only in a room (the core sends it then).
-  assert.equal(pointWords({ text: "Bring chips", who: "Ana", decided: false, unfinished: false }), "Ana: Bring chips");
+  assert.equal(pointWords({ text: "Bring chips", who: "Speaker", decided: false, unfinished: false }), "Speaker: Bring chips");
   assert.equal(pointWords(sections[0].points[0]), "Picnic at the lake");
   assert.deepEqual(Object.keys(STATE_CLASS).sort(), ["dry_run", "failed", "saved", "saving"]);
 
