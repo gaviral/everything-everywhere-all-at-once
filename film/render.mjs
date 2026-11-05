@@ -53,8 +53,9 @@ async function testClips(directory, duration) {
   return clips;
 }
 async function resolveClips(plan, configFile, clipsDir, directory) {
-  const clipsOf = s => s.kind === 'plane' ? [s] : s.kind === 'planes' ? s.clips : s.kind === 'wall' ? s.tiles.filter(t => t.clip) : [];
-  const specs = plan.shots.flatMap(clipsOf);
+  const clipsOf = s => ['plane','laptop'].includes(s.kind) ? [s] : s.kind === 'planes' ? s.clips : s.kind === 'wall' ? s.tiles.filter(t => t.clip) : [];
+  const allSpecs = plan.shots.flatMap(clipsOf);
+  const specs = allSpecs.filter(s=>s.clip);
   const numbered = specs.filter(s => /^@clip:\d+$/.test(s.clip));
   let sources = [];
   if (clipsDir) {
@@ -76,7 +77,7 @@ async function resolveClips(plan, configFile, clipsDir, directory) {
   // Fail before screenshots when supplied footage cannot cover the chosen shot.
   const durations = new Map();
   for (const shot of plan.shots) {
-    for (const spec of clipsOf(shot)) {
+    for (const spec of clipsOf(shot).filter(s=>s.clip)) {
       if (!durations.has(spec.source)) {
         const probe = JSON.parse(run('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=duration', '-of', 'json', fileURLToPath(spec.source)]));
         const duration = Number(probe.streams?.[0]?.duration);
@@ -84,11 +85,11 @@ async function resolveClips(plan, configFile, clipsDir, directory) {
         durations.set(spec.source, duration);
       }
       spec.mediaDuration = durations.get(spec.source);
-      const needed = shot.kind === 'wall' ? spec.loopSeconds ?? spec.mediaDuration - (spec.start ?? 0) : Math.min(shot.duration, spec.playSeconds ?? shot.duration);
+      const needed = shot.kind === 'wall' ? spec.loopSeconds ?? spec.mediaDuration - (spec.start ?? 0) : Math.min(shot.duration*(spec.rate??1), spec.playSeconds ?? shot.duration*(spec.rate??1));
       if (needed <= 0 || (spec.start ?? 0) + needed > spec.mediaDuration + 1e-6)
         throw new Error(`Clip is too short for shot ${shot.index + 1}`);
     }
-    if (shot.kind === 'wall') for (const spec of shot.tiles.filter(t => t.image))
+    for (const spec of (shot.kind === 'wall' ? shot.tiles : clipsOf(shot)).filter(t=>t.image))
       spec.source = pathToFileURL(await realpath(resolve(dirname(configFile), spec.image))).href;
     if(shot.layout==='field') shot.opening.source=pathToFileURL(await realpath(resolve(dirname(configFile),shot.opening.image))).href;
   }
