@@ -13,13 +13,15 @@ const words = (value, label) => {
   return result;
 };
 function plane(clip) {
-  if (!clip || typeof clip.clip !== 'string' || !clip.clip) throw new Error('plane needs a clip');
+  if (!clip || Boolean(clip.clip) === Boolean(clip.image)) throw new Error('plane needs one clip or image');
+  if (typeof (clip.clip ?? clip.image) !== 'string') throw new Error('media needs a filename');
   if (clip.start !== undefined && finite(clip.start, 'start') < 0) throw new Error('start must be nonnegative');
   for (const key of ['tilt', 'tiltTo', 'position']) {
     if (clip[key] !== undefined && (!Array.isArray(clip[key]) || clip[key].length !== (key === 'position' ? 2 : 3)))
       throw new Error(`${key} has the wrong dimensions`);
     clip[key]?.forEach(n => finite(n, key));
   }
+  if (clip.rate !== undefined) positive(clip.rate, 'rate');
   if (clip.settleSeconds !== undefined) positive(clip.settleSeconds, 'settleSeconds');
   if (clip.width !== undefined) positive(clip.width, 'width');
   if (clip.playSeconds !== undefined && finite(clip.playSeconds, 'playSeconds') < 0) throw new Error('playSeconds must be nonnegative');
@@ -34,12 +36,12 @@ export function timeline(config) {
   if (!Array.isArray(config.shots) || !config.shots.length) throw new Error('shots must be a nonempty array');
   let cursor = 0;
   const shots = config.shots.map((shot, index) => {
-    if (!['title', 'plane', 'planes', 'wall', 'card', 'list', 'end'].includes(shot.kind)) throw new Error(`Unknown shot kind: ${shot.kind}`);
+    if (!['title', 'pulse', 'feature', 'brand', 'laptop', 'plane', 'planes', 'wall', 'card', 'list', 'end'].includes(shot.kind)) throw new Error(`Unknown shot kind: ${shot.kind}`);
     let duration = positive(shot.seconds, `shot ${index + 1} seconds`);
-    if (shot.kind === 'title') words(shot.words, 'title words');
-    if (shot.kind === 'card') words(shot.word, 'card word');
+    if (shot.kind === 'title' || shot.kind === 'pulse') words(shot.words, 'title words');
+    if (shot.kind === 'card' || shot.kind === 'feature') words(shot.word, 'card word');
     if (shot.kind === 'list') duration *= words(shot.names, 'list names').length;
-    if (shot.kind === 'plane') plane(shot);
+    if (shot.kind === 'plane' || shot.kind === 'laptop') plane(shot);
     if (shot.kind === 'planes') {
       if (!Array.isArray(shot.clips) || shot.clips.length < 2 || shot.clips.length > 3) throw new Error('planes needs two or three clips');
       shot.clips.forEach(plane);
