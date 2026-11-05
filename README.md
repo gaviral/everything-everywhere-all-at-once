@@ -1,20 +1,39 @@
-# <img src="ui/public/icons/icon-192.png" width="48" alt="E2A2O logo"> E2A2O
+# E2A2O
+The IDE from the future, for developers and AI to follow each other.
+Speak, type and sketch; build reusable board parts with Muse Spark; inspect the work across real Git branches.
 
-E2A2O turns your words and sketches into a board of reusable parts. Capture a thought, question a word, draw an idea and ask Muse to build it. Your ideas stay in view.
+<img src="ui/public/icons/icon-192.png" width="48" alt="E2A2O logo">
 
 **Think out loud. Build what you mean.**
 
-## Try it
+## Why
 
-**Local sample:** `./run.sh sample` (fictional payments API team) → `http://localhost:4321/?sample` (no key or mic).
+AI is racing ahead of the person directing it. Here, you keep up with your agents, and they keep up with you.
+
+![Crew's board: seven parts merged through real Git branches](docs/looks/crew-look.png)
 
 <!-- Film link goes here. -->
+
+## What sets it apart
+
+- **The canvas is the project.** Not a file tree: your thinking, organized by what it's about, with your original words one step away.
+- **Composition you can see.** Every piece is a named part made of smaller parts, and finished parts get reused.
+- **You see the agents.** Muse Spark builds parts in parallel on real Git branches; checked work merges through dev, staging and main, and what breaks gets repaired.
+- **Talk and draw.** Speak a thought, sketch how it fits, and Muse Spark reads the sketch while Muse Image draws it back.
+
+## Try the IDE
+
+```sh
+./run.sh sample
+```
+
+Opens a fictional payments API team at `http://localhost:4321/?sample`, with no key and no mic. The first run installs dependencies and compiles Rust, about four minutes, and needs network access. Live model features need a Meta key; see [Run it](#run-it).
 
 ## Built during the hackathon
 
 Before the event there were only ideas and design notes, no app code. All application code in this repository was written during the Meta x Cerebral Valley hackathon, by the author with AI coding agents. Third-party dependencies keep their licences.
 
-## Meta models
+## Powered by Meta models
 
 | You… | Model | Code |
 |---|---|---|
@@ -32,7 +51,7 @@ Before the event there were only ideas and design notes, no app code. All applic
 
 <!-- end of the first screen -->
 
-## From words to parts
+## Speak, type, sketch and build
 
 - **Say it.** Speak or type. Thoughts become topics on the board, with the original words available beside them.
 - **Ask about words.** A question points to a word in your sentence. Your answer stays attached to that occurrence.
