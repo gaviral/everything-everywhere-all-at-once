@@ -25,7 +25,7 @@ AI is racing ahead of the person directing it. Here, you keep up with your agent
 
 **Local sample:** `./run.sh sample` → `http://localhost:4321/?sample`, a fictional payments API team (no key or mic). The first run installs dependencies and compiles Rust, about four minutes, and needs network access. Live model features need a Meta key.
 
-If your machine differs, the container in `docs/docker.md` runs the same app.
+If your machine differs, the `Dockerfile` builds the same app: `docker build -t eeaao . && docker run -p 8080:8080 eeaao`, then open port 8080.
 
 ## Built during the hackathon
 
