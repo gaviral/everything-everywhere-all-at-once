@@ -1,8 +1,12 @@
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { standInCore, openPage, ready } from '../../../../scripts/headless.mjs';
 import assert from 'node:assert/strict';
 
 if (ready()) throw Error(ready());
+const screenshots = process.env.LIGHT_THEME_SHOTS || mkdtempSync(join(tmpdir(), 'e2a2o-light-theme-'));
+mkdirSync(screenshots, { recursive: true });
 const now = Date.now();
 const titles = ['The story we want to tell', 'A clearer first moment', 'What we will film'];
 const threads = titles.map((title, i) => ({ id: `T${i}`, title, parent_id: null, status: 'open', last_point: '', touched_ms: now, tags: [], picture: null, dropped_by: '' }));
@@ -23,12 +27,12 @@ try {
     assert.equal(await evaluate(`getComputedStyle(document.documentElement).colorScheme`), 'light');
     await evaluate('document.fonts.ready.then(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))))');
     const { data } = await page('Page.captureScreenshot', { format: 'png' });
-    writeFileSync(`docs/looks/light/${id}.png`, Buffer.from(data, 'base64'));
+    writeFileSync(join(screenshots, `${id}.png`), Buffer.from(data, 'base64'));
   }
   await evaluate(`localStorage.setItem('e2a2o.bricks', JSON.stringify({'light-theme': true}))`);
   await page('Page.navigate', { url: `http://127.0.0.1:${core.port}/?sample` });
   assert(await until('!!document.querySelector(".light-theme-switch")', 15000));
   await evaluate(`localStorage.setItem('e2a2o.bricks', JSON.stringify({'light-theme': false})); window.dispatchEvent(new StorageEvent('storage', { key: 'e2a2o.bricks' }))`);
   assert(await until('!document.querySelector(".light-theme-switch") && !document.documentElement.dataset.lightTheme'), 'switching off restores page');
-  console.log('Light theme: three looks, dark preference, and switch-off passed; screenshots saved.');
+  console.log(`Light theme: three looks, dark preference, and switch-off passed; screenshots saved to ${screenshots}.`);
 } finally { await browser?.close(); await core.close(); }
