@@ -1,5 +1,6 @@
 // Real-app film capture. No model fixtures, physical microphone, saved credentials or generated results.
 // FILM_SPOKEN=1 captures spoken and spoken-build using only Chrome's file-backed fake audio device.
+// FILM_ALL=1 rebuilds and recaptures all twelve clips, plus the real Git proof still, in the default dark look.
 // FILM_VOICE_DIR selects the supplied WAV folder; defaults to ../voice/user beside FILM_OUT.
 // FILM_OUT=/path/to/clips node scripts/film-capture.mjs captures all ten clips.
 // Without FILM_URL, builds and starts a fresh scratch core on 4466; Keychain supplies its key in memory.
@@ -20,9 +21,10 @@ const url = new URL(process.env.FILM_URL || 'http://127.0.0.1:4466');
 assert(['localhost', '127.0.0.1'].includes(url.hostname), 'Use an isolated local core');
 assert(!['4360', '4399'].includes(url.port), 'Reserved port');
 const output = resolve(process.env.FILM_OUT || 'film-clips');
-const spokenMode = process.env.FILM_SPOKEN === '1';
-assert(!spokenMode || !process.env.FILM_PROFILE, 'Spoken mode requires a new isolated Chrome profile');
-const profile = process.env.FILM_PROFILE || mkdtempSync(join(tmpdir(), 'film-chrome-'));
+const allMode = process.env.FILM_ALL === '1';
+let spokenMode = process.env.FILM_SPOKEN === '1';
+assert(!(spokenMode || allMode) || !process.env.FILM_PROFILE, 'Voice/all mode requires a new isolated Chrome profile');
+let profile = process.env.FILM_PROFILE || mkdtempSync(join(tmpdir(), 'film-chrome-'));
 const take = join(output, 'takes', new Date().toISOString().replaceAll(':', '-'));
 mkdirSync(take, { recursive: true });
 const story = 'Saturday is our free repair night at the hall and Mira wants a plan by tonight.';
@@ -31,10 +33,10 @@ const repairBrief = 'Repair Night needs three parts: Volunteer Shifts with a vol
 const runFile = promisify(execFile);
 let core, scratchData, latestCrewRun;
 const keptPartIds = new Set();
-async function startScratchCore() {
+async function startScratchCore(build = true) {
   if (process.env.FILM_URL) return;
   const repo = fileURLToPath(new URL('../', import.meta.url));
-  if (process.env.FILM_SKIP_BUILD !== '1') {
+  if (build && process.env.FILM_SKIP_BUILD !== '1') {
     console.log('Building UI and core');
     await Promise.all([
       runFile('npm', ['run', 'build'], { cwd: join(repo, 'ui'), maxBuffer: 8e6 }),
@@ -116,6 +118,7 @@ async function connect() {
   }
   await cdp('Browser.setPermission', { permission: { name: 'microphone' }, setting: spokenMode ? 'granted' : 'denied', origin: url.origin });
   await cdp('Emulation.setDeviceMetricsOverride', { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false });
+  await cdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }] });
   listeners.set('Page.screencastFrame', [frame => {
     void cdp('Page.screencastFrameAck', { sessionId: frame.sessionId });
     if (!current) return;
@@ -285,6 +288,28 @@ async function prepareSelectedClip(name) {
     await box(.35, .66, .24, .18, 'flyer words');
     await until('document.querySelectorAll(".draw-part").length >= 3', 120000);
   }
+  if (name === 'parts') {
+    await navigate(`${flags}&parts`);
+    await click('[data-look-choice="original"]');
+    await until('document.querySelector(".part-dimensions-example")?.dataset.look === "original"');
+  }
+}
+async function checkWarmDarkLook(phase) {
+  const colors = await evaluate(`(()=>{
+    const rgb=value=>{if(value.startsWith('#'))return [1,3,5].map(i=>parseInt(value.slice(i,i+2),16));return (value.match(/[\\d.]+/g)||[]).slice(0,3).map(Number)};
+    const visible=el=>el&&el.getBoundingClientRect().width>0&&el.getBoundingClientRect().height>0;
+    const root=getComputedStyle(document.documentElement),body=getComputedStyle(document.body);
+    const surfaces=['.draw-sheet','.crew','.flow-canvas','.part-dimensions'].map(selector=>({selector,el:document.querySelector(selector)})).filter(x=>visible(x.el));
+    const main=surfaces[0];
+    return {scheme:matchMedia('(prefers-color-scheme: dark)').matches,body:rgb(body.backgroundColor),surface:main?{selector:main.selector,color:rgb(getComputedStyle(main.el).backgroundColor)}:null,
+      accents:['--accent','--blue','--ai'].map(name=>({name,color:rgb(root.getPropertyValue(name).trim())})),
+      chat:[...document.querySelectorAll('.shell-turn-text,.shell-rail')].filter(visible).map(el=>({role:el.className,color:rgb(getComputedStyle(el).color),background:rgb(getComputedStyle(el).backgroundColor)})),
+      partLook:document.querySelector('.part-dimensions-example')?.dataset.look || null};
+  })()`);
+  const warm = rgb => rgb.length===3 && rgb[0]>=rgb[1] && rgb[1]>=rgb[2];
+  const dark = rgb => Math.max(...rgb)<80;
+  contentCheck(`warm dark look (${phase})`, colors.scheme && warm(colors.body) && dark(colors.body) && (!colors.surface || warm(colors.surface.color) && dark(colors.surface.color)), colors);
+  contentCheck(`no blue chat/action colors (${phase})`, colors.accents.every(role=>!role.color.length || warm(role.color)) && colors.chat.every(role=>warm(role.color)), colors);
 }
 async function verifyClip(record) {
   const { stdout } = await runFile('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height,r_frame_rate,avg_frame_rate', '-show_entries', 'format=duration', '-of', 'json', join(record.folder, `${record.name}.mp4`)]);
@@ -483,6 +508,7 @@ async function spokenClips() {
       await waitVoice(()=>voiceEvents.filter(e=>e.value.type==='change' && e.value.change.type==='thought_placed').length >= 2, 'answer placement');
       const normal = text => text.toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
       contentCheck('spoken words match supplied thought and answer', normal(heardThoughts()[0].text) === normal(story) && normal(heardThoughts()[1].text) === normal('Mira runs the volunteers'), heardThoughts().map(t=>t.text));
+      await checkNoSecondQuestion();
       await delay(2000);
     } finally { await stopFileVoice(); }
   }, 'person speaking through Chrome file capture, real Muse Voice Transcribe live words, Spark placement and question');
@@ -505,13 +531,15 @@ async function spokenClips() {
       const transcript = heardThoughts()[0].text;
       contentCheck('spoken build WAV is transcribed verbatim', transcript.toLowerCase().replace(/[^a-z0-9]+/g,' ').trim() === 'build all that', transcript);
       contentCheck('real spoken command starts Crew', await evaluate('!!document.querySelector(".crew-foot") && document.querySelectorAll(".crew-merged").length > 0'), { transcript, footer: await evaluate('document.querySelector(".crew-foot").textContent') });
+      await checkCrewCounts();
+      await checkBoardFacts();
       await delay(2000);
     } finally { await stopFileVoice(); }
   }, 'real sketch, supplied build voice through the app capture control and Muse Voice Transcribe, live Crew build');
   try { await finishVoiceAudio(rows.get('spoken-build'), ['build'], assets); } catch(error) { rows.get('spoken-build').audio_error=error.message; console.log(`spoken-build audio: ${error.message}`); }
   const record = rows.get('spoken');
   record.audio_manifest = [...(record.audio||[]),...(rows.get('spoken-build').audio||[])];
-  for (const item of rows.values()) {
+  for (const item of [...rows.values()].filter(item=>['spoken','spoken-build'].includes(item.name))) {
     writeFileSync(join(output,`${item.name}.json`),JSON.stringify(item,null,2));
     writeFileSync(join(item.folder,'timing.json'),JSON.stringify(item,null,2));
     const verified = await verifyClip(item);
@@ -545,7 +573,7 @@ async function capture(name, action, real) {
   current = { name, folder, start: Date.now(), frames: [], events: [], real, microphone: false, fictional: true };
   console.log(`Recording ${name}`);
   await cdp('Page.startScreencast', { format: 'jpeg', quality: 95, maxWidth: 1920, maxHeight: 1080, everyNthFrame: 1 });
-  try { await delay(650); await action(); await delay(name === 'ask' ? 100 : 2000); }
+  try { await checkWarmDarkLook('start'); await delay(650); await action(); await delay(name === 'ask' ? 100 : 2000); await checkWarmDarkLook('end'); }
   catch (error) { current.error = error.message; console.log(`${name}: ${error.message}`); }
   await screenshot(join(folder, 'end.png'));
   await cdp('Page.stopScreencast');
@@ -730,7 +758,7 @@ async function captureGitGraph() {
   await cdp('Page.navigate', { url: 'about:blank' });
   await until('document.readyState === "complete"');
   const displayed = await evaluate(`(()=>{
-    document.documentElement.style.cssText='background:#0c0e12;color:#eef0f5;';
+    document.documentElement.style.cssText='background:#171613;color:#f1eadc;';
     document.body.style.cssText='margin:0;width:1920px;height:1080px;display:flex;align-items:center;justify-content:center;overflow:hidden;';
     const pre=document.createElement('pre');pre.textContent=${JSON.stringify(graph)};
     pre.style.cssText='margin:0;white-space:pre;font:32px/1.18 Menlo,Monaco,monospace;';
@@ -755,7 +783,7 @@ async function captureGitGraph() {
 const clips = {
   think: [async () => {
     await type(story);
-    await until('document.querySelectorAll(".react-flow__node").length > 0');
+    await until('document.querySelectorAll("[data-thought]").length > 0');
   }, 'real typed thought, live Spark placement'],
   ask: [async () => {
     await until('document.querySelector(".clarify-note")?.textContent.includes("Mira")');
@@ -807,15 +835,14 @@ const clips = {
     await checkBoardFacts();
   }, 'second live Spark run with persistent part reuse and a larger Git tree'],
   parts: [async () => {
-    await navigate(`${flags}&parts`);
     await until('document.querySelector(".pd-sequence button")');
     for (let i = 1; i <= 3; i++) {
       await click(`.pd-sequence li:nth-child(${i}) button`);
       await until(`document.querySelector('.pd-sequence li:nth-child(${i}) button').getAttribute('aria-current') === 'step'`);
       await delay(1600);
     }
-    assert(await evaluate('document.querySelector(".part-dimensions-example").dataset.look') === 'paper');
-  }, 'real Parts view, Paper look, three visible steps and source references'],
+    assert(await evaluate('document.querySelector(".part-dimensions-example").dataset.look') === 'original');
+  }, 'real Parts view, Original look, three visible steps and source references'],
   flow: [async () => {
     await navigate(`${flags}&flow`);
     if (await evaluate('!!document.querySelector(".crew-close")')) await click('.crew-close');
@@ -861,6 +888,14 @@ if (process.env.FILM_REENCODE === '1') {
     }
   }
   if (!spokenMode && scratchData && latestCrewRun && !process.env.FILM_CLIPS) await captureGitGraph();
+  if (allMode && !spokenMode) {
+    await closeBrowser();
+    await stopProcess(core); core=undefined; scratchData=undefined; latestCrewRun=undefined; keptPartIds.clear();
+    profile=mkdtempSync(join(tmpdir(),'film-voice-chrome-'));
+    spokenMode=true;
+    await startScratchCore(false);
+    await spokenClips();
+  }
   writeRunSummary();
   if ([...rows.values()].some(record => record.error || record.audio_error || record.checks?.some(check => !check.passed))) process.exitCode = 1;
 } finally {
