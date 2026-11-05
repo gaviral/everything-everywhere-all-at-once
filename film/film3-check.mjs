@@ -22,7 +22,7 @@ try{
  assert.ok((await stage.frame(s,1.05)).brand.ribbon>0);await writeFile(join(out,'ribbon.png'),await stage.screenshot());
  assert.ok((await stage.frame(s,1.45)).brand.bead>0);await writeFile(join(out,'bead.png'),await stage.screenshot());
  const end=await stage.frame(s,2.4);assert.equal(end.brand.photo,1);const picture=await stage.screenshot();await writeFile(join(out,'complete.png'),picture);
- const held=await stage.frame(shot('30-final-hold'),2);assert.equal(held.brand.settled,true);assert.ok(held.text.includes('Example project. Sequences shortened. One fault added for the demonstration. Narration AI-generated.'));
+ const held=await stage.frame(shot('30-final-hold'),2);assert.equal(held.brand.settled,true);assert.ok(!held.text.includes('Example project.'));assert.ok(held.text.endsWith('Muse Spark · Muse Image · Muse Voice Transcribe'));
  assert.equal(createHash('sha256').update(await stage.screenshot()).digest('hex'),createHash('sha256').update(picture).digest('hex'),'The assembled identity and final hold are identical');
 }finally{await stage.close();}
 const temp=await mkdtemp(join(out,'clock-'));const clock=join(temp,'shots.json');await writeFile(clock,JSON.stringify({shots:[{id:'clock',kind:'title',words:'Clock',seconds:.177,frames:{preview:3,final:6}}]}));

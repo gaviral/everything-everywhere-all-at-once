@@ -27,7 +27,7 @@ try {
  await stage.frame(shot,0);await stage.frame(shot,.8);
  assert.deepEqual(await stage.screenshot(),image,'Backward seeking reproduces pose, video and camera');
  const end=plan.shots.at(-1);const frame=await stage.frame(end,1);
- assert.equal(frame.text,'E2A2OThink out loud. Build what you mean.Muse Spark · Muse Image · Muse Voice TranscribeExample project. Sequences shortened. One fault added for the demonstration. Narration AI-generated.');
+ assert.equal(frame.text,'E2A2OThink out loud. Build what you mean.Muse Spark · Muse Image · Muse Voice Transcribe');
  await writeFile(join(folder,'end.png'),await stage.screenshot());
 }finally {await stage.close();}
 console.log('PASS directed film: tilt entrance/settling, repeatable camera, end typography, stable ids, exact 150s/2250/4500 frames and chapter clocks.');
