@@ -10,6 +10,10 @@ E2A2O turns your words and sketches into a board of reusable parts. Capture a th
 
 <!-- Film link goes here. -->
 
+## Built during the hackathon
+
+Before the event there were only ideas and design notes, no app code. All application code in this repository was written during the Meta x Cerebral Valley hackathon, by the author with AI coding agents. Third-party dependencies keep their licences.
+
 ## Meta models
 
 | You… | Model | Code |
