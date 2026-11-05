@@ -26,8 +26,10 @@ impl Policy {
         let local = !self.hosted && link.from.ip().is_loopback() && link.to.ip().is_loopback();
         if path.starts_with("/code-canvas/") { return local && self.canvas; }
         if matches!(path, "/build-id" | "/build-activity" | "/bricks.html")
-            || path.starts_with("/workshop/") || path.starts_with("/crew/")
+            || path.starts_with("/workshop/")
         { return local && self.development; }
+        // Crew writes Git repositories on this machine: every local run has it, a hosted core doesn't.
+        if path.starts_with("/crew/") { return local; }
         // Vite's playground and component fixtures are never served by a hosted core.
         if path.starts_with("/src/") || path.starts_with("/__") { return false; }
         true

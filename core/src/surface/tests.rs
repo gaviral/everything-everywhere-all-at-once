@@ -8,8 +8,6 @@ const LOCAL_TOOLS: &[(&str, &str)] = &[
     ("GET", "/code-canvas/snapshot"), ("GET", "/code-canvas/events"), ("POST", "/code-canvas/answer"),
     ("GET", "/workshop/turns?name=Example"), ("GET", "/workshop/catalog"),
     ("POST", "/workshop/run"), ("GET", "/workshop/hackathon"),
-    ("POST", "/crew/plan"), ("POST", "/crew/build"),
-    ("POST", "/crew/merge"), ("POST", "/crew/promote"),
     ("GET", "/bricks.html"), ("GET", "/src/example.html"), ("GET", "/%73rc/example.html"),
     ("GET", "/bricks%2ehtml"), ("POST", "/__mechanics/release"),
 ];

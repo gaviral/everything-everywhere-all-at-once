@@ -30,7 +30,7 @@ Each run creates a Git repository, with a branch for each board component. Compo
 
 ## Follow the parts
 
-Open **Parts** to explore source files, functions and Git history from the local checkout. Features have individual rendering error boundaries. The recovery panel records rendering errors and lets you retry the affected feature.
+With `E2A2O_CODE_CANVAS=1` in `.env`, open **Parts** to explore source files, functions and Git history from the local checkout. Features have individual rendering error boundaries. The recovery panel records rendering errors and lets you retry the affected feature.
 
 [Source view](../core/src/code_canvas.rs) · [Source parts](../core/src/code_canvas/parts.rs) · [Feature boundary](../ui/src/bricks/self-heal/Boundary.tsx) · [Recovery log](../ui/src/bricks/self-heal/RecoveryLog.tsx)
 
@@ -38,7 +38,7 @@ Open **Parts** to explore source files, functions and Git history from the local
 
 Open **Features**, switch on **Pictures**, then choose **Show**. Muse Image draws pictures as topics settle. The sample maps include saved pictures.
 
-Ask to make an app from a watcher, an optional prompt and an output such as a card. In **Apps**, switch on **Argument resolver** or **Volume watcher** to use them; both start off. Configure connectors in [configuration](configuration.md).
+Ask to make an app from a watcher, an optional prompt and an output such as a card. In **Features**, switch on **Argument resolver** or **Volume watcher** to use them; both start off. Configure connectors in [configuration](configuration.md).
 
 [Topic pictures](../core/src/pictures.rs) · [App composition](../core/src/apps.rs) · [App blocks](../core/src/app_blocks/mod.rs)
 
