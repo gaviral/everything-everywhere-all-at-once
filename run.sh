@@ -32,6 +32,7 @@ node -e 'const [a, b] = process.versions.node.split(".").map(Number); process.ex
 core="$(node scripts/start.mjs --bundled-core)" || exit 1
 if [ -z "$core" ]; then
   command -v cargo >/dev/null 2>&1 || { echo "Rust is needed: https://rustup.rs (install it, open a new terminal, run this again)." >&2; exit 1; }
+  node scripts/start.mjs --check-toolchain || exit 1
   echo "Checking map storage (first source build can take several minutes)..."
 fi
 # Rust is authoritative; validate before keys, network checks or any runtime writes.

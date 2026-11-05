@@ -76,7 +76,7 @@ docker compose up --build --wait
 
 Open `http://localhost:8080/?sample`. The keyless sample is labelled SAMPLE; a named volume keeps edits across restarts. `docker compose down` stops the stack and retains that volume. Supply `MODEL_API_KEY` through the launching shell to enable live Meta calls, then rerun the launch command after changing or removing it. Compose passes the key to the core at runtime; keep it out of the image and build arguments.
 
-The runtime is non-root, without Node or Rust compilers. A relay shares the core's network namespace and publishes only host loopback port 8080, preserving the core's Host/Origin checks and WebSocket traffic. macOS automation, host CLI integrations and host audio devices are unavailable inside the container. Browser speech still depends on the computer opening the page.
+The runtime is non-root, without Node or Rust compilers. A relay shares the core's network namespace and publishes only host loopback port 8080, preserving the core's Host/Origin checks and WebSocket traffic. Crew and local development routes are disabled in hosted/container mode; use the local Crew launch described in the [README](../README.md#run-it). macOS automation, host CLI integrations and host audio devices are unavailable inside the container. Browser speech still depends on the computer opening the page.
 
 The image includes `/app/LICENSE`, `/app/THIRD_PARTY_NOTICES.md` and `/app/dependency-licences/`. The bundle's [documented gaps](../dependency-licences/UNRESOLVED.md) still require review before distributing affected components; including it is not release approval. On a Docker machine, verify the runtime and bundled notices with:
 

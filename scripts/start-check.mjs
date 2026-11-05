@@ -190,7 +190,9 @@ const sh = execFileSync("git", ["ls-files", "*.sh"], { cwd: root, encoding: "utf
 assert.ok(sh.includes("run.sh"));
 for (const line of execFileSync("git", ["check-attr", "eol", "--", ...sh], { cwd: root, encoding: "utf8" }).trim().split("\n"))
   assert.match(line, /: eol: lf$/, `${line}: a Windows checkout would give it CRLF line endings`);
-assert.match(readFileSync(join(root, "README.md"), "utf8"), /Linux and Windows are not validated here\./);
+const platformGuide = readFileSync(join(root, "README.md"), "utf8");
+assert.match(platformGuide, /Linux, Apple silicon and WSL2 have not been validated here\./);
+assert.match(platformGuide, /\*\*Windows:\*\* use WSL2 with the Linux prerequisites\./);
 
 // Run the real shell entry point in isolated trees, with only Node, basic file commands and harmless stubs.
 // No inherited credentials, developer tools or runtime data; even the sample is a tiny invented fixture.
