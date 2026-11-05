@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict';
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { standInCore, openPage, ready } from '../../../../scripts/headless.mjs';
 
 if (ready()) throw Error(ready());
+const screenshots = process.env.LIGHT_THEME_SHOTS || mkdtempSync(join(tmpdir(), 'e2a2o-glass-'));
+mkdirSync(screenshots, { recursive: true });
 const now = Date.now();
 const threads = ['Example · A place for ideas', 'The first conversation', 'What we carry forward'].map((title, i) => ({
   id: `T${i}`, title, parent_id: i === 2 ? 'T0' : null, status: 'open', last_point: '',
@@ -59,7 +63,7 @@ try {
   const png = Buffer.from(data, 'base64');
   assert.equal(png.readUInt32BE(16), 1920);
   assert.equal(png.readUInt32BE(20), 1080);
-  writeFileSync('docs/looks/glass.png', png);
+  writeFileSync(join(screenshots, 'glass.png'), png);
   await page('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-transparency', value: 'reduce' }] });
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('.shell-rail')).backdropFilter`), 'none', 'Reduce Transparency removes blur');
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('.shell-rail')).backgroundColor`), 'rgb(250, 245, 235)', 'Reduce Transparency uses opaque warm panels');
@@ -75,6 +79,7 @@ try {
   assert.equal(await evaluate('document.documentElement.dataset.lightTheme'), undefined, 'feature off removes Glass');
   assert.equal(await evaluate('getComputedStyle(document.documentElement).colorScheme'), 'dark', 'feature off restores the default system theme');
   console.log('PASS Glass: selection, unchanged geometry, reduced transparency, persistence, default restoration; 1920×1080 screenshot saved.');
+  console.log(`Screenshots saved to ${screenshots}.`);
 } finally {
   await browser?.close();
   await core.close();

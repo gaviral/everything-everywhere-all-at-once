@@ -78,4 +78,4 @@ A React and TypeScript board connects to a Rust core. The core holds the key and
 
 The app calls Meta models only, with no GPT runtime dependency. ChatGPT and Claude are supported import formats: imports send selected content to Meta without calling either service. Optional coding helpers use the built-in Meta runner; leave `HELPERS_CMD` unset for this runtime.
 
-[Prototype evidence and limits](docs/release-evidence.md) · [Architecture and parts](docs/ARCHITECTURE.md) · [Commands](docs/COMMANDS.md) · [Configuration](docs/configuration.md) · [Dependencies](THIRD_PARTY_NOTICES.md) · [MIT license](LICENSE)
+[Prototype scope](docs/ARCHITECTURE.md#prototype-scope) · [Architecture and parts](docs/ARCHITECTURE.md) · [Commands](docs/COMMANDS.md) · [Configuration](docs/configuration.md) · [Dependencies](THIRD_PARTY_NOTICES.md) · [MIT license](LICENSE)

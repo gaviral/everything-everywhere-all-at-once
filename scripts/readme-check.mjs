@@ -1,9 +1,8 @@
 // No extra dependencies: run with `node scripts/readme-check.mjs`.
 // What a judge reads first: a concrete pitch, a keyless sample and each Meta model with its job and source.
-// The film has a reserved link marker. The parts-list and historical trace checks remain independent.
+// The film has a reserved link marker. Source links and the architecture parts list must stay current.
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { excerpt, median, parse, shorten, summary, table, KEEP } from "./trace-summary.mjs";
 
 const root = new URL("..", import.meta.url).pathname;
 const read = (path) => readFileSync(root + path, "utf8");
@@ -88,53 +87,33 @@ for (const m of spelled.matchAll(/Muse (?:Voice Transcribe|Spark|Image)(?: [\d.]
   const id = m[0].toLowerCase().replace(/ /g, "-");
   assert.ok([...called].some((c) => c.startsWith(id)), `the first screen names ${m[0]}, which the core never calls`);
 }
-// The table links every advertised job to its implementation instead of a historical report.
-function checkModelRows(text) {
-  const rows = text.split("\n").filter((line) => /^\|.*\]\(core\/src\//.test(line));
-  const roles = [
-    ["asr", "Muse Voice Transcribe 1.0"],
-    ["placer", "Muse Spark 1.3 + 1.2"],
-    ["refiner", "Muse Spark 1.3"],
-    ["apps", "Muse Spark 1.3"],
-    ["recap", "Muse Spark 1.3"],
-    ["pictures", "Muse Image 1.0"],
-    ["clarify", "Muse Spark 1.3"],
-    ["draw", "Muse Spark 1.3 reads it; Muse Image 1.0 draws it back"],
-    ["crew", "Muse Spark 1.3"],
-    ["flow", "Muse Spark 1.3"],
-    ["spoken", "no model"],
-  ];
-  for (const [role, model] of roles) {
-    const row = rows.find((line) => line.includes(`(core/src/${role}.rs)`));
-    assert.ok(row, `the models table needs the ${role} job and source link`);
-    assert.equal(row.split("|")[2].trim(), model, `the ${role} job must name ${model}`);
-    assert.ok(existsSync(root + `core/src/${role}.rs`), `the ${role} source link must land`);
-  }
-  assert.match(rows.find((line) => line.includes("(core/src/spoken.rs)")), /where was I.*\| no model \|/i);
+// Each visible job names its model and links directly to the implementation.
+const ROLES = [
+  { job: "Speak", file: "asr.rs", model: "Muse Voice Transcribe 1.0" },
+  { job: "Finish a thought", file: "placer.rs", model: "Muse Spark 1.3 + 1.2" },
+  { job: "Pause", file: "refiner.rs", model: "Muse Spark 1.3" },
+  { job: "Request an app", file: "apps.rs", model: "Muse Spark 1.3" },
+  { job: "Ask for a recap", file: "recap.rs", model: "Muse Spark 1.3" },
+  { job: "Let a topic settle", file: "pictures.rs", model: "Muse Image 1.0" },
+  { job: "Ask about a word", file: "clarify.rs", model: "Muse Spark 1.3" },
+  { job: "Sketch an idea", file: "draw.rs", model: "Muse Spark 1.3 reads it; Muse Image 1.0 draws it back" },
+  { job: "Build board parts with Crew", file: "crew.rs", model: "Muse Spark 1.3" },
+  { job: "Transform text with Flow", file: "flow.rs", model: "Muse Spark 1.3" },
+  { job: "Ask “where was I?”", file: "spoken.rs", model: "no model" },
+];
+const modelRows = first.split("\n").filter((line) => /^\|/.test(line))
+  .map((line) => line.split("|").slice(1, -1).map((cell) => cell.trim()))
+  .filter((cells) => cells.some((cell) => cell.includes("](core/src/")));
+assert.equal(modelRows.length, ROLES.length, "the model table covers each job once");
+function checkModelRole({ job, file, model }) {
+  const row = modelRows.find((cells) => cells[0] === job);
+  assert.ok(row, `the model table has no job named ${job}`);
+  assert.equal(row.length, 3, `${job} shows its model and implementation`);
+  assert.equal(row[1], model, `${job} must name ${model}`);
+  assert.ok(row[2].includes(`](core/src/${file})`), `${job} must link to ${file}`);
+  assert.ok(existsSync(root + `core/src/${file}`), `${file} must exist`);
 }
-checkModelRows(first);
-
-// Historical reports remain scoped and aggregated in their own documents.
-const trace = read("docs/trace.md");
-assert.match(trace, /Historical synthetic report, not final-build validation/);
-for (const id of ["muse-spark-1.2", "muse-spark-1.3", "muse-image-1.0"]) {
-  assert.ok(trace.includes("`" + id + "`"), `docs/trace.md has no aggregate for ${id}`);
-}
-assert.ok(/"kind":"heard"|Voice turns heard: [1-9]/.test(trace), "docs/trace.md shows no turn heard by Voice Transcribe");
-assert.ok(!/MODEL_API_KEY=\S|Bearer |\/Users\/|\/home\//.test(trace), "docs/trace.md carries a key or a home path");
-
-// Keep the public proof to reviewed aggregates; raw request/answer excerpts belong outside submission docs.
-assert.doesNotMatch(trace, /```(?:json|jsonl)\b|"(?:sent|answer|raw|kept)"\s*:/,
-  "the public model report must omit raw transcripts, prompts and answers");
-assert.match(trace, /not an ancestor of verified main/);
-assert.match(trace, /not independently revalidated/);
-assert.match(trace, /Reported configuration:/);
-assert.match(trace, /Voice turns heard: 12/);
-assert.match(trace, /Placements: 8/);
-assert.match(trace, /Pictures saved: 4/);
-const evidenceScope = read("docs/release-evidence.md");
-assert.match(evidenceScope, /Hosted entry stays explicitly pending/);
-assert.match(evidenceScope, /Final selected build.*remain pending/);
+ROLES.forEach(checkModelRole);
 
 // Catch the stale claims that a source-list/link check alone used to accept.
 function boundedClaims(text) {
@@ -160,45 +139,13 @@ const sources = [
 const missing = sources.filter((f) => !new RegExp(`(^|[\\s(])${f.replace(/\./g, "\\.")}\\b`, "m").test(parts));
 assert.deepEqual(missing, [], `docs/ARCHITECTURE.md's parts list is missing ${missing.join(", ")}`);
 
-// The summary script: per feature and model, failures apart from times; heard, placements and pictures counted.
-const lines = parse([
-  { kind: "heard", raw: "hi", kept: "hi" },
-  { kind: "call", feature: "placer", model: "muse-spark-1.2-contributor", ms: 3000, sent: [{ role: "system", content: "x".repeat(900) }, { role: "user", content: "y".repeat(900) }], answer: "a".repeat(900), usage: { total_tokens: 9 } },
-  { kind: "call", feature: "placer", model: "muse-spark-1.2-contributor", ms: 2000, sent: [], answer: "{}" },
-  { kind: "call", feature: "placer", model: "muse-spark-1.2-contributor", ms: 12000, sent: [], error: "timed out" },
-  { kind: "placed" },
-  { kind: "call", feature: "other", model: "muse-spark-1.3", ms: 4000, sent: [{ role: "system", content: "Compose a small app from blocks" }], answer: "{}" },
-  { kind: "call", feature: "pictures", model: "muse-image-1.0", ms: 20000, sent: "a lighthouse", answer: { images: 1 } },
-  { kind: "picture" },
-].map((l) => JSON.stringify(l)).join("\n") + "\nnot json\n");
-const s = summary(lines);
-assert.deepEqual(s.calls.map((r) => [r.feature, r.calls, r.failed, r.median_ms, r.slowest_ms]),
-  [["placer", 3, 1, 2500, 3000], ["composer", 1, 0, 4000, 4000], ["pictures", 1, 0, 20000, 20000]]);
-assert.deepEqual([s.heard, s.placements, s.pictures], [1, 1, 1]);
-assert.match(table(s), /\| placer \| muse-spark-1\.2-contributor \| 3 \(1 failed\) \| 2\.5 s \| 3\.0 s \|/);
-// A median, not the lower middle: an even count averages the two middle values.
-assert.deepEqual([median([]), median([5]), median([3000, 2000]), median([4, 1, 3, 2]), median([9, 1, 5])], [null, 5, 2500, 2.5, 5]);
-const ex = excerpt(lines);
-assert.deepEqual(ex.map((e) => e.feature), ["placer", "composer", "pictures"]);
-assert.equal(ex[0].sent.characters, 1800);
-assert.ok(ex[0].sent.last.length <= KEEP + 1 && ex[0].answer.length <= KEEP + 1, "an excerpt keeps the whole prompt");
-assert.deepEqual(ex[2].answer, { images: 1 });
-assert.equal(shorten(lines[3]).error, "timed out");
-// A race's slower call is dropped, not failed: it counts apart and keeps out of the times.
-const raced = summary(parse([
-  { kind: "call", feature: "placer", model: "muse-spark-1.3", ms: 2000, sent: [], answer: "{}" },
-  { kind: "call", feature: "placer", model: "muse-spark-1.3", ms: 2000, sent: [], error: "dropped before its answer: another of the same call answered first" },
-].map((l) => JSON.stringify(l)).join("\n")));
-assert.deepEqual(raced.calls.map((r) => [r.calls, r.failed, r.dropped, r.median_ms]), [[2, 0, 1, 2000]]);
-assert.match(table(raced), /\| placer \| muse-spark-1\.3 \| 2 \(1 dropped\) \| 2\.0 s \| 2\.0 s \|/);
-
 // Nothing acts unasked (core/src/apps.rs `starts_on`): only Search-first starts on, and only in demo mode, so the
 // docs a judge reads must not say the Argument resolver or the Volume watcher run before they're switched on. Change
 // the rule and this fails until the docs say the new one.
 const rule = read("core/src/apps.rs").match(/^pub fn starts_on\([^)]*\) -> bool \{(.*)\}$/m);
 assert.ok(rule, "core/src/apps.rs has no starts_on");
 assert.equal(rule[1].trim(), "demo && matches!(watcher, Watcher::AppRequest {})", "seed defaults changed: update the docs below, then this line");
-for (const [doc, text] of [["README.md", readme], ["docs/trace.md", trace]]) {
+for (const [doc, text] of [["README.md", readme], ["docs/FEATURES.md", read("docs/FEATURES.md")]]) {
   assert.ok(!/seed[^.]*on by default|on by default[^.]*seed/i.test(text), `${doc} says seed apps are on by default`);
   for (const sentence of text.split(/(?<=\.)\s+/).filter((t) => /Argument resolver/.test(t) && /seed/i.test(t)))
     assert.ok(/start(s)? off/.test(sentence) || !/runs|plays|fires/.test(sentence), `${doc} says a seed runs without saying it starts off: ${sentence.slice(0, 120)}`);
@@ -206,6 +153,5 @@ for (const [doc, text] of [["README.md", readme], ["docs/trace.md", trace]]) {
 for (const text of [readme, features])
   assert.match(text, /In \*\*Apps\*\*, switch on \*\*Argument resolver\*\* or \*\*Volume watcher\*\*[^.]*; both start off/,
     "the app route must explain that the Argument resolver and Volume watcher start off");
-assert.match(trace, /Argument resolver, a seeded app, starts off/, "docs/trace.md doesn't say the Argument resolver starts off");
 
 console.log(`readme-check: OK (first screen ${words.length} words, ${images.length} images, ${sources.length} source files listed)`);
