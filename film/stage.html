@@ -35,12 +35,14 @@
 <main id="stage" aria-label="Film frame"><div id="scene"><div id="camera"></div></div><div class="label" hidden></div><div class="caption" hidden></div></main>
 <script type="module">
   import { createWall, drawWall, paintWall } from './wall.mjs';
+  import { createTitleMorph } from './title-morph.mjs';
   const stage = document.querySelector('#stage');
   const camera = document.querySelector('#camera');
   let active = null;
   let videos = [];
   let wallTiles = [];
   let planes = [];
+  let titleMorph = null;
   const lerp = (a, b, t) => a + (b - a) * t;
   const ease = t => t * t * (3 - 2 * t);
   const array = value => Array.isArray(value) ? value : [value];
@@ -89,7 +91,7 @@
   }
   async function mount(shot) {
     videos.forEach(({ video }) => { video.pause(); video.removeAttribute('src'); video.load(); });
-    videos = []; wallTiles = []; planes = []; camera.replaceChildren();
+    videos = []; wallTiles = []; planes = []; titleMorph = null; camera.replaceChildren();
     stage.querySelector('.wall-caption')?.remove();
     stage.querySelector('.wall-opening')?.remove();
     camera.style.opacity = '1'; camera.style.transformOrigin = '50% 50%';
@@ -101,6 +103,7 @@
     stage.style.background = background(shot.background ?? (shot.kind === 'card' || shot.kind === 'list' ? shot.colour ?? '#0866FF' : shot.kind === 'end' ? '#ffffff' : shot.kind === 'wall' ? '#000000' : '#08090c'));
     stage.style.color = shot.kind === 'end' ? '#08090c' : '#ffffff';
     if (isText) textPlate('');
+    if (shot.kind === 'titlemorph') { titleMorph = await createTitleMorph(shot, camera); stage.style.background = titleMorph.background; }
     if (shot.kind === 'end') {
       const plate = textPlate('', 'type endplate');
       const lockup = document.createElement('div'); lockup.className = 'lockup';
@@ -147,6 +150,7 @@
       camera.firstChild.textContent = values[Math.min(values.length - 1, Math.floor(progress * values.length))];
     }
     if (shot.kind === 'card') camera.firstChild.textContent = shot.word;
+    titleMorph?.draw(local);
     if (shot.kind === 'list') camera.firstChild.textContent = shot.names[Math.min(shot.names.length - 1, Math.floor((local + 1e-8) / shot.seconds))];
     const tilts = planes.map(plane => posePlane(plane, local));
     const wall = shot.kind === 'wall' ? drawWall(shot, local, camera, wallTiles) : null;
