@@ -1,0 +1,8 @@
+{
+  "id": "gaze-focus",
+  "name": "Gaze focus",
+  "does": "Softly follow a coarse gaze estimate and send a thought with its focus context.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": true
+}
