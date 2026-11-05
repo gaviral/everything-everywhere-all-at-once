@@ -3,7 +3,6 @@ import { useDevBuild } from "./dev-build";
 import "./capture-in-place.css";
 import "./flow-layout.css";
 import { CaptureContext } from "./bricks/spine/capture";
-import { micWords } from "./shell/Shell";
 import { ReplyFormat, FormattedReply } from "./ReplyFormat";
 import { answerSourceState } from "./core";
 import { AgreementContext } from "./bricks/spine/nodes";
@@ -63,7 +62,7 @@ import { isUndoKey, micNotice, micStopped, staysUp, undoKeyGoesTo, undoKeyLabel,
 const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 import { emptyLine, liveLine, showsLiveLine } from "./ux-rules";
 import { heldOpen, mapQuery, RANK_LIMIT, searchFields, searchMatches, steady } from "./search-rules";
-import { composerHint, MIC_OFFLINE, MicButton, micEnds, micState } from "./MicButton";
+import { composerHint, MIC_OFFLINE, MicCorner, micEnds, micState } from "./MicButton";
 import { Symbols } from "./Symbols";
 import { useOnScreen } from "./onscreen";
 import { keyWords, modelsLine, moreSamples, useSite } from "./site";
@@ -617,6 +616,7 @@ export default function App() {
   // which must be the browser's own, never a script's; a caller without one (a brick's listen, the Keys brick's ⌘D)
   // still meets mic.ts's check that a click or key press is under way in this tab.
   const [keyHelp, setKeyHelp] = useState(false);
+  const [micRefusal, setMicRefusal] = useState("");
   const toggleMic = async (event?: { isTrusted: boolean }) => {
     if (!listeningOn && !liveStop.current && !micStart.current) return;
     if (event && !event.isTrusted) return;
@@ -630,10 +630,11 @@ export default function App() {
       core.listen(false);
       return;
     }
+    setMicRefusal("");
     // Without a key the core can't listen: say so, without asking the browser for the microphone first.
     if (core.noKey) {
       setKeyHelp(true);
-      core.showNotice(core.keyNotice);
+      setMicRefusal(core.resting ? "Free tries return tomorrow." : "Listening needs AI setup.");
       return;
     }
     if (voicePolicy.snapshot().enabled) cancelPageReply();
@@ -682,7 +683,7 @@ export default function App() {
       setMicFailed(true);
       const failed = micFailure(err, micPlace());
       if (failed.blocked) setMicBlocked(failed.blocked);
-      core.showNotice(failed.words);
+      setMicRefusal(failed.blocked ? "Microphone blocked. Allow access in settings." : "Microphone unavailable. Tap to retry.");
     } finally {
       if (micStart.current === attempt) {
         micStart.current = null;
@@ -1813,11 +1814,11 @@ export default function App() {
               placeholder={composerHint(mic)}
               aria-label="Type a thought"
             />
-            <ModelLine hearing={!!core.partial} hidden={!!draft} />
-            {listeningOn && <MicButton state={mic} capturing={!!stopMic} disabled={!core.connected && !stopMic && !startingMic} onClick={toggleMic} />}
           </form>
+          <ModelLine hearing={!!core.partial} hidden={!!draft} />
         </div>
       </section>
+      {listeningOn && <MicCorner state={mic} capturing={!!stopMic} disabled={!core.connected && !stopMic && !startingMic} onClick={toggleMic} shortcut={modAria("D")} note={micRefusal} />}
       {!talk && core.snapshotRevision > 0 && <Tour populated={world.threads.length > 0} noKey={core.noKey} resting={core.resting} />}
       <BrickSlot kind="panel" host={brickHost} />
       {!talk && <TalkRail host={brickHost} />}
@@ -1853,8 +1854,6 @@ export default function App() {
 
   // The shell (the default, shell/): four corners, the stage, the status line, the rail.
   const empty = world.threads.length === 0;
-  // The first open's composer: a bigger mic and "Tap to talk", until the first tap or the first thought.
-  const big = listeningOn && !world.thoughts.length && !stopMic && !startingMic && !draft;
   const stalled = pending.find((t) => core.placing.retryAt[t.id] !== undefined) ?? (core.noKey || core.keyRefused || core.resting ? pending[0] : undefined);
   const aiNames = new Set(world.ai ?? []);
   const findResults = search ? [...matches].slice(0, 6).map((id) => threadById.get(id)).filter((t): t is Thread => !!t)
@@ -1891,11 +1890,7 @@ export default function App() {
   if (pluginsOn) tabs.push("plugins");
   const canvasVisible = canvasTools || talk || !(view === "palace" || view === "cards" || (viewBrick && viewBrick.info.id !== "spine"));
   const captureInPlace = canvasVisible && !canvasTools && !talk && !brickHost.map.terse && !brickHost.map.conversationSpine && !brickHost.map.comparePhoneReading;
-  const captureState = { mic, comparison: policy.enabled, typingOnly: !listeningOn, hosted: site.hosted, since: micSince, now, call: inCall,
-    first: !world.thoughts.length, waiting: pending.length, stalled: "", queued: core.queuedCount, connected: core.connected };
-  const captureMic = micWords(captureState);
-  const shellMic = listeningOn && <MicButton state={mic} capturing={!!stopMic} disabled={!core.connected && !stopMic && !startingMic} onClick={toggleMic} shortcut={modAria("D")} />;
-  const captureSurface = captureInPlace ? { host: toolSlots.composer, micText: captureMic.text, words: core.partial || core.handoff || "", draft: !!draft,
+  const captureSurface = captureInPlace ? { host: toolSlots.composer, words: core.partial || core.handoff || "", draft: !!draft,
     rows: captures.map(capture => ({ id: capture.id, text: capture.text, thoughtIds: capture.thought_ids,
       waiting: waitingCaptures.some(row => row.id === capture.id), status: captureLabel(capture), saved: capture.saved,
       retry: !capture.receivedOnly && (!capture.saved || captureLabel(capture).includes("placement failed")) ? () => core.retryCapture(capture.id) : undefined })) } : null;
@@ -1918,15 +1913,11 @@ export default function App() {
       if (hasAway && !target.closest(".away") && target.closest("button, a, summary")) away.dismiss();
     }} onChangeCapture={() => { if (hasAway) away.dismiss(); }}>
       <a className="skip-link" href={`#${COMPOSER_ID}`} onClick={(event) => { event.preventDefault(); if (canvasTools) focusTool("composer"); else composerRef.current?.focus(); }}>Skip to Type a thought</a>
-      {createPortal(<><form className={big ? "shell-composer shell-composer-big" : "shell-composer"} onSubmit={submit} data-guide="composer">
-          {captureInPlace && shellMic ? <span className="map-capture-mic">{shellMic}<span>{captureMic.text}</span></span> : shellMic}
-          {captureInPlace && !listeningOn && <span className="map-capture-mic">{captureMic.text}</span>}
-          {big && <span className="shell-composer-label">{NAMES.composer.firstTap}</span>}
+      {createPortal(<><form className="shell-composer" onSubmit={submit} data-guide="composer">
           <textarea rows={1} id={COMPOSER_ID} ref={composerRef} value={draft} onKeyDown={submitOnEnter} enterKeyHint="send"
             style={{ height: "1.466667em", maxHeight: "1.466667em", lineHeight: "1.466667em" }}
             onChange={(e) => { typedSinceSend.current = true; setDraft(e.target.value); }}
-            placeholder={captureInPlace ? "Type a thought, or tap the mic" : big ? NAMES.composer.firstType : inCall ? NAMES.composer.call : NAMES.composer.idle} aria-label="Type a thought" aria-keyshortcuts="Enter" />
-          {captureInPlace ? <span className="map-capture-hint">Enter adds</span> : listeningOn && <Keycap>{mod("D")}</Keycap>}
+            placeholder={inCall ? NAMES.composer.call : NAMES.composer.idle} aria-label="Type a thought" aria-keyshortcuts="Enter" />
           {captureInPlace && core.noKey && <button type="button" className="shell-link map-capture-setup" aria-keyshortcuts="Enter" onClick={() => setKeyHelp(true)}>Typed thoughts save · Set up AI</button>}
           {captureInPlace && empty && site.sample && !draft && !stopMic && !startingMic && <button type="button" className="shell-link map-capture-example" aria-keyshortcuts="E" onClick={() => loadSample()} disabled={!core.connected || waitingCaptures.length > 0}>See an example</button>}
           {captureInPlace && captures.at(-1)?.saved && !draft && <span className="map-capture-saved" data-saved-id={captures.at(-1)?.id}>Saved</span>}
@@ -2094,6 +2085,7 @@ export default function App() {
       </StatusLine>
       </footer>
 
+      {listeningOn && <MicCorner state={mic} capturing={!!stopMic} disabled={!core.connected && !stopMic && !startingMic} onClick={toggleMic} shortcut={modAria("D")} note={micRefusal} />}
       <div className="shell-corner shell-br" data-slot="bottom-right">
         <HeldStack phone={phone} answerFallback={() => composerRef.current?.focus()} />
       </div>
