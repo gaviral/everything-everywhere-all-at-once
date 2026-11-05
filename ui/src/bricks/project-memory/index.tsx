@@ -32,9 +32,9 @@ function MemoryIntroduction({ index }: { index: MemoryIndex }) {
 }
 
 function ReceiptNotice() {
-  return <aside className="project-memory-receipt" aria-label="Canvas receipt status">
+  return <aside className="project-memory-receipt" aria-label="Venue confirmation status">
     <span className="project-memory-receipt-mark" aria-hidden="true">?</span>
-    <div><strong>Canvas lane: recover the original receipt first.</strong><p>Brief reference: Inbox Wed 14:0x. The receipt was not supplied; the DAG names no owner. No replacement is assigned here.</p></div>
+    <div><strong>Venue plan: recover the original receipt first.</strong><p>The example plan has no booking confirmation. Confirm the venue and coordinator before assigning the next task.</p></div>
     <span className="project-memory-receipt-tag">Owner unverified</span>
   </aside>;
 }
@@ -80,7 +80,7 @@ function RecordDetail({ record, index, choose, prefix, headingRef }: { record: M
       {sources.map((source, position) => <SourceExcerpt key={`${record.id}-${source.id}`} source={source} anchor={`${prefix}-${source.id}`} initiallyOpen={position === 0} />)}
     </section>
     {related.length > 0 && <section className="project-memory-related" aria-label="Connected records"><h3>Connected to this</h3>{related.map(item => <button key={item.id} type="button" onClick={() => choose(item.id)}><span>{kindLabels[item.kind]}</span>{item.title} <b aria-hidden="true">↗</b></button>)}</section>}
-    <p className="project-memory-footnote">{index.example ? "Example excerpts, not original Inbox receipts." : "Only explicitly supplied public sources are shown."} Reading here changes no project records.</p>
+    <p className="project-memory-footnote">{index.example ? "Example workshop planning records." : "Only explicitly supplied public sources are shown."} Reading here changes no project records.</p>
   </article>;
 }
 

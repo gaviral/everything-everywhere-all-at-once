@@ -125,7 +125,7 @@ mod tests {
         std::fs::create_dir(&dir).unwrap();
         let path = dir.join("usage.json");
         let sample = json!({"updated":"2026-11-03T14:40:00Z", "rows":[
-            {"label":"Claude weekly", "used_pct":67.0}, {"label":"ChatGPT", "left":"25 messages"},
+            {"label":"Weekly plan", "used_pct":67.0}, {"label":"Chat plan", "left":"25 messages"},
             {"label":"Meta API", "spent_usd":12.3, "cap_usd":100.0}, {"label":"Muse", "left":"10 credits"}
         ]});
         std::fs::write(&path, sample.to_string()).unwrap();
@@ -142,7 +142,7 @@ mod tests {
         let mut updates = core.updates.subscribe();
         let task = tokio::spawn(run(core.clone()));
         tokio::task::yield_now().await;
-        std::fs::write(&path, r#"{"updated":"2026-11-03T14:41:00Z","rows":[{"label":"Claude weekly","used_pct":68}]}"#).unwrap();
+        std::fs::write(&path, r#"{"updated":"2026-11-03T14:41:00Z","rows":[{"label":"Weekly plan","used_pct":68}]}"#).unwrap();
         tokio::time::advance(Duration::from_secs(59)).await;
         assert!(updates.try_recv().is_err(), "no polling before the minute ends");
         tokio::time::advance(Duration::from_secs(1)).await;

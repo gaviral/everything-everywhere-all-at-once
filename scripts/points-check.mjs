@@ -26,10 +26,10 @@ const world = {
   merged: {}, apps: [], apps_seeded: true, recaps: [], notes: {}, proposals: [],
 };
 // Then a thought arrives (its pending pill), lands in a new branch under Stats, and that branch becomes active.
-const said = thought("d", "Study with Priya on Wednesday night", "T3", false);
+const said = thought("d", "Study with Partner on Wednesday night", "T3", false);
 const later = [
   [{ type: "thought_added", thought: said }, 1500],
-  [{ type: "thread_added", thread: thread("T4", "Study With Priya", "T3") }, 0],
+  [{ type: "thread_added", thread: thread("T4", "Study With Partner", "T3") }, 0],
   [{ type: "thought_placed", thought_id: "d", thread_id: "T4", point: said.text, unclear: "", guess: "", heard: "", fixed: "", complete: true, place_ms: 3100 }, 0],
   [{ type: "thread_touched", thread_id: "T4", last_point: said.text, at_ms: now }, 0],
   [{ type: "active_changed", thread_id: "T4", speaker: "you" }, 1500],

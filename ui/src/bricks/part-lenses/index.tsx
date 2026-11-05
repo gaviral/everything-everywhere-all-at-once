@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import type { BrickProps } from '../contract';
 import { usePluginState } from '../contract';
-import { resolvePart } from '../../msg1351/part-dimensions/PartReference';
+import { resolvePart } from '../../features/part-dimensions/PartReference';
 import { exampleTree } from './example';
 import { explainPart, nameOf, readTree, type Lens, type PartTree } from './tree';
 import { PartBreadcrumbs, PartPicker } from './PartPicker';

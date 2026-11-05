@@ -174,7 +174,7 @@ fn journal_save_failure_commit_batch_reports_once_and_rejects_unsaved_changes() 
             assert!(save_failure_updates(&mut second_window).is_empty());
             if failing {
                 assert_eq!(std::fs::read_to_string(&f.path).unwrap(), before);
-                let change = Change::ActiveChanged { thread_id: "T2".into(), speaker: "Sam".into() };
+                let change = Change::ActiveChanged { thread_id: "T2".into(), speaker: "Colleague".into() };
                 f.core.commit(vec![change.clone()]);
                 for updates in [&mut first_window, &mut second_window] {
                     assert!(save_failure_updates(updates).is_empty(), "failed changes are not broadcast, and the warning is throttled");
@@ -214,7 +214,7 @@ fn journal_save_failure_record_throttles_notices_to_every_window() {
             let mut first_window = f.core.updates.subscribe();
             let mut second_window = f.core.updates.subscribe();
             for off in [true, false] {
-                let change = Change::AnswerMarked { kind: "explain".into(), id: "answer".into(), off, speaker: "Sam".into(), at_ms: 3 };
+                let change = Change::AnswerMarked { kind: "explain".into(), id: "answer".into(), off, speaker: "Colleague".into(), at_ms: 3 };
                 f.core.record(change);
                 let wanted = if failing && off { vec![save_failure_notice()] } else { vec![] };
                 assert_eq!(save_failure_updates(&mut first_window), wanted);
@@ -243,7 +243,7 @@ fn journal_save_failure_positions_report_immediate_and_held_writes_without_chang
             let mut first_window = f.core.updates.subscribe();
             let mut second_window = f.core.updates.subscribe();
             for x in [1.0, 2.0, 3.0] {
-                assert_eq!(crate::positions::set(&f.core, "Sam", "T1", Some(x), Some(-x)), Ok(()));
+                assert_eq!(crate::positions::set(&f.core, "Colleague", "T1", Some(x), Some(-x)), Ok(()));
                 let sent = save_failure_updates(&mut first_window);
                 assert_eq!(sent, save_failure_updates(&mut second_window));
                 let mut wanted = Vec::new();
@@ -252,7 +252,7 @@ fn journal_save_failure_positions_report_immediate_and_held_writes_without_chang
                 }
                 let at_ms = f.core.snapshot().positions["T1"].at_ms;
                 wanted.push(serde_json::json!({ "to": null, "message": { "type": "change", "change":
-                    { "type": "positioned", "id": "T1", "x": x, "y": -x, "by": "Sam", "at_ms": at_ms } } }));
+                    { "type": "positioned", "id": "T1", "x": x, "y": -x, "by": "Colleague", "at_ms": at_ms } } }));
                 assert_eq!(sent, wanted, "only the first step writes immediately; held steps still reach every window");
             }
             // Existing restart helper drives the delayed write through positions::write while all three locks
@@ -310,8 +310,8 @@ fn journal_save_failure_shared_gate_reopens_at_ten_seconds() {
         let before = std::fs::read_to_string(&f.path).unwrap();
         let mut first_window = f.core.updates.subscribe();
         let mut second_window = f.core.updates.subscribe();
-        let change = Change::ActiveChanged { thread_id: "T1".into(), speaker: "Sam".into() };
-        let mark = Change::AnswerMarked { kind: "explain".into(), id: "answer".into(), off: true, speaker: "Sam".into(), at_ms: 3 };
+        let change = Change::ActiveChanged { thread_id: "T1".into(), speaker: "Colleague".into() };
+        let mark = Change::AnswerMarked { kind: "explain".into(), id: "answer".into(), off: true, speaker: "Colleague".into(), at_ms: 3 };
         let started = Instant::now();
         f.core.commit(vec![change.clone()]);
         let wanted = vec![save_failure_notice()];
@@ -323,9 +323,9 @@ fn journal_save_failure_shared_gate_reopens_at_ten_seconds() {
             advance(elapsed).await;
             f.core.record(mark.clone());
             f.core.commit(vec![change.clone()]);
-            crate::positions::set(&f.core, "Sam", "T1", Some(x), Some(-x)).unwrap();
+            crate::positions::set(&f.core, "Colleague", "T1", Some(x), Some(-x)).unwrap();
             let first = f.core.snapshot().positions["T1"].clone();
-            crate::positions::set(&f.core, "Sam", "T1", Some(x + 1.0), Some(-x - 1.0)).unwrap();
+            crate::positions::set(&f.core, "Colleague", "T1", Some(x + 1.0), Some(-x - 1.0)).unwrap();
             let held = f.core.snapshot().positions["T1"].clone();
             crate::positions::flush_all(&f.core);
             let wanted = vec![
@@ -338,7 +338,7 @@ fn journal_save_failure_shared_gate_reopens_at_ten_seconds() {
             assert_eq!(save_failure_updates(&mut second_window), wanted);
         }
         assert_eq!(Instant::now() - started, Duration::from_secs(10) - Duration::from_nanos(1));
-        crate::positions::set(&f.core, "Sam", "T1", Some(5.0), Some(-5.0)).unwrap();
+        crate::positions::set(&f.core, "Colleague", "T1", Some(5.0), Some(-5.0)).unwrap();
         assert_eq!(save_failure_updates(&mut first_window), save_failure_updates(&mut second_window));
         advance(Duration::from_nanos(1)).await;
         assert_eq!(Instant::now() - started, Duration::from_secs(10));
@@ -355,7 +355,7 @@ fn journal_save_failure_shared_gate_reopens_at_ten_seconds() {
         assert_eq!(save_failure_updates(&mut first_window), vec![save_failure_notice()]);
         assert_eq!(save_failure_updates(&mut second_window), vec![save_failure_notice()]);
         assert_eq!(f.core.snapshot().positions["T1"].x, 5.0);
-        assert!(!f.core.snapshot().active_by.contains_key("Sam"), "failed active changes never take effect");
+        assert!(!f.core.snapshot().active_by.contains_key("Colleague"), "failed active changes never take effect");
         assert_eq!(std::fs::read_to_string(&f.path).unwrap(), before);
     });
 }
@@ -367,7 +367,7 @@ fn journal_save_failure_gate_is_per_core() {
         let second = SaveFailureFixture::new(true);
         let mut first_window = first.core.updates.subscribe();
         let mut second_window = second.core.updates.subscribe();
-        let mark = Change::AnswerMarked { kind: "explain".into(), id: "answer".into(), off: true, speaker: "Sam".into(), at_ms: 3 };
+        let mark = Change::AnswerMarked { kind: "explain".into(), id: "answer".into(), off: true, speaker: "Colleague".into(), at_ms: 3 };
         first.core.record(mark.clone());
         tokio::time::advance(std::time::Duration::from_secs(5)).await;
         second.core.record(mark.clone());

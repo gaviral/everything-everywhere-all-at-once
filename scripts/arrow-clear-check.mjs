@@ -29,9 +29,9 @@ const world = {
     thread("T3", "Group project meeting"), thread("T4", "Mom's birthday")],
   thoughts: [
     thought("a1", "Deadline tomorrow 9 PM, need to record demo", "T1"), thought("a2", "Repo ready, precheck passes, README not done", "T1"),
-    thought("a3", "Write README before recording", "T1"), thought("a4", "Priority: README, record, submit; rent now; text Priya", "T1"),
+    thought("a3", "Write README before recording", "T1"), thought("a4", "Priority: README, record, submit; rent now; text Partner", "T1"),
     thought("b1", "Rent due on the 1st", "T2"), thought("b2", "It's already the 3rd so it's technically late, I need to do it right now before they charge a fee", "T2"),
-    thought("c1", "Group presentation Wednesday, Priya's slides missing", "T3"), thought("c2", "Text Priya tonight, check Marcus's data section", "T3"),
+    thought("c1", "Group presentation Wednesday, Partner's slides missing", "T3"), thought("c2", "Text Partner tonight, check Marcus's data section", "T3"),
     thought("d1", "Mom's birthday is Saturday", "T4"),
   ],
   active: "T1", active_by: { you: "T1" }, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: true, recaps: [], notes: {}, proposals: [], ai: ["AI helper"],

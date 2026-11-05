@@ -172,13 +172,13 @@ async function contractRules(server) {
   const yours = (id, text, at_ms = 5, speaker = "you") => ({ id, speaker, text, placed: false, thread_id: null, at_ms });
   const sent = senders();
   sent.see([], "you", 0, 1);
-  sent.sent("Ask Priya  about the slides", template, 1000);
-  sent.see([yours("t1", "Ask Priya about the slides")], "you", 1500, 1);
+  sent.sent("Ask Partner  about the slides", template, 1000);
+  sent.see([yours("t1", "Ask Partner about the slides")], "you", 1500, 1);
   assert.equal(sent.by("t1"), template, "a brick's thought is that brick's");
-  sent.see([yours("t1", "Ask Priya"), yours("t2", "about the slides")], "you", 1600, 1);
+  sent.see([yours("t1", "Ask Partner"), yours("t2", "about the slides")], "you", 1600, 1);
   assert.equal(sent.by("t2"), template, "and so is the rest the placer cut off");
   sent.sent("Water the plants", template, 2000);
-  sent.see([yours("t1", "Ask Priya"), yours("t2", "about the slides"), yours("t3", "Water the plants", 9, "Sam")], "you", 2100, 1);
+  sent.see([yours("t1", "Ask Partner"), yours("t2", "about the slides"), yours("t3", "Water the plants", 9, "Colleague")], "you", 2100, 1);
   assert.equal(sent.by("t3"), undefined, "someone else's words aren't the brick's");
   sent.see([yours("t4", "Water the plants", 10)], "you", 2000 + 61_000, 1);
   assert.equal(sent.by("t4"), undefined, "yours a minute later aren't");
@@ -235,15 +235,15 @@ function sourceProblems(dir, file, text) {
     if (dir === join(bricksDir, "spine") && ["../../StayHere", "../live-outline/outline"].includes(spec)) continue;
     // Optional example wrappers compose only their designated, bundled feature part.
     const exampleParts = {
-      clarification: "msg1351/clarification", "demo-variants": "msg1351/demo-variants",
-      "dictation-breakdown": "msg1351/dictation-breakdown", "part-dimensions": "msg1351/part-dimensions",
-      "sketch-exchange": "msg1351/sketch-exchange", "workflow-inspector": "msg1351/workflow-inspector",
-      "demo-parts": "intake1411/demo-parts", "live-area": "intake1411/live-area",
-      "pen-devices": "intake1411/pen-devices", "reload-session": "intake1411/reload-session",
-      "sketch-labels": "intake1411/sketch-labels", "worktree-map": "intake1411/worktree-map",
-      "dependency-sequences": "intake1417/dependency-sequences", "machine-demo": "intake1417/machine-demo",
-      "native-receipts": "intake1417/native-receipts", "populated-variants": "intake1417/populated-variants",
-      "research-walkthrough": "msg1351/research-walkthrough",
+      clarification: "features/clarification", "demo-variants": "features/demo-variants",
+      "dictation-breakdown": "features/dictation-breakdown", "part-dimensions": "features/part-dimensions",
+      "sketch-exchange": "features/sketch-exchange", "workflow-inspector": "features/workflow-inspector",
+      "demo-parts": "features/demo-parts", "live-area": "features/live-area",
+      "pen-devices": "features/pen-devices", "reload-session": "features/reload-session",
+      "sketch-labels": "features/sketch-labels", "worktree-map": "features/worktree-map",
+      "dependency-sequences": "features/dependency-sequences", "machine-demo": "features/machine-demo",
+      "native-receipts": "features/native-receipts", "populated-variants": "features/populated-variants",
+      "research-walkthrough": "features/research-walkthrough",
     };
     const part = exampleParts[dir.split("/").at(-1)];
     if (part && (spec === "../../" + part || spec.startsWith("../../" + part + "/")) && !spec.split("/").slice(2).includes("..")) continue;
@@ -352,7 +352,7 @@ const thought = (id, text, thread_id) => ({ id, speaker: "you", text, point: tex
 const app = (id, name, watcher, enabled) => ({ id, name, purpose: `${name}.`, watcher, prompt: null, publishers: [{ kind: "card", text: "" }], enabled, request: "", cooldown_secs: 60, created_ms: 0, last_run_ms: 0 });
 const seeds = [app("app-argument", "Argument resolver", { kind: "new_thought", min_points: 2 }, false), app("app-volume", "Volume watcher", { kind: "volume", level: 0.087, seconds: 3 }, false),
   app("app-search", "Search-first", { kind: "app_request" }, true)];
-const titles = ["Rent due Friday", "Garden plans", "Trip to Lisbon", "Pottery class", "Mia's birthday"];
+const titles = ["Rent due Friday", "Garden plans", "Trip to Lisbon", "Pottery class", "Recipient's birthday"];
 const world = (threads) => ({ threads, thoughts: threads.flatMap((t, i) => Array.from({ length: i + 1 }, (_, n) => thought(`${t.id}-${n}`, `${t.title}, point ${n + 1}`, t.id))),
   active: threads[0]?.id ?? null, active_by: threads[0] ? { you: threads[0].id } : {}, suggestions: [], actions: [], merged: {}, apps: seeds, apps_seeded: true, recaps: [], notes: {}, proposals: [] });
 const full = world([...titles.map((title, i) => thread(`T${i + 1}`, title)), thread("T6", "Garden soil", { parent_id: "T2" })]);
@@ -408,7 +408,7 @@ try {
       if (!await until(`!document.querySelector(".notice-timeline-panel") && document.activeElement === document.querySelector(".notice-timeline-clock")`, 2000)) fail(where, "Esc doesn't close the list, focus back on the clock");
       for (let i = 0; i < 55; i++) core.send({ type: "notice", message: `Kept ${i}` });
       await until(`document.querySelector(".notice > span")?.textContent === "Kept 54"`, 3000);
-      ask(`ask-other-${label}`, "Sam");
+      ask(`ask-other-${label}`, "Colleague");
       await settle();
       if (await evaluate(`!!document.querySelector(".notice-timeline-panel")`)) fail(where, "someone else's ask opens your list");
       ask(`ask-again-${label}`);
@@ -937,7 +937,7 @@ try {
     if (JSON.stringify((await heard("asked"))[0]) !== '{"what":"notices"}') fail(where, "asked isn't heard as { what: \"notices\" }");
     // speaking: someone in the call takes the floor, then gives it back; never their words.
     await press("Someone speaks");
-    if (JSON.stringify((await heard("speaking"))[0]) !== '{"speaker":"Maya","on":true,"mine":false}') fail(where, "speaking isn't heard as Maya taking the floor");
+    if (JSON.stringify((await heard("speaking"))[0]) !== '{"speaker":"Designer","on":true,"mine":false}') fail(where, "speaking isn't heard as Designer taking the floor");
     if (!await until(`document.querySelector('.playground-heard li[data-event="speaking"]')?.textContent.includes('"on":false')`, 3000)) fail(where, "speaking isn't heard as the floor given back");
     // annotate: a note on the words starts it, the same words again answer in it, other words start another; a point
     // that isn't on the map is refused.
@@ -1514,7 +1514,7 @@ try {
       {
         const previousSwitches = await evaluate(`localStorage.getItem("e2a2o.bricks")`);
         await evaluate(`localStorage.setItem("e2a2o.bricks", JSON.stringify({ spine: true }))`);
-        // T1's one point is "Rent due Friday, point 1": Sam asks about "Friday" (unanswered), you asked about "Rent due", and Sam's
+        // T1's one point is "Rent due Friday, point 1": Colleague asks about "Friday" (unanswered), you asked about "Rent due", and Colleague's
         // question on "point 1" is answered.
         const quoted = { N1: "Friday", N2: "Rent due", N3: "point 1" };
         // Persisted valid notes carry the actual immutable source revision/range.
@@ -1529,7 +1529,7 @@ try {
         };
         const said = (id, by, text, after) => ({ ...thought(id, text, id.split("-")[0]), speaker: by, at_ms: now + after });
         shown = { ...full, threads: [...full.threads, ...Object.entries(quoted).map(([id, quote]) => thread(id, quote, { parent_id: "T1" }))],
-          thoughts: [...full.thoughts, said("N1-0", "Sam", "Which Friday?", 10), said("N2-0", "you", "Is it paid?", 11), said("N3-0", "Sam", "Which one?", 12), said("N3-1", "you", "The first", 13)],
+          thoughts: [...full.thoughts, said("N1-0", "Colleague", "Which Friday?", 10), said("N2-0", "you", "Is it paid?", 11), said("N3-0", "Colleague", "Which one?", 12), said("N3-1", "you", "The first", 13)],
           anchors: Object.fromEntries(Object.entries(quoted).map(([id, quote]) => [id, anchored(quote)])) };
         const openSpine = async () => {
           await go(`${base}/?cards`);
@@ -1596,7 +1596,7 @@ try {
         }
         // Legacy repeated words remain unresolved: never guess the first occurrence.
         shown = { ...shown, threads: [...shown.threads, thread("L1", "Legacy question", { parent_id: "T1" })],
-          thoughts: [...shown.thoughts, thought("legacy-source", "Friday then Friday", "T1"), said("L1-0", "Sam", "Which occurrence?", 20)],
+          thoughts: [...shown.thoughts, thought("legacy-source", "Friday then Friday", "T1"), said("L1-0", "Colleague", "Which occurrence?", 20)],
           anchors: { ...shown.anchors, L1: { thought_id: "legacy-source", quote: "Friday" } } };
         if (!await openSpine()) fail("spine (notes)", "legacy fixture never opened");
         else {
@@ -1699,7 +1699,7 @@ try {
       await settle();
       if (await evaluate(chips)) fail("brick-chip", "chips on points that were on the map before");
       core.send({ type: "change", change: { type: "thought_added", thought: thought("chip-1", "Ask the landlord about the broken heater before the weekend", "T1") } });
-      core.send({ type: "change", change: { type: "thought_added", thought: { ...thought("chip-2", "The bike is fine", "T1"), speaker: "Sam" } } });
+      core.send({ type: "change", change: { type: "thought_added", thought: { ...thought("chip-2", "The bike is fine", "T1"), speaker: "Colleague" } } });
       if (!await until(`${chips} === 2`, 4000)) fail("brick-chip", "no chip on each new point, yours and someone else's");
       const chip = (id) => `document.querySelector("#point-${id} .brick-chip")`;
       const marks = await evaluate(`[...document.querySelectorAll(".brick-chip")].map((c) => ({ text: c.textContent, first: c === c.parentElement.firstElementChild && c.parentElement.matches(".move-point"), opacity: getComputedStyle(c).opacity }))`);
@@ -1877,14 +1877,14 @@ try {
     core.send({ type: "partial", text: "" });
     if (!await until(`!document.querySelector(".tiny-transcript")`, 2000)) fail("Tiny transcript", "keeps showing words once the turn is over");
     // A turn's words stay until its thought comes, and go the moment it does: they turn into it where they were.
-    core.send({ type: "partial", text: "Ask Maya to bring the folding chairs" });
+    core.send({ type: "partial", text: "Ask Designer to bring the folding chairs" });
     await until(`!!document.querySelector(".tiny-transcript-text")`, 2000);
     core.send({ type: "partial", text: "" });
     await sleep(300);
     if (!await evaluate(`!!document.querySelector(".tiny-transcript-text")`)) fail("Tiny transcript", "a turn's words went before its thought came");
-    core.send({ type: "change", change: { type: "thought_added", thought: { ...thought("said-1", "Ask Maya to bring the folding chairs", null), placed: false } } });
+    core.send({ type: "change", change: { type: "thought_added", thought: { ...thought("said-1", "Ask Designer to bring the folding chairs", null), placed: false } } });
     if (!await until(`!document.querySelector(".tiny-transcript")`, 500)) fail("Tiny transcript", "a turn's words stay once its thought came");
-    core.send({ type: "change", change: { type: "thought_placed", thought_id: "said-1", thread_id: "T2", point: "Ask Maya to bring the folding chairs", unclear: "", complete: true, place_ms: 2000 } });
+    core.send({ type: "change", change: { type: "thought_placed", thought_id: "said-1", thread_id: "T2", point: "Ask Designer to bring the folding chairs", unclear: "", complete: true, place_ms: 2000 } });
     await tapMic();
     if (!await until(`!document.querySelector(".status.capturing")`, 3000)) fail("the dock", "a second tap on the mic didn't stop it");
   }
@@ -1901,7 +1901,7 @@ try {
       core.send({ type: "change", change: { type: "thought_added", thought: thought("landing-2", "Seeds for the garden", "T2") } });
       // A pulse, or under Reduce Motion (this machine's own, if a check before handed it back) a ring that stays a second.
       if (!await until(`!!document.querySelector('[data-brick="spine"] .spine-ring, [data-brick="spine"] .spine-point.spine-cut')`, 3000)) fail("Spine", "a thought landing in the app doesn't ring its point");
-      core.send({ type: "change", change: { type: "positioned", id: "T4-0", x: 2400, y: 1600, by: "Claude", at_ms: Date.now() } });
+      core.send({ type: "change", change: { type: "positioned", id: "T4-0", x: 2400, y: 1600, by: "Helper", at_ms: Date.now() } });
       if (!await until(`(document.querySelector('.react-flow__node[data-id="p:T4-0"]')?.style.transform ?? "").includes("2400px, 1600px")`, 3000)) fail("Spine", "a point someone else placed doesn't go there");
       // A margin note from the core (the contract's anchored tangent): its words marked on the point, the note beside them.
       core.send({ type: "change", change: { type: "thread_added", thread: thread("N9", "Point 1", { parent_id: "T1" }) } });
@@ -1973,8 +1973,8 @@ try {
       await settle();
       return switchReady && ready;
     };
-    const add = (id) => core.send({ type: "change", change: { type: "thought_added", thought: { ...thought(id, "Ask Maya to bring the folding chairs", null), placed: false } } });
-    const place = (id) => core.send({ type: "change", change: { type: "thought_placed", thought_id: id, thread_id: "T1", point: "Ask Maya to bring the folding chairs", unclear: "", complete: true, place_ms: 2600 } });
+    const add = (id) => core.send({ type: "change", change: { type: "thought_added", thought: { ...thought(id, "Ask Designer to bring the folding chairs", null), placed: false } } });
+    const place = (id) => core.send({ type: "change", change: { type: "thought_placed", thought_id: id, thread_id: "T1", point: "Ask Designer to bring the folding chairs", unclear: "", complete: true, place_ms: 2600 } });
     try {
       await evaluate(`localStorage.setItem("e2a2o.bricks", JSON.stringify({ "spine": true, "bubble-flight": true })); ${clearFlightSettings}`);
       await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "no-preference" }] });
@@ -2025,7 +2025,7 @@ try {
             const words = bubble.querySelector(".bubble-flight-words")?.getBoundingClientRect();
             const slot = document.querySelector('[data-slot="slot:fly-1"]');
             const box = slot?.getBoundingClientRect();
-            const text = slot && [...slot.querySelectorAll("*")].find((el) => (el.textContent ?? "").trim().startsWith("Ask Maya"));
+            const text = slot && [...slot.querySelectorAll("*")].find((el) => (el.textContent ?? "").trim().startsWith("Ask Designer"));
             const line = text?.getBoundingClientRect();
             last = words && box ? { wordsY: words.top + words.height / 2, slotY: line ? line.top + line.height / 2 : box.top + box.height / 2,
               wordsLeft: words.left, textLeft: line ? line.left : box.left + 44 } : null;

@@ -183,14 +183,14 @@ fn leaving_a_thought_unfinished_for_a_filing_offers_it_back() {
     assert!(act(&f.core, "you", "Finish it").is_some());
     assert!(std::iter::from_fn(|| updates.try_recv().ok()).any(|out| matches!(out.message, ServerMsg::View { view: View::Finish })));
     // Someone else's is theirs: no card, so "finish it" is talk.
-    assert!(act(&f.core, "sam", "Finish it").is_none());
+    assert!(act(&f.core, "colleague", "Finish it").is_none());
 }
 
 #[test]
 fn new_thread_about_keeps_every_word_after_it() {
     assert_eq!(new_thread_about("New thread about the garden shed"), Some("The garden shed".into()));
     assert_eq!(new_thread_about("Okay, start a new thread about why the build is slow."), Some("Why the build is slow.".into()));
-    assert_eq!(new_thread_about("Create a new one about Dana's party"), Some("Dana's party".into()));
+    assert_eq!(new_thread_about("Create a new one about Collaborator's party"), Some("Collaborator's party".into()));
     assert_eq!(new_thread_about("New thread on piano lessons"), Some("Piano lessons".into()));
     assert_eq!(new_thread_about("New thread. I want to learn piano."), Some("I want to learn piano.".into()));
     assert_eq!(new_thread_about("Different topic, but I need to call Mom"), Some("But I need to call Mom".into()));
@@ -198,7 +198,7 @@ fn new_thread_about_keeps_every_word_after_it() {
     assert_eq!(new_thread_about("Change of topic: the lease"), Some("The lease".into()));
     // "Topic" works wherever "thread" does.
     assert_eq!(new_thread_about("New topic about the garden shed"), Some("The garden shed".into()));
-    assert_eq!(new_thread_about("Okay, create a new topic about Dana's party"), Some("Dana's party".into()));
+    assert_eq!(new_thread_about("Okay, create a new topic about Collaborator's party"), Some("Collaborator's party".into()));
     assert_eq!(new_thread_about("Open a new topic about the lease."), Some("The lease.".into()));
     assert_eq!(new_thread_about("Make a new topic. I want to learn piano."), Some("I want to learn piano.".into()));
     // Words that would lead into a request are the thought's own here.
@@ -285,13 +285,13 @@ fn expand_opens_the_thread_with_its_branches_and_a_miss_said_plainly_is_answered
     assert_eq!(said("Expand this topic"), (true, vec!["Say which topic: “expand” and its title".into()]));
     assert_eq!(said("Expand everything in the garden"), (true, vec!["I couldn't find “the garden”. Try words from its title.".into()]));
     assert_eq!(said("Expand the business into Europe"), (false, vec![]));
-    assert_eq!(said("Show Dana the photos"), (false, vec![]));
+    assert_eq!(said("Show Collaborator the photos"), (false, vec![]));
     // "Show", "open" and "hide" need the whole title: a thread with more words in it isn't named.
-    f.core.commit(vec![Change::ThreadAdded { thread: thread("T5", "Dana photos from Japan", 5) }]);
-    assert_eq!(said("Show Dana the photos"), (false, vec![]));
+    f.core.commit(vec![Change::ThreadAdded { thread: thread("T5", "Collaborator photos from Japan", 5) }]);
+    assert_eq!(said("Show Collaborator the photos"), (false, vec![]));
     assert_eq!(said("Hide the mic"), (false, vec![]));
-    assert_eq!(said("Show Dana photos from Japan"), (true, vec!["open T5".into(), "Opened Dana photos from Japan".into()]));
-    assert_eq!(said("Expand Dana photos"), (true, vec!["open T5".into(), "Opened Dana photos from Japan".into()]));
+    assert_eq!(said("Show Collaborator photos from Japan"), (true, vec!["open T5".into(), "Opened Collaborator photos from Japan".into()]));
+    assert_eq!(said("Expand Collaborator photos"), (true, vec!["open T5".into(), "Opened Collaborator photos from Japan".into()]));
 }
 
 #[test]
@@ -360,11 +360,11 @@ fn what_just_happened_opens_the_windows_notices_only_as_the_whole_turn() {
     // Only the asker's windows are told, and nothing lands on the map or moves anyone.
     let f = Fixture::new(map(vec![thread("T1", "Garden", 1)]));
     let mut updates = f.core.updates.subscribe();
-    let done = act(&f.core, "Sam", "What just happened?").expect("a request");
+    let done = act(&f.core, "Colleague", "What just happened?").expect("a request");
     assert_eq!((done.act, done.missed, done.undo.is_none()), (Act::Notices, false, true));
     let told: Vec<_> = std::iter::from_fn(|| updates.try_recv().ok()).collect();
     assert_eq!(told.len(), 1);
-    assert_eq!(told[0].to.as_deref(), Some("Sam"));
+    assert_eq!(told[0].to.as_deref(), Some("Colleague"));
     assert_eq!(serde_json::to_value(&told[0].message).unwrap(), serde_json::json!({ "type": "view", "view": "notices" }));
     assert!(f.core.snapshot().thoughts.is_empty() && f.core.snapshot().active_by.is_empty());
 }
@@ -464,10 +464,10 @@ fn talk_preset_is_a_private_whole_turn_request() {
     for (words, expected) in [("Talk mode", "talk"), ("All features", "features")] {
         let f = Fixture::new(map(vec![thread("T1", "Garden", 1)]));
         let mut updates = f.core.updates.subscribe();
-        assert!(act(&f.core, "Sam", words).is_some());
+        assert!(act(&f.core, "Colleague", words).is_some());
         let told: Vec<_> = std::iter::from_fn(|| updates.try_recv().ok()).collect();
         assert_eq!(told.len(), 1);
-        assert_eq!(told[0].to.as_deref(), Some("Sam"));
+        assert_eq!(told[0].to.as_deref(), Some("Colleague"));
         assert_eq!(serde_json::to_value(&told[0].message).unwrap(), serde_json::json!({ "type": "view", "view": expected }));
         assert!(f.core.snapshot().thoughts.is_empty());
     }

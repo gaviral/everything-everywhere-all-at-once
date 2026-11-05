@@ -9,7 +9,7 @@ parts. The host's plugin state retains the part and lens during a map visit.
 
 `PartLenses({ data })` also accepts a supplied `PartTree`: `graph`, `tree`, `label`
 and optional `explanations`. The graph and contribution types, plus canonical
-identity resolution, are imported from `msg1351/part-dimensions`. Nothing in that
+identity resolution, are imported from `features/part-dimensions`. Nothing in that
 module is edited. Explanation keys are `id@version`; topology comes only from
 the supplied contribution tree. Missing, ambiguous or changed revisions have no
 invented explanation. Without authored prose, only known composition is described;

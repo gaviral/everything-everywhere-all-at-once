@@ -1,5 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { createReloadSession, describeReloadState, type DraftValue, type ViewValue, type ReloadEvent } from "../../intake1411/reload-session";
+import { createReloadSession, describeReloadState, type DraftValue, type ViewValue, type ReloadEvent } from "../../features/reload-session";
 function createWorkspace() {
   const identity = { mapId: "example-garden", sessionId: "wire-recovery", buildId: "example-build" };
   let state = { draft: { text: "Plan a small garden", selectionStart: 0, selectionEnd: 0, selectionDirection: "none" } as DraftValue, view: { viewId: "Garden plan", camera: { x: 0, y: 0, zoom: 1 } } as ViewValue };

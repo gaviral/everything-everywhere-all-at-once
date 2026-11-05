@@ -170,7 +170,7 @@ try {
     await page("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
     world = { ...base, threads: base.threads.map(t => ({ ...t, status: "open" })) };
     await reload();
-    const landed = thought("a5", "Ask Pat to bring the extra chairs for the garden table", "T1", { at_ms: Date.now() });
+    const landed = thought("a5", "Ask Organizer to bring the extra chairs for the garden table", "T1", { at_ms: Date.now() });
     core.send({ type: "change", change: { type: "thought_added", thought: { ...landed, placed: false, thread_id: null } } });
     core.send({ type: "change", change: { type: "thought_placed", thought_id: "a5", thread_id: "T1", point: landed.point, complete: true, unclear: "", place_ms: 1500 } });
     await check('!!document.querySelector(\'[data-thought="a5"]\')', "new thought lands");

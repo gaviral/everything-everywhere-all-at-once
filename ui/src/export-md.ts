@@ -15,7 +15,7 @@ export type Exported = { name: string; text: string; threads: number; thoughts: 
 type Options = { now?: number; timeZone?: string; locale?: string };
 
 // A choice said outright: "I decided…", "we've settled on…", "made up my mind", "we chose…". Not "I can't decide",
-// "haven't decided" or "I'm going with Sam" (a trip, not a choice): a decision marked that wasn't one would misstate
+// "haven't decided" or "I'm going with Colleague" (a trip, not a choice): a decision marked that wasn't one would misstate
 // the person's own record, so only words that can't mean anything else count.
 // Each clause is read on its own, and one that denies or asks it doesn't count: "I haven't made up my mind",
 // "not sure we decided", "have we decided on the train" (speech often comes without its "?"), "if we chose…".

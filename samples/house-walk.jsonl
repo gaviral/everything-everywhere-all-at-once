@@ -30,7 +30,7 @@
 {"type":"thought_added","thought":{"id":"th-7","speaker":"you","text":"I want three quotes before the end of the month, and the budget is about four thousand.","point":"Three quotes by month end; budget ≈ $4,000","thread_id":"T4","placed":true,"unclear":"","guess":"","heard":"","fixed":"","complete":true,"at_ms":1793756220000,"place_ms":3090,"decided":false}}
 {"type":"thread_touched","thread_id":"T4","last_point":"Three quotes by month end; budget ≈ $4,000","at_ms":1793756220000}
 {"type":"suggestion_added","suggestion":{"id":"sg-1","thread_id":"T4","text":"Send every contractor the same list, so the three quotes cover the same work","status":"new"}}
-{"type":"thought_added","thought":{"id":"th-8","speaker":"you","text":"Call Ramirez Renovations on Monday for the first one.","point":"Call Ramirez Renovations Monday","thread_id":"T4","placed":true,"unclear":"","guess":"","heard":"","fixed":"","complete":true,"at_ms":1793756280000,"place_ms":3460,"decided":false}}
-{"type":"thread_touched","thread_id":"T4","last_point":"Call Ramirez Renovations Monday","at_ms":1793756280000}
-{"type":"action_proposed","action":{"id":"ac-1","thread_id":"T4","kind":"reminder","title":"Call Ramirez Renovations for a quote","when":"2026-11-09","status":"new","done_ms":null}}
+{"type":"thought_added","thought":{"id":"th-8","speaker":"you","text":"Call Local Renovations on Monday for the first one.","point":"Call Local Renovations Monday","thread_id":"T4","placed":true,"unclear":"","guess":"","heard":"","fixed":"","complete":true,"at_ms":1793756280000,"place_ms":3460,"decided":false}}
+{"type":"thread_touched","thread_id":"T4","last_point":"Call Local Renovations Monday","at_ms":1793756280000}
+{"type":"action_proposed","action":{"id":"ac-1","thread_id":"T4","kind":"reminder","title":"Call Local Renovations for a quote","when":"2026-11-09","status":"new","done_ms":null}}
 {"type":"thread_picture","thread_id":"T4","path":"/images/T4-edb48ec3140340e3a31f32d149d10df9-small.webp"}

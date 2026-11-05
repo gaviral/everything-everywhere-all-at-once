@@ -36,9 +36,9 @@ export function sourceWords(item: Exchange) {
 export const example: Exchange = {
   id: 'example-opening', title: 'Opening moment', sourceLive: true,
   anchor: { thought_id: 'example-source', quote: 'start with the map' },
-  source: { id: 'example-source', speaker: 'Alex', text: 'Let’s start with the map, then show how every voice finds its place.', point: '', at_ms: 1 },
+  source: { id: 'example-source', speaker: 'Visitor', text: 'Let’s start with the map, then show how every voice finds its place.', point: '', at_ms: 1 },
   replies: [
-    { id: 'example-question', speaker: 'Jordan', text: 'Can we show the source words when this is resolved?', point: '', at_ms: 2 },
-    { id: 'example-answer', speaker: 'Alex', text: 'Yes. Keep the exchange right beside the words it belongs to.', point: '', at_ms: 3 },
+    { id: 'example-question', speaker: 'Coordinator', text: 'Can we show the source words when this is resolved?', point: '', at_ms: 2 },
+    { id: 'example-answer', speaker: 'Visitor', text: 'Yes. Keep the exchange right beside the words it belongs to.', point: '', at_ms: 3 },
   ],
 };

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { BrickProps } from "../contract";
-import { DemoVariants, createVariantSession, type VariantReference } from "../../msg1351/demo-variants";
+import { DemoVariants, createVariantSession, type VariantReference } from "../../features/demo-variants";
 import "./example.css";
 
 const choices: readonly VariantReference[] = [

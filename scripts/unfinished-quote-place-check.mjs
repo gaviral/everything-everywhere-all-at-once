@@ -41,7 +41,7 @@ const world = {
     thought("p0", older, "T2", { at_ms: now - 1000 }),
     thought("p1", "Plant mint in its own pot", "T1", { at_ms: now + 1000 }),
     thought("p2", quote, "T2", { complete: false }),
-    thought("sam", "Meet by the river", "T2", { speaker: "Sam" }),
+    thought("colleague", "Meet by the river", "T2", { speaker: "Colleague" }),
     // Imports can be appended after newer words. A future-dated sample counts as the earliest, as in lastWordsOn.
     thought("imported", imported, "T2", { at_ms: now - 4000, place_ms: null }),
     thought("future", future, "T2", { at_ms: now + 3_600_000 }),

@@ -49,12 +49,12 @@ MODEL_API_KEY=
 # No separate coding CLI, provider account or key is required. MODEL_API_KEY supplies the Meta key.
 # HELPERS_CMD=builtin-meta
 # Custom command adapters are outside the submitted Meta-only runtime configuration.
-# Optional, Full only: who "ask Mia to …" may message, as name=handle (a phone number or Apple ID email), comma-separated.
-# MESSAGES_TO=Mia=+15551234567, Sam=sam@example.com
+# Optional, Full only: who "ask Recipient to …" may message, as name=handle (a phone number or Apple ID email), comma-separated.
+# MESSAGES_TO=Recipient=+15551234567, Colleague=colleague@example.com
 # Optional, Full only: really send through Messages when the 5-second countdown ends. Off, every message is a dry run.
 # MESSAGES_SEND=on
 # Optional, Full only: email allow-list, name=address. Addresses stay in the core. Features > Email can turn it off.
-# EMAIL_TO=Mia=mia@example.com, Sam=sam@example.com
+# EMAIL_TO=Recipient=recipient@example.com, Colleague=colleague@example.com
 # Optional, Full only: send via this laptop's Mail.app after the countdown. Off is a dry run; hosted stays talk.
 # EMAIL_SEND=on
 # Optional, Full only: the GitHub card ("show me the open pull requests") reads gh on this laptop, never writes.

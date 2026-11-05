@@ -63,7 +63,7 @@ try {
         return true;
       })()`);
       await settled();
-      await evaluate(`window.e2a2oHold({ id: "resize-question", by: "Alex", main: "Which day for the demo?", rest: "Keep this question while the window changes.",
+      await evaluate(`window.e2a2oHold({ id: "resize-question", by: "Visitor", main: "Which day for the demo?", rest: "Keep this question while the window changes.",
         answer: () => { __phoneCheck.answer++; }, later: () => { __phoneCheck.later++; } })`);
 
       const presentation = (width, height, open) => {

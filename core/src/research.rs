@@ -484,7 +484,7 @@ mod tests {
             revision: 1,
             ..Default::default()
         };
-        assert!(mutate(&core, &gate, "Sam", &remove).is_err());
+        assert!(mutate(&core, &gate, "Colleague", &remove).is_err());
         let removed = mutate(&core, &gate, "you", &remove).unwrap();
         assert!(removed.removed);
         let undo = Command {

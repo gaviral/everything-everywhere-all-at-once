@@ -10,7 +10,7 @@ const thought = (id, text, unclear, guess) => ({ id, text, point: id === "p1" ? 
   heard: "", fixed: "", complete: true, at_ms: now, decided: false });
 const world = {
   threads: [{ id: "T1", title: "Speech checks", parent_id: null, status: "open", last_point: "", touched_ms: now, tags: [], picture: null, dropped_by: "" }],
-  thoughts: [thought("p1", "Let us try Muse Bark for this thought", "Muse Bark", "Muse Spark"), thought("p2", "Meet Jena tomorrow", "Jena", "Jenna")],
+  thoughts: [thought("p1", "Let us try Muse Bark for this thought", "Muse Bark", "Muse Spark"), thought("p2", "Send Parsel tomorrow", "Parsel", "Parcel")],
   active: "T1", active_by: { you: "T1" }, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: true, recaps: [], notes: {}, proposals: [],
 };
 const core = await standInCore(() => [{ type: "snapshot", world }], { onMessage: (m) => {

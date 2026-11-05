@@ -51,7 +51,7 @@ try {
   assert.ok(await until(`!!document.querySelector('[data-guide="notice"]')`), "hidden History must not swallow the Talk notice");
   assert.deepEqual(await geometry(), original, "Canvas and input stay in place");
   await page("Page.reload"); await sleep(150); await talk();
-  server.send({ type: "guide", by: "Maya", kind: "caption", target: null, at_ms: Date.now(), text: "Keep talking. Your thoughts stay here." });
+  server.send({ type: "guide", by: "Designer", kind: "caption", target: null, at_ms: Date.now(), text: "Keep talking. Your thoughts stay here." });
   assert.ok(await until(`!!document.querySelector('#shell-caption .guide-caption')`), "captions stay visible");
   server.send({ type: "notice", message: "Talk is on. Say or type “all features” to go back." });
   assert.ok(await until(`!!document.querySelector('[data-guide="notice"]')`));

@@ -133,7 +133,7 @@ def packages(path, text):
 
 # A reviewed publication reference displayed only as an explicit reader-opened link.
 # This permits one JSON data field, never an executable network-call site or another URL.
-CITATION_PATH = "ui/src/msg1351/research-walkthrough/evidence.json"
+CITATION_PATH = "ui/src/features/research-walkthrough/evidence.json"
 CITATION_URL = "https://www.microsoft.com/en-us/research/publication/data-mountain-using-spatial-memory-for-document-management/"
 
 

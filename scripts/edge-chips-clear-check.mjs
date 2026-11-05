@@ -142,7 +142,7 @@ try {
     const arrive = async (key) => {
       const [, , t] = far[key];
       const id = `n${++n}`, text = `New words on ${titles[t]} ${n}`;
-      core.send({ type: "change", change: { type: "thought_added", thought: { ...thought(id, text, null, "Maya"), placed: false, at_ms: Date.now() } } });
+      core.send({ type: "change", change: { type: "thought_added", thought: { ...thought(id, text, null, "Designer"), placed: false, at_ms: Date.now() } } });
       core.send({ type: "change", change: { type: "thought_placed", thought_id: id, thread_id: t, point: text, unclear: "", complete: true, place_ms: 1500 } });
       await sleep(320);
       return { id, thread: t, title: titles[t] };

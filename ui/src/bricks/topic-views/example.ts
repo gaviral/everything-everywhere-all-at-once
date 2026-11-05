@@ -11,9 +11,9 @@ export const example: Material = {
   example: true,
   threads: [topic('example-garden', 'A garden for everyone'), topic('example-opening', 'The first visit', 'example-garden'), topic('example-care', 'Keep it growing', 'example-garden')],
   thoughts: [
-    thought('example-1', 'example-garden', 'Alex', 'Let’s turn the empty courtyard into a little community garden.', 'A community garden in the courtyard.', 1),
-    thought('example-2', 'example-opening', 'Sam', 'For the opening, let people plant one seed and take a small pot home.', 'Plant a seed. Take a pot home.', 2),
-    thought('example-3', 'example-care', 'Alex', 'We’ll need a watering rota so the garden keeps growing after opening day.', 'Make a watering rota.', 3),
-    thought('example-4', 'example-opening', 'Alex', 'Yes, and put a welcome table beside the entrance so nobody wonders where to go.', 'A welcome table at the entrance.', 4),
+    thought('example-1', 'example-garden', 'Visitor', 'Let’s turn the empty courtyard into a little community garden.', 'A community garden in the courtyard.', 1),
+    thought('example-2', 'example-opening', 'Colleague', 'For the opening, let people plant one seed and take a small pot home.', 'Plant a seed. Take a pot home.', 2),
+    thought('example-3', 'example-care', 'Visitor', 'We’ll need a watering rota so the garden keeps growing after opening day.', 'Make a watering rota.', 3),
+    thought('example-4', 'example-opening', 'Visitor', 'Yes, and put a welcome table beside the entrance so nobody wonders where to go.', 'A welcome table at the entrance.', 4),
   ],
 };

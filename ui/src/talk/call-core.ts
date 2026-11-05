@@ -212,7 +212,7 @@ export function stateWord(person: Person, captioning = false): string {
   return "here";
 }
 
-/** Who hears you, for the status line: "Maya and the Friend hear you"; "" alone. */
+/** Who hears you, for the status line: "Designer and the Friend hear you"; "" alone. */
 export function heardBy(c: Call | null, me: string): string {
   const others = hereNow(c, me).filter((p) => p.name !== me).map(named);
   if (!others.length) return "";

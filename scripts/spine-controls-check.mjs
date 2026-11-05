@@ -140,9 +140,9 @@ for (const [width, height] of [[1440, 900], [390, 844], [320, 844]]) for (const 
     await evaluate(`document.querySelector('.spine-placement-details summary').focus()`);
     await key('Escape', 'Escape', 27);
     assert.equal(await evaluate(`document.querySelector('.spine-placement-details').open`), false, 'Escape closes placement details');
-    world = seed(); world.thoughts.push(thought('sam', 'T1', 'I can bring the pots', 'Sam'), thought('helper', 'T1', 'Keep roots away from standing water', 'Helper')); world.ai = ['Helper'];
+    world = seed(); world.thoughts.push(thought('colleague', 'T1', 'I can bring the pots', 'Colleague'), thought('helper', 'T1', 'Keep roots away from standing water', 'Helper')); world.ai = ['Helper'];
     core.send({ type: 'snapshot', world });
-    assert.ok(await until(`[...document.querySelectorAll('.spine-speaker')].some(e=>e.textContent==='Sam')`), 'mixed-author names stay explicit');
+    assert.ok(await until(`[...document.querySelectorAll('.spine-speaker')].some(e=>e.textContent==='Colleague')`), 'mixed-author names stay explicit');
     assert.ok(await evaluate(`[...document.querySelectorAll('.spine-speaker')].some(e=>e.textContent.includes('Helper')&&e.textContent.includes('AI helper'))`), 'AI helper keeps a readable origin');
     await shot('mixed');
     assert.equal(await evaluate(`document.querySelector('#type-a-thought').value`), 'Keep this draft unchanged', 'routing, Details and author changes preserve the exact draft');

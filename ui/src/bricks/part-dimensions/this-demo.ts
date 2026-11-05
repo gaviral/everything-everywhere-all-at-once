@@ -1,6 +1,6 @@
 // This demo, as parts: the film's steps left to right, and under each the real files and functions it stands on.
 // Which file serves which step is a person's reading of the code; every name, version and place comes from the source map.
-import type { Contribution, Dimension, Presentation } from "../../msg1351/part-dimensions";
+import type { Contribution, Dimension, Presentation } from "../../features/part-dimensions";
 import type { CodePart } from "../../code-canvas/types";
 
 type Step = { id: string; title: string; description: string } & Record<Dimension, readonly string[]>;

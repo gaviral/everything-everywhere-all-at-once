@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { sketchLabelsFeature } from "../../intake1411/sketch-labels/feature";
-import { syntheticSketch } from "../../intake1411/sketch-labels/synthetic";
-import { SketchLabels } from "../../intake1411/sketch-labels/SketchLabels";
+import { sketchLabelsFeature } from "../../features/sketch-labels/feature";
+import { syntheticSketch } from "../../features/sketch-labels/synthetic";
+import { SketchLabels } from "../../features/sketch-labels/SketchLabels";
 import type { BrickProps } from "../contract";
 import "./example.css";
 

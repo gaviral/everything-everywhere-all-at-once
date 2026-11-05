@@ -364,8 +364,8 @@ export function pages(text: string, width: number, measure: (words: string) => n
 /** A sentence short enough to take in at a glance, in words. */
 const GLANCE = 6;
 /** The question's main words in bold, so they catch your eye in the held stack ("main words that can catch your eye"):
- *  as the sender marked them (`**…**`); else, when it's more than one sentence, its short question ("Quick thing: Maya
- *  said Lena is away Saturday. **Sunday works?**"), or a short first sentence ("**Which Saturday?** Lena leaves on the
+ *  as the sender marked them (`**…**`); else, when it's more than one sentence, its short question ("Quick thing: Designer
+ *  said Guest is away Saturday. **Sunday works?**"), or a short first sentence ("**Which Saturday?** Guest leaves on the
  *  14th."); else as it is. */
 export function mainWords(text: string): string {
   if (/[*`]/.test(text)) return text;

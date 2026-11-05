@@ -8,12 +8,12 @@ type Host = NonNullable<ContextType<typeof DiscussionContext>>;
 type Record = NonNullable<Host['world']['discussions']>[number];
 const memory = new Map<string, unknown>();
 const state: PluginState = { scope: 'discussion-check', get: <T,>(key: string) => memory.get(key) as T | undefined, set: (key, value) => { memory.set(key, value); } };
-const thought = (id: string, text: string, thread: string, at: number): Thought => ({ id, speaker: 'Alex', text, point: text, thread_id: thread, placed: true, unclear: '', complete: true, at_ms: at, place_ms: 0 });
+const thought = (id: string, text: string, thread: string, at: number): Thought => ({ id, speaker: 'Visitor', text, point: text, thread_id: thread, placed: true, unclear: '', complete: true, at_ms: at, place_ms: 0 });
 const thread = (id: string): Thread => ({ id, title: 'Opening moment', parent_id: null, status: 'open', last_point: '', touched_ms: 1, tags: [], picture: null, dropped_by: '' });
 const original = '🌿 Start with the map, then start with the map again.';
 const quote = 'start with the map';
 const start = [...original.slice(0, original.indexOf(quote))].length;
-const anchor = { thought_id: 'source', quote, context: { source_text: original, source_speaker: 'Alex', start, end: start + [...quote].length } };
+const anchor = { thought_id: 'source', quote, context: { source_text: original, source_speaker: 'Visitor', start, end: start + [...quote].length } };
 
 function Preview() {
   const [condition, setCondition] = useState('empty');
@@ -32,7 +32,7 @@ function Preview() {
   const threads = condition === 'empty' ? [] : [thread('main'), { ...thread('discussion'), parent_id: 'main', anchor }];
   const liveThoughts = condition === 'missing' ? thoughts.filter(item => item.id !== 'source') : thoughts;
   const world = { threads, thoughts: liveThoughts, anchors: { discussion: anchor }, discussions: records };
-  const map = { ...world, visitKey: condition === 'other-visit' ? 'other' : 'first', me: 'Alex', connected } as unknown as BrickProps['map'];
+  const map = { ...world, visitKey: condition === 'other-visit' ? 'other' : 'first', me: 'Visitor', connected } as unknown as BrickProps['map'];
   const actions = {
     openThought: (id: string) => { jumpTo(id); mount(false); return true; },
     openCatalog: (id: string) => jumpTo(`features:${id}`),
@@ -42,7 +42,7 @@ function Preview() {
     if (hold) await new Promise<void>(resolve => { held.current = resolve; });
     const current = records.find(item => item.thread_id === id);
     if (refuse || !connected || !enabled || (current?.revision ?? 0) !== revision) return { request_id: 'check', ok: false, discussion: current ?? null, message: 'Discussion changed. Review its current state before choosing again.' };
-    const discussion: Record = { thread_id: id, status, actor: 'Alex', revision: revision + 1, observed_revision: revision, request_id: `check-${revision}`, at_ms: 10, reply_count: liveThoughts.filter(item => item.thread_id === id).length };
+    const discussion: Record = { thread_id: id, status, actor: 'Visitor', revision: revision + 1, observed_revision: revision, request_id: `check-${revision}`, at_ms: 10, reply_count: liveThoughts.filter(item => item.thread_id === id).length };
     update([discussion]);
     return { request_id: discussion.request_id, ok: true, discussion, message: 'Discussion saved.' };
   };

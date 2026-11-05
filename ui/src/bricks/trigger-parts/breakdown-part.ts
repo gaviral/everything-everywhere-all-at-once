@@ -1,5 +1,5 @@
-import { characters, sourceSpan, assertCoverage } from "../../msg1351/dictation-breakdown/source-span";
-import { extractItem } from "../../msg1351/dictation-breakdown/item-extraction";
+import { characters, sourceSpan, assertCoverage } from "../../features/dictation-breakdown/source-span";
+import { extractItem } from "../../features/dictation-breakdown/item-extraction";
 import { candidates } from "./candidate-part";
 import { exactPart } from "./exact-part";
 import { regexPart } from "./regex-part";
