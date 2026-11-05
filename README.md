@@ -98,7 +98,7 @@ Stop with Ctrl+C. Restart after changing the key. `./run.sh` opens your regular 
 
 ## Made with it
 
-Five ideas people posted on Hacker News, each typed once into Crew, all five at once. Crew builds boards, so each is the closest version a board can hold. Every run below was real: Muse Spark built the parts on their own Git branches and merged them to main in 25 to 36 seconds.
+Five ideas people posted on Hacker News, each typed once into Crew, all five at once. Crew builds boards, so each is the closest version a board can hold. Every run below was real: Muse Spark built the parts on their own Git branches and merged them to main.
 
 | The idea | Crew's board |
 | --- | --- |

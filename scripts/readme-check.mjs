@@ -56,8 +56,8 @@ for (const text of [readme, features]) checkProductCopy(text);
 assert.doesNotMatch(visible, /\b(?:all|every|each)\s+(?:\w+\s+){0,3}(?:changes?|merges?|commits?)\s+(?:\w+\s+){0,8}(?:passed|only when|only after)|\b(?:changes?|merges?|commits?)\s+(?:all|always)\s+passed/i,
   "do not assert universal merge success; report bounded, evidenced checks instead");
 
-// The film slot is reserved; the removed hero and caption must not return.
-assert.ok(first.includes("<!-- Film link goes here. -->"), "reserve the first-screen film link");
+// The film is linked on the first screen; the removed hero and caption must not return.
+assert.match(first, /\[Watch the film\]\(https:\/\/youtu\.be\/[\w-]+\)/, "link the film on the first screen");
 assert.doesNotMatch(readme, /hero\.gif|Earlier scripted demo|edited zoom, labels and captions/i);
 const images = [...first.matchAll(/!\[[^\]]*\]\(([^)\s]+)\)|<img[^>]*src="([^"]+)"/g)].map((m) => m[1] ?? m[2]);
 // Remaining images, including the logo, must exist and stay small.
