@@ -446,8 +446,11 @@ impl Core {
     }
 
     async fn call(&self, url: &str, body: &Value, patience: Duration, extra: Value, say_busy: bool) -> anyhow::Result<Value> {
+        let (cached, ticket) = self.memory.answer(url, body);
+        if let Some(answer) = cached { return Ok(answer); }
         let key = self.key()?;
         self.spend()?;
+        self.memory.sent(&extra);
         let step = self.step_began(body, &extra);
         let started = std::time::Instant::now();
         let result = async {
@@ -457,6 +460,7 @@ impl Core {
         }
         .await;
         let result = crate::secrets::result(result, self.key.as_deref());
+        if let Ok(answer) = &result { self.memory.remember(ticket, answer); }
         step.end(result.is_ok());
         // Image input must never enter prompt logs, even when tracing is enabled.
         if extra["feature"] == "image-evidence" {
@@ -554,11 +558,21 @@ impl Core {
         body: impl Fn(&str) -> Value,
         extra: Value,
     ) -> anyhow::Result<Value> {
+        let mut prepared = None;
+        let mut ticket = None;
+        if self.memory.enabled() {
+            let sent = body(setting.name());
+            let (cached, pending) = self.memory.answer(url, &sent);
+            if let Some(answer) = cached { return Ok(answer); }
+            prepared = Some(sent);
+            ticket = pending;
+        }
         let key = self.key()?;
         let model = setting.name();
         let post = |sent: &Value| self.http.post(url).bearer_auth(key).timeout(patience).json(sent).send();
         self.spend()?;
-        let (mut sent, mut started) = (body(model), std::time::Instant::now());
+        let (mut sent, mut started) = (prepared.unwrap_or_else(|| body(model)), std::time::Instant::now());
+        self.memory.sent(&extra);
         // A call dropped before its answer (the slower of a placement's racing calls, placer.rs) is still sent and
         // billed: the trace says so, so what was spent can be counted from it.
         let mut unanswered = Unanswered { trace: &self.trace, call: Some((sent.clone(), started, extra.clone())) };
@@ -570,6 +584,8 @@ impl Core {
             step.end(false);
             self.trace.call(&sent, started, Err(&anyhow::anyhow!("{status}: asked {base} instead")), extra.clone());
             self.spend()?;
+            self.memory.sent(&extra);
+            ticket = None;
             (sent, started) = (body(base), std::time::Instant::now());
             unanswered.call = Some((sent.clone(), started, extra.clone()));
             step = self.step_began(&sent, &extra);
@@ -599,6 +615,7 @@ impl Core {
         .await;
         unanswered.call = None;
         let result = crate::secrets::result(result, self.key.as_deref());
+        if let Ok(answer) = &result { self.memory.remember(ticket, answer); }
         step.end(result.is_ok());
         self.trace.call(&sent, started, result.as_ref(), extra);
         result

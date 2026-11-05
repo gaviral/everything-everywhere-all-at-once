@@ -258,7 +258,15 @@ pub async fn run(
 #[allow(clippy::too_many_arguments)]
 async fn run_answer(core: Arc<Core>, id: String, phrase: String, context: String, thread_id: Option<String>, speaker: String, reuse: bool, targeted: bool, receipt: Option<Receipt>) {
     let started = crate::now_ms();
-    let notes = notes(&core.snapshot(), thread_id.as_deref(), &context, &phrase);
+    let world = core.snapshot();
+    let original = notes(&world, thread_id.as_deref(), &context, &phrase);
+    let selected = if core.memory.enabled() {
+        core.memory.context(&speaker, &format!("{phrase} {context}"), thread_id.as_deref(), None)
+    } else { None };
+    let notes = selected.as_ref().map_or_else(|| original.clone(), |selected| {
+        format!("Relevant thoughts:\n{}Selected in: \"{}\"", selected.notes, context.chars().take(600).collect::<String>())
+    });
+    let bytes_saved = selected.as_ref().map(|_| json!(original).to_string().len().saturating_sub(json!(notes).to_string().len()));
     let mut key = Key {
         speaker: speaker.clone(),
         phrase: phrase.clone(),
@@ -283,7 +291,7 @@ async fn run_answer(core: Arc<Core>, id: String, phrase: String, context: String
         let fixture = tests::fixture_answer(&id);
         #[cfg(not(test))]
         let fixture: Option<(String, String)> = None;
-        let answer = match fixture { Some(answer) => Ok(answer), None => ask(&core, &phrase, &notes).await };
+        let answer = match fixture { Some(answer) => Ok(answer), None => ask(&core, &phrase, &notes, bytes_saved).await };
         if let Ok((text, model)) = &answer {
             if reuse {
                 key.model = model.clone();
@@ -423,7 +431,7 @@ fn names(text: &str, term: &str) -> bool {
     })
 }
 
-async fn ask(core: &Core, phrase: &str, notes: &str) -> anyhow::Result<(String, String)> {
+async fn ask(core: &Core, phrase: &str, notes: &str, bytes_saved: Option<usize>) -> anyhow::Result<(String, String)> {
     #[cfg(test)]
     if let Some(provider) = &core.explain.provider {
         return provider(phrase, notes).map(|text| (text, core.placer_model.name().into()));
@@ -451,7 +459,7 @@ async fn ask(core: &Core, phrase: &str, notes: &str) -> anyhow::Result<(String, 
             URL,
             PATIENCE,
             body,
-            serde_json::Value::Null,
+            bytes_saved.map_or(serde_json::Value::Null, |bytes| json!({"memory_bytes_saved": bytes})),
         )
         .await?;
     let text = value["choices"][0]["message"]["content"]
