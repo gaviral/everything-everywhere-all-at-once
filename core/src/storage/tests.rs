@@ -89,6 +89,7 @@ fn storage_samples_refuse_unknown_maps_and_preserve_reset_bytes_and_identity() {
     drop(held);
     sample_destination(&map, "student-week").unwrap();
     sample_destination(&map, "founder-day").unwrap();
+    sample_destination(&map, "developer-day").unwrap();
     fs::write(map.join("journal.jsonl"), "synthetic prior edits").unwrap();
     let _lock = crate::data_lock::acquire(&map).unwrap();
     seed_sample(&map, "student-week", &samples).unwrap();

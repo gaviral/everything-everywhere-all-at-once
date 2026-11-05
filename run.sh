@@ -10,8 +10,8 @@ E2A2O_CALLER_CWD="$(pwd -P)"
 export E2A2O_CALLER_CWD
 cd "$(dirname "$0")"
 case "${1:-}" in -h|--help|help)
-  echo "Usage: ./run.sh [sample [founder] | demo | room | NAME]"
-  echo "  sample [founder]  a ready-made map, no key needed"
+  echo "Usage: ./run.sh [sample [developer | student | founder] | demo | room | NAME]"
+  echo "  sample [developer | student | founder]  a ready-made map (default: developer), no key needed"
   echo "  demo              a map for the scripted talk (needs a key)"
   echo "  room              a map shared with a second laptop (needs a key)"
   echo "  NAME              your own map in external app storage (see docs/storage.md)"
@@ -22,7 +22,7 @@ case "${1:-}" in
   -*) echo "Unknown option: $1 (try ./run.sh --help)" >&2; exit 2 ;;
 esac
 if [ "${1:-}" = sample ]; then
-  case "${2:-}" in founder) map=founder-day ;; "") map=student-week ;; *) echo "Unknown sample: $2 (try ./run.sh sample founder)" >&2; exit 2 ;; esac
+  case "${2:-}" in developer|"") map=developer-day ;; student) map=student-week ;; founder) map=founder-day ;; *) echo "Unknown sample: $2 (try ./run.sh sample developer, student or founder)" >&2; exit 2 ;; esac
 fi
 E2A2O_MODE="${1:-}"
 export E2A2O_MODE

@@ -6,7 +6,7 @@ E2A2O turns your words and sketches into a board of reusable parts. Capture a th
 
 ## Try it
 
-**Local sample:** `./run.sh sample` → `http://localhost:4321/?sample` (no key or mic).
+**Local sample:** `./run.sh sample` (fictional payments API team) → `http://localhost:4321/?sample` (no key or mic).
 
 <!-- Film link goes here. -->
 
@@ -47,12 +47,15 @@ Before the event there were only ideas and design notes, no app code. All applic
 Needs Rust 1.89 or newer, Node.js 22.12 or newer, and npm. Source builds need Apple's command-line tools on macOS, or a C compiler, pkg-config and OpenSSL headers on Linux. Crew and the optional coding helpers also need Git. Linux and Windows are not validated here.
 
 ```sh
-./run.sh sample
+./run.sh sample             # developer sample (default)
+./run.sh sample developer   # payments API release
+./run.sh sample student     # student week
+./run.sh sample founder     # founder day
 ```
 
 The launcher installs missing UI dependencies, builds the UI and starts the Rust core. Wait for `E2A2O core on`, then open the printed URL. The map is labelled SAMPLE: its thoughts, saved pictures and deadlines are examples. Try “where was I?” or search with `/`.
 
-`./run.sh sample founder` opens the founder sample. Each sample start restores its fixture and keeps a backup. To choose another port, run `PORT=4400 ./run.sh sample` and open http://localhost:4400/?sample.
+The developer sample follows a fictional small team through rollout stages, rollback, on-call, smoke tests and a release note, with a decision and an unfinished thought. Each sample start restores its fixture and keeps a backup. To choose another port, run `PORT=4400 ./run.sh sample` and open http://localhost:4400/?sample.
 
 For live model calls, copy the blank configuration template:
 
