@@ -1,0 +1,33 @@
+.gaze-focus { position: fixed; z-index: 75; left: 18px; bottom: 82px; width: 314px; max-width: calc(100vw - 36px); color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 24px; box-shadow: 0 12px 50px #0002; font: 14px/1.45 system-ui, sans-serif; }
+.gaze-focus-toggle { display: flex; align-items: center; gap: 12px; width: 100%; border: 0; border-radius: 24px; padding: 14px 18px; color: inherit; background: transparent; cursor: pointer; text-align: left; }
+.gaze-focus-toggle > span:nth-child(2) { flex: 1; }
+.gaze-focus-toggle strong { display: block; font-size: 16px; font-weight: 650; }
+.gaze-focus-toggle small { display: block; color: var(--muted); font-size: 12px; }
+.gaze-focus-eye { color: var(--accent); font-size: 28px; }
+.gaze-focus-eye-paused { color: var(--muted); }
+.gaze-focus-body { padding: 0 18px 18px; max-height: min(590px, calc(100dvh - 180px)); overflow-y: auto; overscroll-behavior: contain; }
+.gaze-focus-current { padding: 8px 0 12px; }
+.gaze-focus-current small { display: block; font-size: 10px; letter-spacing: .13em; color: var(--muted); }
+.gaze-focus-current strong { display: block; margin-top: 6px; font-size: 24px; line-height: 1.15; font-weight: 550; overflow-wrap: anywhere; }
+.gaze-focus-note { margin: 10px 0; color: var(--muted); font-size: 12px; }
+.gaze-focus-controls { display: flex; flex-wrap: wrap; gap: 6px; }
+.gaze-focus-controls button, .gaze-focus-thought button { border: 1px solid var(--line); border-radius: 16px; background: var(--bg); color: var(--ink); padding: 8px 11px; font: inherit; font-size: 12px; cursor: pointer; }
+.gaze-focus-controls button[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 16%, var(--card)); border-color: var(--accent); }
+.gaze-focus-thought { margin-top: 16px; }
+.gaze-focus-thought label { display: block; margin-bottom: 6px; font-weight: 600; }
+.gaze-focus-thought textarea { box-sizing: border-box; width: 100%; min-height: 64px; max-height: 150px; resize: vertical; padding: 11px 12px; font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 16px; }
+.gaze-focus-thought button { color: var(--ink); border-color: var(--accent); }
+.gaze-focus-thought button:disabled { opacity: .45; cursor: default; }
+.gaze-focus-attached { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; margin: 6px 0 10px; }
+.gaze-focus button:focus-visible, .gaze-focus textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.gaze-focus-example { position: relative; height: 150px; border-radius: 20px; background: radial-gradient(ellipse at 20% 30%, #9cbfa72a, transparent 70%), radial-gradient(ellipse at 80% 80%, #c2a6dc2a, transparent 70%), var(--bg); }
+.gaze-focus-example-label { position: absolute; left: 12px; top: 9px; color: var(--muted); font-size: 9px; letter-spacing: .12em; }
+.gaze-focus-branches { position: absolute; inset: 20px 0 0; width: 100%; height: 125px; fill: none; stroke: var(--line); stroke-width: 2; }
+.gaze-focus-topic { position: absolute; padding: 8px 10px; border-radius: 18px; color: var(--ink); background: var(--card); box-shadow: 0 3px 15px #0001; font-size: 12px; }
+.gaze-focus-topic-a { top: 36px; left: 12px; transform: rotate(-5deg); }
+.gaze-focus-topic-b { top: 70px; right: 10px; transform: rotate(4deg); }
+.gaze-focus-topic-c { top: 110px; left: 56px; transform: rotate(-2deg); }
+.gaze-focus-halo { position: fixed; z-index: 76; pointer-events: none; box-sizing: border-box; border: 2px solid color-mix(in srgb, var(--accent) 50%, transparent); border-radius: 22px; box-shadow: 0 0 28px color-mix(in srgb, var(--accent) 22%, transparent); transition: all .35s ease; }
+.gaze-focus-dot { position: fixed; z-index: 76; width: 12px; height: 12px; margin: -6px; border-radius: 50%; background: var(--accent); opacity: .45; pointer-events: none; transition: left .1s linear, top .1s linear; }
+@media (max-width: 600px) { .gaze-focus { bottom: 76px; left: 10px; max-width: calc(100vw - 20px); } .gaze-focus-body { max-height: calc(100dvh - 195px); } }
+@media (prefers-reduced-motion: reduce) { .gaze-focus-dot, .gaze-focus-halo { transition: none; } }
