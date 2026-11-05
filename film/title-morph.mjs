@@ -1,5 +1,5 @@
 // One clock, in seconds. Recompute every pose, including on a backward seek.
-import { TITLE_FONT, titleLayout, titleCard, paintRecorded } from './title-layout.mjs';
+import { TITLE_FONT, titleLayout, titleCard } from './title-layout.mjs';
 const clamp = n => Math.max(0, Math.min(1, n));
 const mix = (a, b, t) => a + (b - a) * t;
 const phase = (t, a, b) => clamp((t - a) / (b - a));
@@ -220,17 +220,14 @@ export async function createTitleMorph(shot, parent) {
   const icon = await makeIcon(root);
   const name = makeName(root, variant === 'long' ? '#101114' : '#fff');
   const tagline = element('div', 'tm-tagline', root, variant === 'long' ? TAGLINE : '');
-  const caption=shot.fromTitle&&shot.caption?bitmap(root,'tm-caption'):null;
-  if(caption)paintRecorded(caption.context,shot.caption);
   const left = (1920 - SIZE - 48 - name.width) / 2;
   const destination = left + SIZE / 2, nameX = left + SIZE + 48;
   return {
     background: variant === 'long' ? '#fff' : '#000',
-    firstFrame:shot.fromTitle?titleCard(shot.caption,variant==='long'?'#fff':'#000',variant==='long'?'#101114':'#fff'):null,
+    firstFrame:shot.fromTitle?titleCard(variant==='long'?'#fff':'#000',variant==='long'?'#101114':'#fff'):null,
     draw(local) {
       const start=shot.fromTitle?clock.words[2]+.29:0;
       const t = start+clamp(local / shot.duration)*(clock.seconds-start);
-      if(caption)caption.node.style.opacity=String(1-phase(local,0,.4));
       drawLetters(letters, t, clock, root.style.color);
       drawIcon(icon, shadow, t, clock, destination, letters.folded[4].x);
       drawName(name, tagline, t, clock, nameX);

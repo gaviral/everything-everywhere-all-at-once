@@ -44,7 +44,7 @@ export async function createField(shot,camera,videos,bounded) {
   const {w,gap}=fieldFrame(shot,0), slots=mosaicCells(shot.tiles.length);
   const nodes=[];
   const canvas=document.createElement('canvas');canvas.width=1920;canvas.height=1080;
-  canvas.setAttribute('role','img');canvas.setAttribute('aria-label','Recorded demonstrations');
+  canvas.setAttribute('role','img');canvas.setAttribute('aria-label','Feature wall');
   Object.assign(canvas.style,{position:'absolute',inset:'0',width:'1920px',height:'1080px'});
   camera.append(canvas);
   nodes.surface={canvas,context:canvas.getContext('2d',{alpha:false,willReadFrequently:true})};
@@ -103,8 +103,5 @@ export function paintField(shot,local,nodes) {
   ctx.resetTransform();ctx.globalAlpha=1;
   // Keep the first recorded frame native-sized, then blend into the crop.
   if(local<.15) {ctx.globalAlpha=Math.max(0,1-local/.15);ctx.drawImage(nodes[0].firstChild,0,0,1920,1080);}
-  ctx.globalAlpha=1;ctx.font='500 21px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-  const text='Recorded demonstrations',width=ctx.measureText(text).width+28,height=39;
-  ctx.fillStyle='#fffffff0';ctx.beginPath();ctx.roundRect(960-width/2,1080-16-height,width,height,5);ctx.fill();
-  ctx.fillStyle='#333';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(text,960,1080-16-height/2);
+  ctx.globalAlpha=1;
 }

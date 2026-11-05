@@ -128,7 +128,7 @@ Some cells contain four smaller squares, so a field of hundreds fits exactly,
 without partial rows. Related activity states remain together. Its opening
 retains the original finished Repair Night frame, then crops naturally into
 the first square during a single smooth pull-back. The field holds for one
-second and lifts to white, retaining “Recorded demonstrations”. All movement
+second and lifts to white without an overlay caption. All movement
 and video seeking are evaluated at frame time. A fixed-resolution software
 canvas with fixed bilinear sampling keeps image resampling independent of earlier camera frames.
 Stills are decoded and frozen at native resolution before zooming; field frames
@@ -150,11 +150,28 @@ tile images are used.
 The 14-second pull-back holds the full mosaic, resolves to matching type, and
 ends on the exact first frame of `wall-3-handoff.json`. A `titlemorph` shot with
 `fromTitle: true` starts with all three lines already formed, then drops the
-non-initial letters. Title geometry and caption painting are shared, so there
+non-initial letters. Title geometry is shared and captions are omitted, so there
 is no position jump at the cut. Tiles do not fall; the cut on the held title
 is the intentional handoff. `wall-title-check.mjs SHOTS.json` checks the
 distinct opening, three-line pixel contrast, repeatable frames, exact handoff,
 and the five retained initials, and writes eight full-size review frames.
+
+### Reviewed title-wall sources
+
+`wall-4-media.py MEDIA_ROOT --ocr OCR_EXECUTABLE` builds the next cut from a
+narrow Crew, Draw, Parts, and sketch-label allowlist. Compile `capture-text.swift`
+with Swift on macOS to provide the OCR executable. The builder rejects the
+specified personal-looking sample wording and setup/error labels, then copies
+only approved square frames into a separate media folder. The review records
+OCR text and source hashes; those reviewed inputs supply every grid cell,
+including the first nine and first thirty. Review the images as well as the OCR.
+
+The opening is one explicit input: the last frame of the newest published
+`clips/session/use-return*.mp4`, when present. Otherwise its `placeholder` flag
+and replacement instruction remain in the JSON, and a clean repair-board crop
+is used as the swappable input. No caption or timestamp is added to the movie
+or its clean three-line type ending. Previous movies and source captures remain
+untouched.
 
 ## Incremental cut
 
