@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { standInCore, openPage, ready, sleep } from './headless.mjs';
+import { expectRecognizedWords } from './recognized-words.mjs';
 if (ready()) { console.log(`SKIP c10: ${ready()}`); process.exitCode = 3; }
 else {
 const output = mkdtempSync(join(tmpdir(), 'e2a2o-c10-'));
@@ -107,7 +108,7 @@ try {
     for (let turn=0;turn<2;turn++) {
       assert.deepEqual(await pcm(),[123,-456,789],`${mode}: first samples retained`);
       core.send({type:'partial',text:`Synthetic turn ${turn+1} first words`});
-      await wait(`document.querySelector('.voice-draft')?.textContent.includes('Synthetic turn ${turn+1} first words')`);
+      await expectRecognizedWords(browser, `Synthetic turn ${turn+1} first words`);
       const n = await speak();
       await record(mode,`turn-${turn+1}-playing`);
       assert.equal(await evaluate('writer.capture.bargeIn'),false,'comparison isolates local barge-in');
@@ -206,7 +207,7 @@ try {
     await sleep(reason==='disconnect'?1400:100);
     assert.equal(await evaluate('micStarts'),starts,`${reason}: no late/reconnect restart`);
     assert.equal(await evaluate(`document.querySelector('textarea').value`),'Synthetic unsent typed words',`${reason}: editable draft retained`);
-    assert.ok(await evaluate(`document.querySelector('.voice-draft')?.textContent.includes('Synthetic turn 2 first words')`),`${reason}: recognized words retained`);
+    await expectRecognizedWords(browser, 'Synthetic turn 2 first words', `${reason}: recognized words retained`);
     await record('guards',reason);
     if(reason==='off'||reason==='pending-off') await toggleFeature();
     if(reason!=='leaving') await click('input[value="session"]');

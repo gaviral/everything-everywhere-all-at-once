@@ -4,6 +4,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { standInCore, openPage, sleep } from './headless.mjs';
+import { expectRecognizedWords } from './recognized-words.mjs';
 const now = Date.now();
 const world = { threads: [{id:'T1', title:'Synthetic exchange', parent_id:null,status:'open',last_point:'',touched_ms:now,tags:[],picture:null,dropped_by:''}], thoughts: [], active:'T1',active_by:{you:'T1'},stay_here:'T1',anchors:{},notes:{},suggestions:[],actions:[],merged:{},apps:[],apps_seeded:true,recaps:[],proposals:[],ai:['E2A2O'] };
 const core = await standInCore(() => [{type:'snapshot',world}], {onMessage(msg) {
@@ -48,7 +49,7 @@ try {
   await evaluate('allowMic()');
   assert.ok(await until(`document.querySelector('[data-guide="mic"]').dataset.state==='listening'`));
   send({type:'partial',text:'Synthetic first question'});
-  assert.ok(await until(`document.querySelector('.voice-draft')?.textContent.includes('Synthetic first question')`));
+  await expectRecognizedWords(browser, 'Synthetic first question');
   send({type:'change',change:{type:'thought_added',thought:{id:'pending-a',speaker:'you',text:'Unrelated synthetic thought',point:'',thread_id:'T1',placed:false,complete:true,at_ms:now,place_ms:0}}});
   assert.ok(await until(`document.querySelector('.shell-status-right').textContent.includes('waiting')`));
   assert.match(await evaluate(`document.querySelector('.shell-status-word').textContent`),/Listening/,'placement and capture facts coexist');
@@ -91,7 +92,7 @@ try {
   assert.equal(await evaluate('spoken.length'),count,'stopped reply cannot queue again');
   assert.equal(await evaluate('micStarts'),1,'no capture restart from late playback');
   send({type:'partial',text:'Second synthetic utterance starts here'});
-  assert.ok(await until(`document.querySelector('.voice-draft').textContent.includes('Second synthetic utterance starts here')`));
+  await expectRecognizedWords(browser, 'Second synthetic utterance starts here');
   send({type:'partner_state',state:'thinking',message:'Thinking…',reply_id:'reply-b'});
   send({type:'guide',kind:'caption',text:'Second reply.',by:'E2A2O',reply_id:'reply-b',at_ms:now+1,speak:true});
   assert.ok(await until('spoken.length===2'));
@@ -121,7 +122,7 @@ try {
   events.push({at_ms:Date.now(),type:'local-stop-conversation',capture:'off',playback:'off'});
   assert.ok(await until('tracks.every(t=>t.stopped)'));
   assert.ok(await until(`document.querySelector('[data-guide="mic"]').getAttribute('aria-pressed')==='false'`));
-  assert.ok(await evaluate(`document.querySelector('.voice-draft').textContent.includes('Second synthetic utterance starts here')`),'stop retains recognized words');
+  await expectRecognizedWords(browser, 'Second synthetic utterance starts here', 'stop retains reachable recognized words');
   core.drop();
   assert.ok(await until(`document.querySelector('[data-guide="mic"]').dataset.state==='offline'`));
   await sleep(1200);
@@ -131,7 +132,8 @@ try {
   await evaluate('window.denyMic=true');
   await click('[data-guide="mic"]');
   assert.ok(await until(`document.querySelector('[data-guide="mic"]').dataset.state==='blocked'`));
-  assert.ok(await evaluate(`!!document.querySelector('textarea') && document.querySelector('.voice-draft').textContent.includes('Second synthetic utterance starts here')`));
+  assert.ok(await evaluate(`!!document.querySelector('textarea')`));
+  await expectRecognizedWords(browser, 'Second synthetic utterance starts here');
   // A meaningful permission retry, followed by disconnect while capture is actually open.
   await evaluate('window.denyMic=false');
   await click('[data-guide="mic"]');
@@ -139,12 +141,12 @@ try {
   await evaluate('allowMic()');
   assert.ok(await until(`document.querySelector('[data-guide="mic"]').dataset.state==='listening'`));
   send({type:'partial',text:'Synthetic words retained after disconnect'});
-  assert.ok(await until(`document.querySelector('.voice-draft').textContent.includes('Synthetic words retained after disconnect')`));
+  await expectRecognizedWords(browser, 'Synthetic words retained after disconnect');
   core.drop();
   assert.ok(await until('tracks.every(t=>t.stopped)'),'disconnect closes an open mic');
   assert.ok(await until(`document.querySelector('[data-guide="mic"]').dataset.state!=='offline'`));
   assert.equal(await evaluate('micStarts'),3,'reconnect after capture failure never records');
-  assert.ok(await evaluate(`document.querySelector('.voice-draft').textContent.includes('Synthetic words retained after disconnect')`));
+  await expectRecognizedWords(browser, 'Synthetic words retained after disconnect');
   events.push({at_ms:Date.now(),type:'disconnect',capture:'off',recognized_draft_retained:true});
   assert.ok(core.heard.some(m=>m.type==='partner_cancel'));
   writeFileSync(join(output,'events.json'),JSON.stringify({result_type:'fixture',events,live_audio_verified:false},null,2));

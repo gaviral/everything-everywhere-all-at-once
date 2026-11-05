@@ -6,6 +6,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ready, standInCore, openPage, sleep } from "./headless.mjs";
+import { expectRecognizedWords } from "./recognized-words.mjs";
 
 // openPage spawns Chrome with this environment. Never hand provider credentials to children.
 for (const name of Object.keys(process.env)) if (/KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL/i.test(name)) delete process.env[name];
@@ -217,7 +218,7 @@ try {
       assert.ok(await until(`document.querySelector('button.mic').getAttribute('aria-pressed') === 'true'`), "synthetic capture starts");
       core.send({ type: "status", listening: true });
       core.send({ type: "partial", text: "Synthetic words" });
-      assert.ok(await until(`document.querySelector('.voice-draft')?.textContent.includes('Synthetic words')`), "real partial accepted");
+      await expectRecognizedWords(browser, 'Synthetic words', 'synthetic partial is visibly accepted');
     }
     if (gate === "disconnected") { online = false; core.drop(); await sleep(150); }
     await warm(); await sleep(1300);
