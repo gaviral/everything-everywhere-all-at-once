@@ -47,7 +47,7 @@ try {
       samePixels(await stage.screenshot(),await readFile(join(output,`${i}.png`)),'Sequential rendering and direct seeks use identical sampling');
     }
   }
-  assert.equal(await stage.evaluate('document.querySelector("canvas[role=img]").getAttribute("aria-label")'),'Recorded demonstrations');
+  assert.equal(await stage.evaluate('document.querySelector("canvas[role=img]").getAttribute("aria-label")'),'Feature wall');
 } finally {await stage.close();}
 const fresh=await openStage(fileURLToPath(new URL('stage.html',import.meta.url)),1920,1080);
 try {

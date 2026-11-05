@@ -1,5 +1,5 @@
 import {freezeStill} from './wall-field.mjs';
-import {paintTitle,paintRecorded,titleCard} from './title-layout.mjs';
+import {paintTitle,titleCard} from './title-layout.mjs';
 const clamp=x=>Math.max(0,Math.min(1,x));
 const ease=x=>x*x*(3-2*x);
 export function titleMask(columns=64,rows=36) {
@@ -18,11 +18,11 @@ export function arrangePixels(mask,tiles,columns=64,rows=36) {
   const middle=[Math.floor(columns/2),Math.floor(rows/2)];
   const cells=mask.map((light,i)=>({col:i%columns,row:Math.floor(i/columns),light}));
   cells.sort((a,b)=>Math.hypot(a.col-middle[0],a.row-middle[1])-Math.hypot(b.col-middle[0],b.row-middle[1]));
-  const hero=cells.find(c=>!c.light);
+  const hero=cells.find(c=>c.light===!!tiles[0].light);
   cells.sort((a,b)=>Math.max(Math.abs(a.col-hero.col),Math.abs(a.row-hero.row))-Math.max(Math.abs(b.col-hero.col),Math.abs(b.row-hero.row))||a.row-b.row||a.col-b.col);
   cells.splice(cells.indexOf(hero),1);cells.unshift(hero);
-  const pools=[tiles.map((t,i)=>!t.light&&i!==0?i:null).filter(i=>i!==null),tiles.map((t,i)=>t.light?i:null).filter(i=>i!==null)];
-  if(pools[0].length<8||pools[1].length<9)throw Error('Title wall requires at least nine distinct dark and light frames');
+  const pools=[tiles.map((t,i)=>!t.light&&i!==0?i:null).filter(i=>i!==null),tiles.map((t,i)=>t.light&&i!==0?i:null).filter(i=>i!==null)];
+  if(pools[0].length+Number(!tiles[0].light)<9||pools[1].length+Number(!!tiles[0].light)<9)throw Error('Title wall requires at least nine distinct dark and light frames');
   const next=[0,0];
   return cells.map((cell,i)=>{
     const pool=+cell.light;
@@ -47,7 +47,7 @@ export async function createTitleWall(shot,camera,bounded) {
   for(const spec of shot.tiles){const image=new Image();image.src=spec.source;await bounded(image.decode(),'Title wall image load');sources.push(await freezeStill(image));}
   const image=new Image();image.src=shot.opening.source;await bounded(image.decode(),'Title wall opening load');
   const opening=await freezeStill(image),mask=titleMask(),cells=arrangePixels(mask,shot.tiles);
-  return {surface:{canvas,context:canvas.getContext('2d',{alpha:false,willReadFrequently:true})},sources,opening,mask,cells,typed:titleCard(shot.caption)};
+  return {surface:{canvas,context:canvas.getContext('2d',{alpha:false,willReadFrequently:true})},sources,opening,mask,cells,typed:titleCard()};
 }
 export function drawTitleWall(shot,local,camera,wall) {
   camera.style.transform='none';camera.style.opacity='1';return titleWallFrame(shot,local,wall.cells[0]);
@@ -68,6 +68,5 @@ export function paintTitleWall(shot,local,wall) {
   ctx.drawImage(wall.opening,x-cx/s*side,y-cy/s*side,1920/s*side,1080/s*side);ctx.restore();
   ctx.resetTransform();
   if(local<.15){ctx.globalAlpha=1-local/.15;ctx.drawImage(wall.opening,0,0);ctx.globalAlpha=1;}
-  paintRecorded(ctx,shot.caption);
   if(f.type){ctx.globalAlpha=f.type;ctx.drawImage(wall.typed,0,0);ctx.globalAlpha=1;}
 }

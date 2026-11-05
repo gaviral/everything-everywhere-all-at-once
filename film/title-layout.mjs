@@ -31,16 +31,9 @@ export function paintTitle(context,colour='#fff') {
   const layout=titleLayout(context);context.fillStyle=colour;context.textAlign='center';
   for(const letter of layout.letters)context.fillText(letter.char,letter.x,letter.y+letter.baseline);
 }
-export function paintRecorded(context,caption='Recorded demonstrations') {
-  if(!caption)return;
-  context.font=`500 21px ${TITLE_FONT}`;context.textAlign='center';context.textBaseline='middle';
-  const width=context.measureText(caption).width+28;
-  context.fillStyle='#000c';context.beginPath();context.roundRect(960-width/2,1025,width,39,5);context.fill();
-  context.fillStyle='#fff';context.fillText(caption,960,1044.5);context.textBaseline='alphabetic';
-}
-export function titleCard(caption,background='#000',colour='#fff') {
+export function titleCard(background='#000',colour='#fff') {
   const canvas=document.createElement('canvas');canvas.width=1920;canvas.height=1080;
   const context=canvas.getContext('2d',{alpha:false,willReadFrequently:true});
-  context.fillStyle=background;context.fillRect(0,0,1920,1080);paintTitle(context,colour);paintRecorded(context,caption);
+  context.fillStyle=background;context.fillRect(0,0,1920,1080);paintTitle(context,colour);
   return canvas;
 }

@@ -23,8 +23,8 @@ def varied(rows):
     return first+rest
 tiles=[{'image':'wall-2-squares/opening-square.jpg','id':'finished-repair-night','light':False}]+varied(pools[False])+varied(pools[True])
 opening=json.loads((root/'wall-2-shots.json').read_text())['shots'][0]['opening']
-shot={'kind':'wall','layout':'title','seconds':14,'columns':64,'rows':36,'gap':.7,'opening':opening,'caption':'Recorded demonstrations','tiles':tiles}
+shot={'kind':'wall','layout':'title','seconds':14,'columns':64,'rows':36,'gap':.7,'opening':opening,'tiles':tiles}
 (root/'wall-3-shots.json').write_text(json.dumps({'shots':[shot]},indent=2)+'\n')
-handoff={'kind':'titlemorph','variant':'short','fromTitle':True,'seconds':4.31,'caption':'Recorded demonstrations'}
+handoff={'kind':'titlemorph','variant':'short','fromTitle':True,'seconds':4.31}
 (root/'wall-3-handoff.json').write_text(json.dumps({'shots':[handoff]},indent=2)+'\n')
 print(f'Title pixels: 64×36 from {len(pools[False])+1} dark and {len(pools[True])} light recorded frames; 14 seconds')
