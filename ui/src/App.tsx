@@ -1918,7 +1918,7 @@ export default function App() {
             style={{ height: "1.466667em", maxHeight: "1.466667em", lineHeight: "1.466667em" }}
             onChange={(e) => { typedSinceSend.current = true; setDraft(e.target.value); }}
             placeholder={inCall ? NAMES.composer.call : NAMES.composer.idle} aria-label="Type a thought" aria-keyshortcuts="Enter" />
-          {captureInPlace && core.noKey && <button type="button" className="shell-link map-capture-setup" aria-keyshortcuts="Enter" onClick={() => setKeyHelp(true)}>Typed thoughts save · Set up AI</button>}
+          {captureInPlace && core.noKey && <button type="button" className="shell-link map-capture-setup" aria-keyshortcuts="Enter" onClick={() => setKeyHelp(true)}>Set up Meta AI for voice and topics</button>}
           {captureInPlace && empty && site.sample && !draft && !stopMic && !startingMic && <button type="button" className="shell-link map-capture-example" aria-keyshortcuts="E" onClick={() => loadSample()} disabled={!core.connected || waitingCaptures.length > 0}>See an example</button>}
           {captureInPlace && captures.at(-1)?.saved && !draft && <span className="map-capture-saved" data-saved-id={captures.at(-1)?.id}>Saved</span>}
         </form>
