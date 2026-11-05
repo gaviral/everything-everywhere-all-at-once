@@ -1,10 +1,14 @@
 // One isolated, synthetic example; no model calls or microphone access.
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { openPage, ready, standInCore } from './headless.mjs';
 
 assert.equal(ready(), '', 'built UI and Chrome available');
 const before = process.argv.includes('--before');
+const screenshots = process.env.LOOK_RESTORE_SHOTS || mkdtempSync(join(tmpdir(), 'e2a2o-look-restore-'));
+mkdirSync(screenshots, { recursive: true });
 const now = 1800000000000;
 const lines = [
   'Example · A little room to think',
@@ -17,7 +21,6 @@ const world = {
   active: 'T1', active_by: { you: 'T1' }, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: true, notes: {}, recaps: [], proposals: [], positions: {},
 };
 const core = await standInCore(() => [{ type: 'snapshot', world }]);
-mkdirSync('docs/looks', { recursive: true });
 let browser;
 
 async function openExample(scheme) {
@@ -41,7 +44,7 @@ async function openExample(scheme) {
 async function capture(scheme) {
   await browser.evaluate('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))');
   const suffix = before ? `-before${scheme === 'light' ? '-light' : ''}` : scheme === 'light' ? '-light' : '';
-  writeFileSync(`docs/looks/look-restore${suffix}.png`, Buffer.from((await browser.page('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+  writeFileSync(join(screenshots, `look-restore${suffix}.png`), Buffer.from((await browser.page('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
 }
 
 async function checkWarmInk() {
@@ -80,4 +83,5 @@ try {
     await browser.close(); browser = null;
   }
   console.log(before ? 'Captured before: dark and light at 1920×1080.' : 'PASS look-restore: visible example + chat, warm dark/light ink, contrast, Warm paper default, all light Looks; 1920×1080 captures.');
+  console.log(`Screenshots saved to ${screenshots}.`);
 } finally { await browser?.close(); core.close(); }

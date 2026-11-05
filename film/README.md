@@ -4,6 +4,10 @@ An offline, shot-driven film renderer. Requires Node 22+, Chrome, FFmpeg and
 FFprobe on PATH. Set `CHROME_PATH` if Chrome is outside its usual installation.
 No packages, network services, microphone, or model runtime are involved.
 
+The demo film's narration is a third-party synthetic voice (Deepgram Aura), used
+for the film only; the app itself calls Meta models only. Narration provenance
+and media-rights review remain separate from rendering checks.
+
 ```sh
 node film/cut.mjs /path/to/shots.json --preview --out /path/to/preview.mp4
 node film/cut.mjs /path/to/shots.json --final --out /path/to/final.mp4
@@ -60,6 +64,21 @@ Decision: Chrome DevTools runs over an inherited pipe, so rendering opens no
 listening ports. Scratch Chrome profiles remain in the system temporary
 directory; takes remain under the ignored `renders/` folder. No shared app
 files or dependencies change.
+
+## Live app clips
+
+[The live clip recorder](../scripts/film-capture.mjs) captures the app in an
+isolated local core and Chrome profile. Set `FILM_OUT` to an external media
+directory, plus `FILM_KEYCHAIN_SERVICE` and `FILM_KEYCHAIN_ACCOUNT` for the Meta
+key, then run `node scripts/film-capture.mjs`. These captures make live Meta
+calls. `FILM_URL` can select an already-running isolated local core.
+
+`FILM_CLIPS=ask,crew` selects individual clips and prepares their required
+thought or sketch. Crew captures check that the board keeps the supplied
+Saturday without inventing another weekday. `FILM_SPOKEN=1` uses supplied WAVs
+from `FILM_VOICE_DIR` through Chrome's file-backed audio device, without a
+physical microphone. Review the recorded checks and footage before using a
+clip in the film.
 
 ## Feature wall
 
@@ -118,6 +137,24 @@ second fresh renderer, rather than PNG compression bytes.
 `wall-field-check.mjs` checks
 complete square coverage and writes eight actual review frames; review those
 at film size before accepting a take.
+
+### Title made of app frames
+
+`wall-3-media.py MEDIA_ROOT` reuses the recorded square crops and separates
+them by measured brightness. `layout: "title"` places those real frames in a
+64×36 field: light frames form EVERYTHING / EVERYWHERE / ALL AT ONCE and dark
+frames fill the background. Repetition is deliberate at the pixel scale;
+the opening neighbourhood uses distinct sources. No recolouring or generated
+tile images are used.
+
+The 14-second pull-back holds the full mosaic, resolves to matching type, and
+ends on the exact first frame of `wall-3-handoff.json`. A `titlemorph` shot with
+`fromTitle: true` starts with all three lines already formed, then drops the
+non-initial letters. Title geometry and caption painting are shared, so there
+is no position jump at the cut. Tiles do not fall; the cut on the held title
+is the intentional handoff. `wall-title-check.mjs SHOTS.json` checks the
+distinct opening, three-line pixel contrast, repeatable frames, exact handoff,
+and the five retained initials, and writes eight full-size review frames.
 
 ## Incremental cut
 

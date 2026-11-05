@@ -1,7 +1,0 @@
-# Built-in speech
-
-Speech is a browser capability, independent of the saved feature choice. Features offers one **Built-in speech** switch when an explicitly local voice is detected; it defaults on, including in Talk. Only voices reporting `localService === true` are admitted; remote and unknown-locality voices never receive reply text. Voice selection then keeps the existing preference for English, Premium/Enhanced and the browser default. The label describes the browser voice without promising a particular platform or quality.
-
-Without the speech API or an explicitly local voice, replies stay text-only and capture is never paused waiting for audio. Command confirmations also appear in the reply status when speech is off. Voice arrival enables future replies without replaying earlier ones. Switching off or losing voices stops playback. A listed voice that fails also falls back quietly to text until the browser reports voices again.
-
-The bounded `PRECHECK_PAGES=1 node scripts/speech-capability-check.mjs` check uses the built page and synthetic voices/replies to cover local, higher-ranked mixed remote/local, remote-only, unknown-only, absent, missing API, late arrival, voice loss and playback failure, plus the Features switch and visible text. `PRECHECK_PAGES=1 node scripts/page-speech-check.mjs --fixture` retains the capture, cancellation and voice-selection regressions with the new text-only behavior. These fixtures do not certify real speaker output or phone audio.
