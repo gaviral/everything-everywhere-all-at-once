@@ -456,6 +456,7 @@ impl Core {
             answer(response).await
         }
         .await;
+        let result = crate::secrets::result(result, self.key.as_deref());
         step.end(result.is_ok());
         // Image input must never enter prompt logs, even when tracing is enabled.
         if extra["feature"] == "image-evidence" {
@@ -474,6 +475,7 @@ impl Core {
         let extra = serde_json::json!({"feature":"flow"});
         let step = self.step_began(body, &extra);
         let started = std::time::Instant::now();
+        let mut redactor = crate::secrets::Stream::new(self.key.as_deref());
         let result = async {
             let mut response = self.http.post("https://api.meta.ai/v1/chat/completions")
                 .bearer_auth(key).timeout(Duration::from_secs(90)).json(body).send().await?;
@@ -490,7 +492,9 @@ impl Core {
                     let event: Value = serde_json::from_str(data)?;
                     if event.get("error").is_some() { anyhow::bail!("The model stream reported an error"); }
                     if let Some(text) = event["choices"][0]["delta"]["content"].as_str() {
-                        output.push_str(text); emit(text);
+                        output.push_str(text);
+                        let safe = redactor.push(text);
+                        if !safe.is_empty() { emit(&safe); }
                     }
                     if event["choices"][0]["finish_reason"].as_str().is_some() { done = true; }
                 }
@@ -498,6 +502,12 @@ impl Core {
             anyhow::ensure!(done && !output.trim().is_empty(), "The model stream ended without a complete answer");
             Ok(output)
         }.await;
+        let result = result.map(|text| crate::secrets::text(&text, self.key.as_deref()))
+            .map_err(|error| crate::secrets::error(error, self.key.as_deref()));
+        if result.is_ok() {
+            let tail = redactor.finish();
+            if !tail.is_empty() { emit(&tail); }
+        }
         step.end(result.is_ok());
         let traced = result.as_ref().map(|_| serde_json::json!({"streamed":true}));
         self.trace.call(body, started, traced.as_ref().map_err(|e| *e), extra);
@@ -588,6 +598,7 @@ impl Core {
         }
         .await;
         unanswered.call = None;
+        let result = crate::secrets::result(result, self.key.as_deref());
         step.end(result.is_ok());
         self.trace.call(&sent, started, result.as_ref(), extra);
         result

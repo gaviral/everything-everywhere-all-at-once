@@ -37,7 +37,7 @@ async function startScratchCore() {
   if (process.env.FILM_SKIP_BUILD !== '1') {
     console.log('Building UI and core');
     await Promise.all([
-      runFile('npm', ['run', 'build'], { cwd: join(repo, 'ui'), maxBuffer: 8e6 }),
+      runFile('npm', ['run', 'build'], { cwd: join(repo, 'ui'), env: { ...process.env, VITE_E2A2O_FILM: '1' }, maxBuffer: 8e6 }),
       runFile('cargo', ['build', '--locked'], { cwd: join(repo, 'core'), maxBuffer: 8e6 }),
     ]);
   }
@@ -51,7 +51,7 @@ async function startScratchCore() {
   try { ({ stdout: key } = await runFile('security', ['find-generic-password', '-s', service, '-a', account, '-w'])); }
   catch { throw Error('The Muse key is unavailable in Keychain'); }
   core = spawn(join(repo, 'core/target/debug/e2a2o-core'), [], { cwd: join(repo, 'core'),
-    env: { ...process.env, MODEL_API_KEY: key.trim(), PORT: url.port, E2A2O_CODE_CANVAS: '1', E2A2O_DATA: data, E2A2O_UI: join(repo, 'ui/dist') }, stdio: 'ignore' });
+    env: { ...process.env, MODEL_API_KEY: key.trim(), PORT: url.port, E2A2O_HOSTED: '0', E2A2O_DEV_TOOLS: '1', E2A2O_CODE_CANVAS: '1', E2A2O_DATA: data, E2A2O_UI: join(repo, 'ui/dist') }, stdio: 'ignore' });
   key = undefined;
   const end = Date.now() + 15000;
   while (Date.now() < end) {

@@ -8,7 +8,7 @@ import { createServer } from '../../../../node_modules/vite/dist/node/index.js';
 import { openPage } from '../../../../../scripts/headless.mjs';
 
 const root = new URL('../../../../', import.meta.url).pathname;
-const vite = await createServer({ root, configFile: false, esbuild: { jsx: 'automatic' }, cacheDir: mkdtempSync(join(tmpdir(), 'film-vite-')), server: { middlewareMode: true, hmr: false, watch: null } });
+const vite = await createServer({ root, configFile: false, define: { 'import.meta.env.VITE_E2A2O_FILM': '"1"' }, esbuild: { jsx: 'automatic' }, cacheDir: mkdtempSync(join(tmpdir(), 'film-vite-')), server: { middlewareMode: true, hmr: false, watch: null } });
 const calls = [], saved = [];
 let holdRead = false;
 const pendingRead = Promise.withResolvers();
