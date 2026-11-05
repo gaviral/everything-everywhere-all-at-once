@@ -92,7 +92,7 @@ check "a tunnel lets in only its own name, with the code, and no one as host (te
 check "trial.sh parses and claims its map atomically" "sh -n scripts/trial.sh && grep -q 'trial-claim' scripts/trial.sh"
 check "model calls have a timeout (test fixtures aside)" "python3 -c 'import glob, sys; sys.exit(any(\"reqwest::Client::new()\" in open(f).read().split(\"#[cfg(test)]\")[0] for f in glob.glob(\"core/src/**/*.rs\", recursive=True) if not f.endswith(\"tests.rs\")))'"
 check "model guards catch what they should (self-test)" "python3 scripts/model-guards.py self-test > /dev/null"
-check "every runtime model is Meta's (hackathon rule): no other SDK, endpoint or model" "python3 scripts/model-guards.py meta-only"
+check "every runtime model is Meta's (project policy): no other SDK, endpoint or model" "python3 scripts/model-guards.py meta-only"
 check "every model call counts toward the hourly cap (tested)" "python3 scripts/model-guards.py counted && grep -q 'fn past_the_cap_nothing_is_sent' core/src/model.rs"
 check "UI never injects raw HTML" "! grep -rq dangerouslySetInnerHTML ui/src"
 # Claims stay modest and non-medical (README, docs, UI copy, sample maps, demo talk, prompts): scripts/health-words.pl.
