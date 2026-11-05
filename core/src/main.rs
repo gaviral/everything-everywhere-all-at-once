@@ -44,6 +44,8 @@ mod positions;
 mod refiner;
 mod terse;
 mod sample;
+mod secrets;
+mod surface;
 mod trace;
 mod recap;
 mod replies;
@@ -65,12 +67,11 @@ mod replay_tests;
 
 use axum::extract::connect_info::{ConnectInfo, Connected};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{DefaultBodyLimit, Query, Request, State};
+use axum::extract::{Query, Request, State};
 use axum::http::{header, StatusCode};
-use axum::middleware::{self, Next};
+use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
-use axum::{Json, Router};
+use axum::Json;
 use futures_util::stream::SplitSink;
 use futures_util::{SinkExt, StreamExt};
 use protocol::{ClientMsg, Outgoing, ServerMsg, View};
@@ -81,7 +82,6 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::{broadcast, mpsc};
-use tower_http::services::{ServeDir, ServeFile};
 use world::{Change, Journal, Thought, ThreadStatus, World};
 
 pub struct Core {
@@ -1594,40 +1594,7 @@ async fn main() -> anyhow::Result<()> {
 
     tokio::spawn(dev_build::watch(core.clone()));
     let ui = std::env::var("E2A2O_UI").unwrap_or_else(|_| "../ui/dist".into());
-    let app = Router::new()
-        .route("/code-canvas/snapshot", get(code_canvas::read))
-        .route("/code-canvas/events", get(system_view::events))
-        .route("/code-canvas/answer", post(code_canvas::answer))
-        .route("/ws", get(connect))
-        .route("/ws/my-words", get(glossary::connect))
-        .route("/room", get(room_info))
-        .route("/build-id", get(dev_build::status))
-        .route("/build-activity", post(dev_build::activity))
-        .route("/terse", post(terse::read))
-        .route("/workshop/turns", get(workshop::turns))
-        .route("/workshop/catalog", get(workshop::catalog))
-        .route("/workshop/run", post(workshop::run))
-        .route("/workshop/hackathon", get(workshop::hackathon))
-        .route("/clarify", post(clarify::ask))
-        .route("/crew/plan", post(crew::plan))
-        .route("/crew/build", post(crew::build))
-        .route("/crew/merge", post(crew::merge))
-        .route("/crew/promote", post(crew::promote))
-        .route("/draw/read", post(draw::read))
-        .route("/draw/back", post(draw::back))
-        .route("/flow/plan", post(flow::plan))
-        .route("/flow/finish", post(flow::finish))
-        .route("/flow/send", post(flow::send))
-        .route("/flow/run", post(flow::run))
-        .route("/flow/turns", get(flow::turns))
-        .route("/flow/library", get(flow::library).post(flow::save))
-        .route("/helper-result", post(helper_result::read))
-        .route("/import", post(import::prepare).layer(DefaultBodyLimit::max(import::MAX_BYTES)))
-        .route("/evidence/{id}", get(evidence::read))
-        .nest_service("/images", ServeDir::new(images))
-        .fallback_service(ServeDir::new(&ui).fallback(ServeFile::new(format!("{ui}/index.html"))))
-        .layer(middleware::from_fn_with_state(core.clone(), gate))
-        .with_state(core);
+    let app = surface::router(core, Path::new(&ui), &images, surface::Policy::from_env());
     let port: u16 = std::env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(4321);
     let unopened = |e: std::io::Error| {
         if e.kind() == std::io::ErrorKind::AddrInUse {
@@ -1765,10 +1732,8 @@ async fn gate(State(core): State<Arc<Core>>, mut request: Request, next: Next) -
     };
     if access == Access::None || (access == Access::Page && !public(request.uri().path())) {
         tracing::warn!(
-            "refused {} from {} (origin {:?})",
-            request.uri().path(),
+            "refused request from {}",
             link.map_or_else(|| "an unknown address".into(), |l| l.from.ip().to_string()),
-            request.headers().get(header::ORIGIN)
         );
         let mut response = StatusCode::FORBIDDEN.into_response();
         response.headers_mut().insert(header::X_FRAME_OPTIONS, header::HeaderValue::from_static("DENY"));
@@ -1778,6 +1743,11 @@ async fn gate(State(core): State<Arc<Core>>, mut request: Request, next: Next) -
     // Everything after the gate (names, host powers) then sees a guest at the visitor's address, never this machine.
     if let (Some(link), Some(visitor)) = (link, visitor) {
         request.extensions_mut().insert(ConnectInfo(Link { from: SocketAddr::new(visitor, 0), ..link }));
+    }
+    let policy = request.extensions().get::<surface::Policy>().copied().unwrap_or_else(surface::Policy::from_env);
+    let visitor = request.extensions().get::<ConnectInfo<Link>>().unwrap().0;
+    if !surface::request_path(request.uri().path()).is_some_and(|path| policy.allows(&path, visitor)) {
+        return StatusCode::NOT_FOUND.into_response();
     }
     // Built files and pictures never change under their names (content hash, uuid); everything else, the
     // page above all, is checked every time, so after an update the browser never shows the old app.

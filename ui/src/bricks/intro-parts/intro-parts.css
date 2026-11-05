@@ -5,9 +5,7 @@
 .intro-parts-line { white-space: nowrap; }
 .intro-parts-line:last-child { display: flex; gap: .23em; }
 .intro-parts-word { display: inline-block; transform-origin: top left; }
-.intro-parts-lead { position: relative; display: inline-block; line-height: 1; }
-.intro-parts-tail { display: inline-block; }
-.intro-parts-number { position: absolute; top: 0; left: 0; opacity: 0; }
-.intro-parts-measure { position: absolute; top: 45%; left: 50%; transform: translate(-50%, -50%); display: flex; font-size: clamp(48px, 8vw, 240px); letter-spacing: .14em; line-height: 1; visibility: hidden; }
+.intro-parts-lead { display: inline-block; line-height: 1; }
+.intro-parts-icon { position: absolute; top: calc(45% - clamp(40px, 6vw, 140px)); left: calc(50% - clamp(40px, 6vw, 140px)); width: clamp(80px, 12vw, 280px); height: clamp(80px, 12vw, 280px); transform-origin: top left; opacity: 0; }
 .intro-parts-hint { position: absolute; left: 0; right: 0; bottom: max(24vh, 170px); margin: 0; text-align: center; color: var(--muted); font-size: clamp(12px, .9vw, 32px); font-weight: 400; letter-spacing: .03em; }
 @media (prefers-reduced-motion: reduce) { .intro-parts { display: none; } }

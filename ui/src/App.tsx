@@ -1,3 +1,4 @@
+import { AppMark } from "./AppMark";
 import { useDevBuild } from "./dev-build";
 import "./capture-in-place.css";
 import "./flow-layout.css";
@@ -1580,7 +1581,7 @@ export default function App() {
       {talk && pluginsOn && <button type="button" className="talk-plugins" onClick={() => setRailTab("plugins")}>Plugins</button>}
       <header ref={headerRef}>
         <div className="brand" data-slot="top-left">
-          E2A2O
+          <AppMark />
           {sessionCounts.thoughts > 0 && <span className="session-count">This session · {sessionCounts.thoughts} {sessionCounts.thoughts === 1 ? "thought" : "thoughts"} · {sessionCounts.threads} {sessionCounts.threads === 1 ? "topic" : "topics"}</span>}
         </div>
         <div className="header-actions" data-slot="top-right">

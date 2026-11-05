@@ -23,8 +23,8 @@ try{
  const e=ready(plan.shots.at(-1));const state=await stage.frame(e,7);assert.equal(state.credit,'Muse Spark · Muse Image · Muse Voice Transcribe');assert.ok(!state.text.includes('Example project'));await writeFile(join(out,'ending.png'),await stage.screenshot());
  const brand=await stage.frame({kind:'brand',phase:'hold',duration:1,index:999,disclosure:'Disclosure sentinel'},0);assert.ok(!brand.text.includes('Disclosure sentinel'));
 }finally{await stage.close();}
-const tiny=join(out,'test.json');await writeFile(tiny,JSON.stringify({shots:[{id:'format',kind:'title',words:'Format',seconds:.2}]}));
+const tiny=join(out,'test.json');await writeFile(tiny,JSON.stringify({shots:[{id:'format',kind:'title',words:'Format',seconds:.177}]}));
 await cut([tiny,'--final','--cuts-dir',join(out,'cuts'),'--out',join(out,'format.mp4')]);
-const info=JSON.parse(run('ffprobe',['-v','error','-show_streams','-of','json',join(out,'format.mp4')])).streams[0];assert.equal(info.width,1920);assert.equal(info.height,1080);assert.equal(info.r_frame_rate,'30/1');
+const info=JSON.parse(run('ffprobe',['-v','error','-show_streams','-of','json',join(out,'format.mp4')])).streams[0];assert.equal(info.width,1920);assert.equal(info.height,1080);assert.equal(info.r_frame_rate,'30/1');assert.equal(Number(info.duration),.177);
 console.log('PASS final: mist pixels, credit-only ending, source windows, stable ids and 1080p/30 encoder.');
 console.log(out);

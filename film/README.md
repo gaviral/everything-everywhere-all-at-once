@@ -28,6 +28,7 @@ All direction lives in the JSON `shots` array:
 | Kind | Fields |
 | --- | --- |
 | `title` | `words` string or array; `seconds` is total time, evenly divided into word beats |
+| `titlemorph` | `seconds: 5.2, variant: "short"` on black; `seconds: 8, variant: "long"` on white, with a final tagline and still hold |
 | `plane` | `clip`, `start` in source seconds, `seconds`, `tilt: [x,y,z]` in degrees |
 | `planes` | `seconds`, two or three `clips`, each with plane fields |
 | `wall` | `seconds` (usually 8), `tiles` array of `{image}` or `{clip, start?, loopSeconds?}`; first tile is a clip |
@@ -142,6 +143,22 @@ No disclosure or fine-print line is displayed; per-shot `label` and
 Focused verification: `node film/cut-check.mjs`. It checks cache reuse, isolated
 shot and clip changes, recovery after one missing clip, concatenation, captions,
 cropping, and the preview/final profiles without rendering the whole film.
+
+## Title transformation
+
+`titlemorph` builds “Everything Everywhere All at Once”, drops the other
+letters, folds the initials to E² A² O, and turns the O into the gold bead.
+One gravity drop and rebound precede the blue shell and drawn ribbon. Shapes
+come from `ui/public/icon.svg`; they cross to the real glass icon before the
+name settles. Both variants use the stage font and an absolute frame clock.
+The type and glass image paint at fixed resolution to keep pixels independent
+of earlier compositor scales.
+The long variant follows the wall's white lift and adds “Think out loud.
+Build what you mean.” without credits. The final composition is still.
+
+`node film/title-morph-check.mjs OUTPUT_DIR` checks both variants, backward
+seeking, the final hold, and writes two 24-frame review sheets. Render each
+single-shot manifest with `node film/render.mjs SHOTS.json --out TITLE.mp4`.
 
 ## Directed shots
 

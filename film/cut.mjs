@@ -113,7 +113,7 @@ async function joinShots(results, opts) {
   const lastPTS=Math.round((frameCount-1)*90000/opts.fps);
   const tail=Math.round(opts.duration*90000)-lastPTS;
   if(tail<=0 || tail>Math.ceil(90000/opts.fps)) throw new Error('Last-frame duration is outside one frame');
-  const timing=`setts=duration=if(gte(PTS\\,${lastPTS})\\,${tail}\\,DURATION)`;
+  const timing=`setts=pts=PTS:dts=DTS:duration=if(gte(PTS\\,${lastPTS})\\,${tail}\\,DURATION)`;
   run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-n', '-f', 'concat', '-safe', '0', '-i', list, '-map', '0:v:0', '-c', 'copy', '-bsf:v', timing, '-movie_timescale', '1000', '-movflags', '+faststart', partial]);
   // Preserve previous review versions rather than overwriting them.
   try { await rename(opts.out, opts.out.replace(/\.mp4$/, `.previous-${randomUUID()}.mp4`)); } catch (e) { if (e.code !== 'ENOENT') throw e; }
@@ -127,7 +127,7 @@ export async function cut(args = process.argv.slice(2)) {
   await mkdir(opts.cuts, { recursive: true }); await mkdir(dirname(opts.out), { recursive: true });
   const hashes = new Map();
   const hashFile = path => { if (!hashes.has(path)) hashes.set(path, fileDigest(path)); return hashes.get(path); };
-  const code = await Promise.all(['stage.html', 'wall.mjs', 'wall-field.mjs', 'brand.mjs', 'motion.mjs', 'laptop.mjs', 'chrome.mjs', 'timeline.mjs', 'cut.mjs'].map(name => hashFile(join(here, name))));
+  const code = await Promise.all(['stage.html', 'title-morph.mjs', 'wall.mjs', 'wall-field.mjs', 'brand.mjs', 'motion.mjs', 'laptop.mjs', 'chrome.mjs', 'timeline.mjs', 'cut.mjs'].map(name => hashFile(join(here, name))));
   const shared = { format, code, logo: await hashFile(join(here, '../ui/public/icons/icon-512.png')), shapes: await hashFile(join(here, '../ui/public/icon.svg')) };
   const results = new Array(plan.shots.length), inFlight = new Map();
   await pool(plan.shots, async (original, index) => {
