@@ -47,7 +47,7 @@ try {
   assert.deepEqual([...pixel.stdout.subarray(0, 3)], [8, 102, 255], 'Card must render Meta blue');
   const list = { ...sample.shots[6], index: 104 };
   assert.equal((await stage.frame(list, 0.9)).text, 'and much more');
-  assert.equal((await stage.frame({ ...sample.shots[7], index: 105 }, 1)).text, 'E2A2OThink out loud. Build what you mean.Muse Spark · Muse Image · Muse Voice Transcribe · AI-generated narration using Deepgram Aura');
+  assert.equal((await stage.frame({ ...sample.shots[7], index: 105 }, 1)).text, 'E2A2OThink out loud. Build what you mean.Muse Spark · Muse Image · Muse Voice Transcribe');
   await writeFile(join(directory, 'end.png'), await stage.screenshot());
 } finally { await stage.close(); }
 

@@ -28,7 +28,7 @@ pub async fn status(State(core): State<Arc<Core>>) -> Json<serde_json::Value> {
     Json(serde_json::json!({"id": id(), "idle": idle}))
 }
 pub async fn watch(core: Arc<Core>) {
-    if std::env::var_os("E2A2O_BUILD_FILE").is_none() { return; }
+    if !crate::surface::development() || std::env::var_os("E2A2O_BUILD_FILE").is_none() { return; }
     let mut previous = id();
     let mut tick = tokio::time::interval(std::time::Duration::from_secs(1));
     loop {

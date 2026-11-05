@@ -1,0 +1,8 @@
+[
+  {
+    "source_file": "fetch.d.ts",
+    "line": 1,
+    "text": "// based on https://github.com/Ethan-Arrowood/undici-fetch/blob/249269714db874351589d2d364a0645d5160ae71/index.d.ts (MIT license)\n// and https://github.com/node-fetch/node-fetch/blob/914ce6be5ec67a8bab63d68510aabf07cb818b6d/index.d.ts (MIT license)\n/// <reference types=\"node\" />",
+    "source_sha256": "21d7fab00c101ddf754b392e11534e6b20c6bda269b2ccbcdf3453cbe21d8a39"
+  }
+]

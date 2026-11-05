@@ -1,7 +1,8 @@
 // The filming bridge belongs to the spine; the app supplies its overlay independently.
 import type { Viewport } from "./camera";
 
-export const FILM = typeof location !== "undefined" && new URLSearchParams(location.search).has("film");
+export const FILM = import.meta.env.VITE_E2A2O_FILM === "1"
+  && typeof location !== "undefined" && new URLSearchParams(location.search).has("film");
 export type FilmTarget = Viewport | { node: string; zoom?: number };
 export type FilmOptions = { duration?: number; ease?: "linear" | "ease-in" | "ease-out" | "ease-in-out" | ((t: number) => number) };
 export type Camera = (target: FilmTarget | null, options?: FilmOptions) => Promise<boolean>;

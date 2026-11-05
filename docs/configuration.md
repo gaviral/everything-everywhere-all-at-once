@@ -41,14 +41,14 @@ MODEL_API_KEY=
 # Optional, Full and local host only: cap voice-started thinking helpers (default 12).
 # Helpers start on; switch Thinking helpers off in Features to keep those requests as talk.
 # HELPERS_MAX=12
-# Optional: coding requests (including README) get one isolated branch/worktree per helper.
+# Optional: coding requests (including README) get one isolated branch/worktree per helper; Git is required.
 # Off by default: lists what would start without running a command or changing a repo.
 # HELPERS_RUN=on
 # HELPERS_REPO=/path/to/repository
-# No shell: a whitespace-separated command, or a JSON argv array for paths/args with spaces.
-# --json and --prompt-file are appended; brief text is only written to the prompt file.
-# HELPERS_CMD=muse exec
-# For an offline runner check: HELPERS_CMD=muse exec --provider echo
+# Leave HELPERS_CMD unset: the built-in runner calls Muse through the core's Meta API client.
+# No separate coding CLI, provider account or key is required. MODEL_API_KEY supplies the Meta key.
+# HELPERS_CMD=builtin-meta
+# Custom command adapters are outside the submitted Meta-only runtime configuration.
 # Optional, Full only: who "ask Mia to …" may message, as name=handle (a phone number or Apple ID email), comma-separated.
 # MESSAGES_TO=Mia=+15551234567, Sam=sam@example.com
 # Optional, Full only: really send through Messages when the 5-second countdown ends. Off, every message is a dry run.
@@ -67,4 +67,21 @@ MODEL_API_KEY=
 
 ## Containers
 
-The optional [Compose setup](../compose.yaml) builds the UI and Rust core from the [Dockerfile](../Dockerfile). Run `docker compose up --build --wait`, then open `http://localhost:8080/?sample`. The keyless sample is labelled SAMPLE; a named volume keeps edits across restarts. `docker compose down` stops the stack and retains that volume. Container builds remain unverified. macOS automation and host CLI integrations are unavailable inside the container.
+The optional [Compose setup](../compose.yaml) requires Docker Engine/Desktop and Compose v2. It builds the UI and Rust core from the [Dockerfile](../Dockerfile):
+
+```sh
+docker compose config --quiet
+docker compose up --build --wait
+```
+
+Open `http://localhost:8080/?sample`. The keyless sample is labelled SAMPLE; a named volume keeps edits across restarts. `docker compose down` stops the stack and retains that volume. Supply `MODEL_API_KEY` through the launching shell to enable live Meta calls, then rerun the launch command after changing or removing it. Compose passes the key to the core at runtime; keep it out of the image and build arguments.
+
+The runtime is non-root, without Node or Rust compilers. A relay shares the core's network namespace and publishes only host loopback port 8080, preserving the core's Host/Origin checks and WebSocket traffic. macOS automation, host CLI integrations and host audio devices are unavailable inside the container. Browser speech still depends on the computer opening the page.
+
+The image includes `/app/LICENSE`, `/app/THIRD_PARTY_NOTICES.md` and `/app/dependency-licences/`. The bundle's [documented gaps](../dependency-licences/UNRESOLVED.md) still require review before distributing affected components; including it is not release approval. On a Docker machine, verify the runtime and bundled notices with:
+
+```sh
+docker compose exec app sh -c 'test "$(id -u)" = 10001 && ! command -v node && ! command -v cargo && ! command -v rustc && test -s /app/LICENSE && test -s /app/THIRD_PARTY_NOTICES.md && test -s /app/dependency-licences/inventory.json'
+```
+
+Container builds remain unverified. Verify HTTP, sample pictures and an edit surviving `docker compose restart app gateway` before relying on this setup. Live Spark calls require separate verification with a working Meta key.

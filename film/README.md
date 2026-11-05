@@ -4,6 +4,10 @@ An offline, shot-driven film renderer. Requires Node 22+, Chrome, FFmpeg and
 FFprobe on PATH. Set `CHROME_PATH` if Chrome is outside its usual installation.
 No packages, network services, microphone, or model runtime are involved.
 
+The demo film's narration is a third-party synthetic voice (Deepgram Aura), used
+for the film only; the app itself calls Meta models only. Narration provenance
+and media-rights review remain separate from rendering checks.
+
 ```sh
 node film/cut.mjs /path/to/shots.json --preview --out /path/to/preview.mp4
 node film/cut.mjs /path/to/shots.json --final --out /path/to/final.mp4
@@ -28,10 +32,11 @@ All direction lives in the JSON `shots` array:
 | Kind | Fields |
 | --- | --- |
 | `title` | `words` string or array; `seconds` is total time, evenly divided into word beats |
+| `titlemorph` | `seconds: 5.2, variant: "short"` on black; `seconds: 8, variant: "long"` on white, with a final tagline and still hold |
 | `plane` | `clip`, `start` in source seconds, `seconds`, `tilt: [x,y,z]` in degrees |
 | `planes` | `seconds`, two or three `clips`, each with plane fields |
 | `wall` | `seconds` (usually 8), `tiles` array of `{image}` or `{clip, start?, loopSeconds?}`; first tile is a clip |
-| `card` | `word`, `seconds`, `colour` (default Meta blue) |
+| `card` | `word`, `seconds`, `colour` (default black) |
 | `list` | `names`, `seconds` **per name**, `colour`; finish with `and much more` |
 | `end` | `word` (default E2A2O), `seconds`; current app icon and name |
 
@@ -151,19 +156,36 @@ are retained. The adjacent JSON reports cached/rendered shots and failures.
 
 Planes accept `crop: [x,y,width,height]` in normalized source coordinates and
 `playSeconds` to hold the last real frame after that much source playback.
-`label` and `caption` remain fixed and readable outside camera motion. Mark
-each shortened wait with `caption: "wait shortened"`. Never use a hold or a
-crop to invent a result. The end card uses the current app icon.
+No disclosure or fine-print line is displayed; per-shot `label` and
+`caption` metadata are not displayed. Never use a hold or a crop to invent a result. The end card uses the current app icon.
 
 Focused verification: `node film/cut-check.mjs`. It checks cache reuse, isolated
 shot and clip changes, recovery after one missing clip, concatenation, captions,
 cropping, and the preview/final profiles without rendering the whole film.
 
+## Title transformation
+
+`titlemorph` builds “Everything Everywhere All at Once”, drops the other
+letters, folds the initials to E² A² O, and turns the O into the gold bead.
+Title lines and both initial arrangements fill about two thirds of the frame;
+explicit word gaps preserve “ALL AT ONCE”. E² A² O holds still for half a second.
+One gravity drop and rebound precede the blue shell and drawn ribbon. Shapes
+come from `ui/public/icon.svg`; they cross to the real glass icon before the
+name settles. Both variants use the stage font and an absolute frame clock.
+The type and glass image paint at fixed resolution to keep pixels independent
+of earlier compositor scales.
+The long variant follows the wall's white lift and adds “Think out loud.
+Build what you mean.” without credits. The final composition is still.
+
+`node film/title-morph-check.mjs OUTPUT_DIR` checks both variants, backward
+seeking, the final hold, and writes two 24-frame review sheets. Render each
+single-shot manifest with `node film/render.mjs SHOTS.json --out TITLE.mp4`.
+
 ## Directed shots
 
 A plane can enter with `tilt: [x,y,z]` and settle to `tiltTo: [x,y,z]` over
 `settleSeconds` (default 0.7). Rotation uses smooth interpolation independently
-of the slow `drift` and `zoom` camera. `background: "meta"` selects the Meta-blue
+of the slow `drift` and `zoom` camera. `background: "meta"` selects the quiet white-to-mist
 stage gradient. `fullFrame: true` removes the plane edge for an already-rendered
 wall movie. The end card has a centered icon/name, a `tagline`, and plain
 `credits` beneath it.
@@ -177,3 +199,32 @@ with actual frame-aligned start times, stable shot ids, and durations.
 `node film/direction-check.mjs /path/to/shots.json` checks the directed 150-second
 edit's chapter clocks, frame allocations, readable settling, repeatable camera,
 and end-card wording. Its screenshots stay with the external media.
+
+## Investor edit
+
+`pulse` uses `words`, `delay`, and `beat` for the black opening. `feature`
+uses `word` for a compressed, blurred entrance on the blue field, with optional
+`shrink` for the final abundance card. `laptop` uses a real `clip` inside an
+unbranded device; `phase` selects `rise` or `push`. `brand` selects `opening`,
+`assembly`, or `hold` and builds from the canonical icon SVG before crossing
+to the glass PNG. Only the quiet model credit remains beneath the final hold.
+
+A plane may use an `image` instead of a `clip`. Optional `rate` changes source
+playback speed without changing the shot allocation. Each input and source
+window stays with its stable shot id. A fractional final-frame display interval
+lets the stream-copy join hit the specified millisecond endpoint exactly.
+
+`node film/film3-check.mjs /path/to/shots.json` exercises the word timing,
+canonical-shape assembly, matching final hold, laptop motion, clean overlays,
+and fractional endpoint. It uses external media and never starts a microphone.
+
+## Final pass
+
+The stage uses a 68-degree gradient from white to mist, with neutral soft
+shadows and no bright plane edge. Chapter and feature-name cards use black.
+Per-shot headings and disclosure fields are ignored. The only final credit is
+“Muse Spark · Muse Image · Muse Voice Transcribe”. Title exports can be used as
+full-frame planes, split at existing shot boundaries with their final frame held.
+
+`node film/final-check.mjs /path/to/shots.json` checks the final palette,
+credit-only ending, latest source ranges and 1080p/30 export format.

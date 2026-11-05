@@ -40,7 +40,7 @@ E2A2O turns your words and sketches into a board of reusable parts. Capture a th
 
 ## Run it
 
-Needs Rust 1.89 or newer, Node.js 22.12 or newer, and npm. Source builds need Apple's command-line tools on macOS, or a C compiler, pkg-config and OpenSSL headers on Linux.
+Needs Rust 1.89 or newer, Node.js 22.12 or newer, and npm. Source builds need Apple's command-line tools on macOS, or a C compiler, pkg-config and OpenSSL headers on Linux. Crew and the optional coding helpers also need Git. Linux and Windows are not validated here.
 
 ```sh
 ./run.sh sample
@@ -70,4 +70,6 @@ Stop with Ctrl+C. Restart after changing the key. `./run.sh` opens your regular 
 
 A React and TypeScript board connects to a Rust core. The core holds the key and calls Meta models through [model.rs](core/src/model.rs). Features are composed from named parts, with separate rendering error boundaries. Crew keeps generated board specifications in their own Git repositories.
 
-[Architecture and parts](docs/ARCHITECTURE.md) · [Commands](docs/COMMANDS.md) · [Configuration](docs/configuration.md) · [Dependencies](THIRD_PARTY_NOTICES.md) · [MIT license](LICENSE)
+The app calls Meta models only, with no GPT runtime dependency. ChatGPT and Claude are supported import formats: imports send selected content to Meta without calling either service. Optional coding helpers use the built-in Meta runner; leave `HELPERS_CMD` unset for this runtime.
+
+[Prototype scope](docs/ARCHITECTURE.md#prototype-scope) · [Architecture and parts](docs/ARCHITECTURE.md) · [Commands](docs/COMMANDS.md) · [Configuration](docs/configuration.md) · [Dependencies](THIRD_PARTY_NOTICES.md) · [MIT license](LICENSE)

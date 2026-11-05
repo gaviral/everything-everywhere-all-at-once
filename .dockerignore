@@ -1,6 +1,10 @@
 # Only build inputs enter the context: no dotenv, maps, caches or Git metadata.
 **
 !Dockerfile
+!LICENSE
+!THIRD_PARTY_NOTICES.md
+!dependency-licences/
+!dependency-licences/**
 !docker/
 !docker/entrypoint.sh
 !core/

@@ -12,7 +12,7 @@ import "./kit.css";
 const BUILD_ALL = /\b(build|make|do) (it |that |this )?all( of)?( that| this| it)?\b|\bbuild everything\b/i;
 const opensAtOnce = () => new URLSearchParams(location.search).has("crew");
 /** `?crewfault`: one part breaks on purpose, labelled on screen, so a real repair can be seen. */
-const faultOn = () => new URLSearchParams(location.search).has("crewfault");
+const faultOn = () => import.meta.env.VITE_E2A2O_FILM === "1" && new URLSearchParams(location.search).has("crewfault");
 
 /** The person keeps talking while it builds, so the bottom bar with their live words stays in view. */
 function useBarHeight(open: boolean) {

@@ -1,0 +1,14 @@
+[
+  {
+    "source_file": "lib/core/qrcode.js",
+    "line": 15,
+    "text": "/**\n * QRCode for JavaScript\n *\n * modified by Ryan Day for nodejs support\n * Copyright (c) 2011 Ryan Day\n *\n * Licensed under the MIT license:\n *   http://www.opensource.org/licenses/mit-license.php\n *\n//---------------------------------------------------------------------\n// QRCode for JavaScript\n//\n// Copyright (c) 2009 Kazuhiko Arase\n//\n// URL: http://www.d-project.com/\n//\n// Licensed under the MIT license:\n//   http://www.opensource.org/licenses/mit-license.php\n//\n// The word \"QR Code\" is registered trademark of\n// DENSO WAVE INCORPORATED\n//   http://www.denso-wave.com/qrcode/faqpatent-e.html\n//\n//---------------------------------------------------------------------\n*/",
+    "source_sha256": "216e490908ed95df74992a05d44efa35ea7bc8dcab27b49b446725964704e833"
+  },
+  {
+    "source_file": "lib/index.js",
+    "line": 1,
+    "text": "/*\n*copyright Ryan Day 2012\n*\n* Licensed under the MIT license:\n*   http://www.opensource.org/licenses/mit-license.php\n*\n* this is the main server side application file for node-qrcode.\n* these exports use serverside canvas api methods for file IO and buffers\n*\n*/",
+    "source_sha256": "c1f2fa38779ae32562a32a1392f7f747649d3ec839eebb934950cee25fb1c2b4"
+  }
+]

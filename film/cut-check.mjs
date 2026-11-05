@@ -51,7 +51,7 @@ try {
   await stage.frame(shot,0);
   const screenshot = await stage.screenshot();
   await stage.frame({...shot,index:101,caption:undefined,label:undefined},0);
-  assert.notDeepEqual(await stage.screenshot(),screenshot,'Editorial labels and wait captions are visible');
+  assert.deepEqual(await stage.screenshot(),screenshot,'Per-shot chips are no longer displayed');
   await stage.frame({...shot,index:102,crop:undefined},0);
   assert.notDeepEqual(await stage.screenshot(),screenshot,'Cropping changes the visible composition');
 } finally { await stage.close(); }

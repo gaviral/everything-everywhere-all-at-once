@@ -1,3 +1,4 @@
+import { AppMark } from "../AppMark";
 // The shell's regions (docs/bricks.md "Slots"), each marked with its data-slot name so a feature, the guide or a check
 // finds it wherever the layout puts it:
 //  - top left: the wordmark, the map's name and its one stamp; top right: Find, Catalog, the people in a call
@@ -30,7 +31,7 @@ const cls = (...names: (string | false | null | undefined)[]) => names.filter(Bo
 export function TopLeft({ mapName, mode, wordmark, sampleTools }: { mapName: string; mode: Mode | null; wordmark: boolean; sampleTools?: SampleToolsProps }) {
   return <div className="shell-corner shell-tl" data-slot="top-left">
     <div className="shell-pill shell-identity">
-      {wordmark && <><span className="shell-wordmark">{NAMES.wordmark}</span><span className="shell-sep" aria-hidden="true" /></>}
+      <AppMark className="shell-wordmark" size={wordmark ? 28 : 24} /><span className="shell-sep" aria-hidden="true" />
       <span className="shell-mapname">{mapName}</span>
       {sampleTools ? <><Stamp mode={mode === "sample" ? null : mode} /><SampleTools {...sampleTools} /></> : <Stamp mode={mode} />}
     </div>

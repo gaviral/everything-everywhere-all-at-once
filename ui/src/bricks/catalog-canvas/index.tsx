@@ -1,3 +1,4 @@
+import { AppMark } from "../../AppMark";
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { BrickProps } from '../contract';
 import { useCatalog, enableFeature, enabledNow, type Feature } from './catalog';
@@ -59,7 +60,7 @@ export default function CatalogCanvas({ map, actions, on }: BrickProps) {
     <span className="catalog-canvas-trial-notice" role="status">{notice}</span>
   </aside>;
   return <Surface back={back} label="Every feature, one map">
-    <div className="catalog-canvas-top"><button onClick={back} aria-label={group ? 'Back to all six groups' : 'Close feature map'}>{group ? '← Everything' : '← Your map'}</button><span>E2A2O / {features.length} possibilities</span><span className="catalog-canvas-instruction">Click a word. Follow a thought.</span></div>
+    <div className="catalog-canvas-top"><button onClick={back} aria-label={group ? 'Back to all six groups' : 'Close feature map'}>{group ? '← Everything' : '← Your map'}</button><span><AppMark size="1.7em" /> / {features.length} possibilities</span><span className="catalog-canvas-instruction">Click a word. Follow a thought.</span></div>
     <div className="catalog-canvas-scroll" ref={surface}>
       {group ? <Cluster groupId={group} features={features} tryFeature={tryFeature} /> : <>
         <div className="catalog-canvas-heading"><h1>What do you want to <mark>do?</mark></h1><span className="catalog-canvas-hand">where to next?<svg viewBox="0 0 160 65" aria-hidden="true"><path d="M145 3 Q58 -4 21 51 M19 34 L19 54 L40 49" /></svg></span></div>

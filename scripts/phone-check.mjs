@@ -4,7 +4,7 @@
 // Each of these broke on a phone and must stay fixed:
 //  - no sideways scroll: the page is never wider than the screen (the header ran 14–57 px past it);
 //  - no zoom on typing: every field is at least 16 px on touch (iOS zooms into a smaller one and stays zoomed);
-//  - the header's parts never overlap or leave the screen: "E2A2O" whole, "This session…" not cut, every button whole;
+//  - the header's parts never overlap or leave the screen: the icon whole, "This session…" not cut, every button whole;
 //  - notices (the notice, the message card, a map update) never cover the composer, the header's buttons or each other,
 //    scrolled or not, and never the open Room panel;
 //  - a tapped point's Delete and Move don't cover its words, and sit 8 px or more apart; once it settles, no notice,
@@ -67,14 +67,11 @@ const HELPERS = `(() => {
   const name = (e) => e.tagName.toLowerCase() + (typeof e.className === "string" && e.className ? "." + e.className.trim().split(/\\s+/).join(".") : "");
   const cross = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
   const shown = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== "hidden"; };
-  // The header's parts as a person reads them: the name's own letters, "This session…", each control.
+  // The header's parts as a person reads them: the icon, "This session…", each control.
   const headerParts = () => {
     const brand = document.querySelector(".brand");
-    const text = [...brand.childNodes].find((n) => n.nodeType === 3 && n.textContent.includes("E2A2O"));
-    const range = document.createRange();
-    const at = text.textContent.indexOf("E2A2O");
-    range.setStart(text, at); range.setEnd(text, at + 5);
-    const parts = [["E2A2O", range.getBoundingClientRect()]];
+    const icon = brand.querySelector('img[alt="E2A2O"]');
+    const parts = [["App icon", icon.getBoundingClientRect()]];
     const count = document.querySelector(".session-count");
     if (count && shown(count)) parts.push(["This session…", count.getBoundingClientRect()]);
     for (const el of document.querySelector(".header-actions").children) if (el.tagName !== "DIALOG" && shown(el)) parts.push([name(el), el.getBoundingClientRect()]);
