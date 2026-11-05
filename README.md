@@ -2,7 +2,7 @@
 The IDE from the future, for developers and AI to follow each other.
 Speak, type and sketch; build reusable board parts with Muse Spark; inspect the work across real Git branches.
 
-<img src="ui/public/icons/icon-192.png" width="48" alt="E2A2O logo">
+<img src="ui/public/icons/icon-192.png" width="48" alt="Everything Everywhere All at Once logo">
 
 **Think out loud. Build what you mean.**
 
@@ -92,7 +92,7 @@ Add your Meta key as `MODEL_API_KEY` in `.env`, then run:
 
 Open the printed URL. Type and press Enter, or start the mic yourself. Open **Features** (`C`) to enable **Ask about words**, **Draw** and **Crew**. For topic images, switch on **Pictures**, then choose **Show**. In **Features**, switch on **Argument resolver** or **Volume watcher** to use them; both start off.
 
-For **Crew**, start locally with `E2A2O_DEV_TOOLS=1 ./run.sh demo` and your Meta key configured. Enable **Crew** in Features, close Features, then click **Crew**. It creates Git repositories beside your map; Git must be installed. Crew is unavailable in hosted/Docker mode.
+For **Crew**, start locally with `./run.sh demo` and your Meta key configured. Enable **Crew** in Features, close Features, then click **Crew**. It creates Git repositories beside your map; Git must be installed. Crew is unavailable in hosted/Docker mode.
 
 Stop with Ctrl+C. Restart after changing the key. `./run.sh` opens your regular map; see [storage](docs/storage.md).
 

@@ -37,10 +37,10 @@ their switches are set**. Both ends of their connection must be loopback.
 | GET | `/workshop/hackathon` | `E2A2O_DEV_TOOLS=1` |
 | POST | `/workshop/run` | `E2A2O_DEV_TOOLS=1` |
 | GET | `/workshop/turns` (SSE) | `E2A2O_DEV_TOOLS=1` |
-| POST | `/crew/plan` | `E2A2O_DEV_TOOLS=1` |
-| POST | `/crew/build` | `E2A2O_DEV_TOOLS=1` |
-| POST | `/crew/merge` | `E2A2O_DEV_TOOLS=1` |
-| POST | `/crew/promote` | `E2A2O_DEV_TOOLS=1` |
+| POST | `/crew/plan` | Local run |
+| POST | `/crew/build` | Local run |
+| POST | `/crew/merge` | Local run |
+| POST | `/crew/promote` | Local run |
 | GET | `/bricks.html` (playground) | `E2A2O_DEV_TOOLS=1` |
 | GET | `/code-canvas/snapshot` | `E2A2O_CODE_CANVAS=1` |
 | GET | `/code-canvas/events` (SSE) | `E2A2O_CODE_CANVAS=1` |
