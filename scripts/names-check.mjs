@@ -3,8 +3,8 @@
 //  - a feature's brick.json (its name and line),
 //  - a public doc (README, docs/FEATURES.md, bricks.md, COMMANDS.md, guide.md, ARCHITECTURE.md),
 //  - a notice the core sends (core/src, outside tests).
-// The names changed on 2026-11-03; docs/names.md is the lookup (new | AKA | old | where the old survives). Code names,
-// saved maps, CHANGELOG and docs/trace.md keep the old words and are never read here.
+// The names changed on 2026-11-03; docs/names.md is the lookup (new | AKA | old | where the old survives). Code names
+// and saved maps keep the old words and are never read here.
 // A deliberate leftover (a spoken alias, an AKA, another sense of the word) carries `names-ok: why` on its line or the
 // line above (or, in code, on the line above its statement): `<!-- names-ok: spoken alias -->` in Markdown,
 // `// names-ok: spoken alias` in code. Every marker is counted and listed with `--markers`.
@@ -81,7 +81,6 @@ export function proseOf(markdown) {
     if (fenced && code) return "";
     return line
       .replace(/<!--(?!.*names-ok).*?-->/g, " ")
-      .replace(/\[([^\]]*)\]\(\s*<?(?:\.\/|\.\.\/)?(?:docs\/)?trace\.md[^)]*\)/g, " ")
       .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
       .replace(/\]\([^)]*\)/g, "]")
       .replace(/`[^`\n]*`/g, " ")
@@ -235,7 +234,7 @@ function selfTest() {
   const fine = ["Add to Dock", "Send countdown", "a 5-second countdown, then Sent", "git branch", "brick.json", "bricks/spine", "catalog.rs", "room for more", "there is no room", "Work spine", "a friend's trial link", "Plant the tomatoes", "your map", "./run.sh room", "?room=abc", "the Palace of Versailles", "Pictures", "AI helper", "Share"];
   for (const text of bad) if (!retired(text).length) { console.error(`names-check self-test: should flag “${text}”`); process.exit(2); }
   for (const text of fine) if (retired(text).length) { console.error(`names-check self-test: should let “${text}” be`); process.exit(2); }
-  if (proseOf("a `thread` here\n```sh\nthread\n```\n[composer](docs/trace.md#composer) and [x](docs/thread.md)").join("|") !== "a   here||||  and x" || proseOf("```\nthread\n```").join("|") !== "|thread|") { console.error("names-check self-test: Markdown prose"); process.exit(2); }
+  if (proseOf("a `thread` here\n```sh\nthread\n```\n[Input box](docs/FEATURES.md) and [x](docs/guide.md)").join("|") !== "a   here||||Input box and x" || proseOf("```\nthread\n```").join("|") !== "|thread|") { console.error("names-check self-test: Markdown prose"); process.exit(2); }
 }
 
 selfTest();

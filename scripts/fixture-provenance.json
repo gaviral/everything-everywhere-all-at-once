@@ -11,6 +11,11 @@
       "provenance": "Authored simulated jobs, retaining demo=true labels; audit finding 6.",
       "sha256": "13d94acbc8e5a06d56028f46ebe1b73a291c4bc00fac33a58bcf7d0c7d25c88b"
     },
+    "samples/developer-day.jsonl": {
+      "kind": "synthetic",
+      "provenance": "Original authored fictional payments API team example; vector illustrations authored for this sample. No captured user or service data.",
+      "sha256": "1198f898bcb4ab735d719fde93b9d55ece6180ecce3948841f5626bf0921b8c6"
+    },
     "samples/founder-day.jsonl": {
       "kind": "synthetic",
       "provenance": "Authored synthetic sample map, confirmed handwritten in rules audit Demo honesty (2026-11-03); not captured personal state.",
@@ -50,6 +55,36 @@
       "kind": "synthetic",
       "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
       "sha256": "f864c5017f0a07f52456549b52c0a544bdeaa174cec5554ad15e5044ca4b75dc"
+    },
+    "samples/images/developer-day/T1-developer.svg": {
+      "kind": "synthetic",
+      "provenance": "Original authored fictional payments API team example; vector illustrations authored for this sample. No captured user or service data.",
+      "sha256": "5c0753fc84fcde50be13a59094ae3fb5b9dffced8125f2c99f60e1e3bac83685"
+    },
+    "samples/images/developer-day/T2-developer.svg": {
+      "kind": "synthetic",
+      "provenance": "Original authored fictional payments API team example; vector illustrations authored for this sample. No captured user or service data.",
+      "sha256": "6f8d47ae79b065aff7563b0cbdc35675e7cf4d9a9398c819c4e4e8c21659857a"
+    },
+    "samples/images/developer-day/T3-developer.svg": {
+      "kind": "synthetic",
+      "provenance": "Original authored fictional payments API team example; vector illustrations authored for this sample. No captured user or service data.",
+      "sha256": "81dc6cbb3a85426556747b7e3d040cc5e4404d332b3175b257e2794e1161f621"
+    },
+    "samples/images/developer-day/T4-developer.svg": {
+      "kind": "synthetic",
+      "provenance": "Original authored fictional payments API team example; vector illustrations authored for this sample. No captured user or service data.",
+      "sha256": "98ba8ed2ac3799ac6fdeb661f1cd48ac2ab36cc08b8a8035d1902290469a12de"
+    },
+    "samples/images/developer-day/T5-developer.svg": {
+      "kind": "synthetic",
+      "provenance": "Original authored fictional payments API team example; vector illustrations authored for this sample. No captured user or service data.",
+      "sha256": "284a6db4e78322f2abff7340b72a2b25dc455a9275e996b1c4830b7c016f0fda"
+    },
+    "samples/images/developer-day/T6-developer.svg": {
+      "kind": "synthetic",
+      "provenance": "Original authored fictional payments API team example; vector illustrations authored for this sample. No captured user or service data.",
+      "sha256": "b6bc3ecd4933e6cbe9c1e0f3263499b6bd087f77ca1fbf8a7715edc7d516f58e"
     },
     "samples/images/founder-day/T1-987e92be818f4c0ba997a3c2ba0f6238-palace.webp": {
       "kind": "synthetic",
@@ -296,11 +331,6 @@
       "provenance": "Authored scripted regression/demo scenario, reviewed synthetic input, not a captured conversation; existing audit confirms handwritten sample scenarios.",
       "sha256": "502053e5469e785f8f5fe1ee9fec507527d473d8fad23026942b164c8b7cafa7"
     },
-    "scripts/burst-talk.jsonl": {
-      "kind": "synthetic",
-      "provenance": "Authored scripted regression/demo scenario, reviewed synthetic input, not a captured conversation; existing audit confirms handwritten sample scenarios.",
-      "sha256": "a9046d763fd5fd5693c10db306d6d3e8c4bd89c4e066ca0cfac230fc744e346d"
-    },
     "scripts/chunk-cases.jsonl": {
       "kind": "synthetic",
       "provenance": "Authored scripted regression/demo scenario, reviewed synthetic input, not a captured conversation; existing audit confirms handwritten sample scenarios.",
@@ -316,35 +346,15 @@
       "provenance": "Authored scripted regression/demo scenario, reviewed synthetic input, not a captured conversation; existing audit confirms handwritten sample scenarios.",
       "sha256": "53cb8232f9da1866075adf110456f36b27f5bed9df1e68e222da095c16cc3a4e"
     },
-    "scripts/demo-talk-v4.jsonl": {
-      "kind": "synthetic",
-      "provenance": "Authored scripted regression/demo scenario, reviewed synthetic input, not a captured conversation; existing audit confirms handwritten sample scenarios.",
-      "sha256": "9e779d77ae541385fa846458b4deeba1cef0fedbb80e2f9ec698e82682d923ee"
-    },
     "scripts/demo-talk.jsonl": {
       "kind": "synthetic",
       "provenance": "Authored scripted regression/demo scenario, reviewed synthetic input, not a captured conversation; existing audit confirms handwritten sample scenarios.",
       "sha256": "5816bd79445afbf1de04b45ae0e0fdf6881dd013f1e515ab977a2f0b2770a64c"
     },
-    "scripts/montage-talk.jsonl": {
-      "kind": "synthetic",
-      "provenance": "Authored scripted regression/demo scenario, reviewed synthetic input, not a captured conversation; existing audit confirms handwritten sample scenarios.",
-      "sha256": "dc9d26a1776b48d76556e7ffe46bcaeefe90256d037e31b4442aebf62e470383"
-    },
-    "scripts/room-talk.jsonl": {
-      "kind": "synthetic",
-      "provenance": "Authored scripted regression/demo scenario, reviewed synthetic input, not a captured conversation; existing audit confirms handwritten sample scenarios.",
-      "sha256": "15dfec1d23392c0b853eb58dbe151fe8408e606eafa0cb68b937d1f35c2ea042"
-    },
     "scripts/routing-cases.jsonl": {
       "kind": "synthetic",
       "provenance": "Authored scripted regression/demo scenario, reviewed synthetic input, not a captured conversation; existing audit confirms handwritten sample scenarios.",
       "sha256": "47a5f5b59721758fd8647fa5fcae19b5f46a0a75e3dc164492e7ddcb7decf740"
-    },
-    "scripts/rules-talk.jsonl": {
-      "kind": "synthetic",
-      "provenance": "Authored scripted regression/demo scenario, reviewed synthetic input, not a captured conversation; existing audit confirms handwritten sample scenarios.",
-      "sha256": "ce94bfd2844c9b1f68b927504dca01232cc66539ed08d75e5596a42046d7ca83"
     },
     "scripts/story-talk.jsonl": {
       "kind": "synthetic",
@@ -355,16 +365,6 @@
       "kind": "synthetic",
       "provenance": "Synthetic sample export explicitly authored in introducing commit 5992c4f, confirmed by audit Demo honesty. Fictional Lisbon/Porto scenario.",
       "sha256": "41ded1336d4f849fab37d1d087c0389468b1a04a0939d3f16260e8f2dbb27649"
-    },
-    "docs/compaction-check.md": {
-      "kind": "synthetic",
-      "provenance": "Explanatory regression summary replacing the preserved raw report; audit finding 1 confirms synthetic replacement. Contains workshop/rehearsal scenario description only.",
-      "sha256": "7dcee5afb04b76a835dc4998a9e8776b5b2b7a9cbf87c06dc3839e2feebe960b"
-    },
-    "docs/trace.md": {
-      "kind": "synthetic",
-      "provenance": "Historical trace of synthesized demo talk, explicitly labelled synthetic evidence at bd04356 on 2026-11-02. Derived model output from scripted inputs, not owner dictation. Does not validate the current release or film.",
-      "sha256": "4a3aba253503e7c4ec069395e4636a0f17fc4a0680b931e7dad8387d57c324c0"
     }
   }
 }

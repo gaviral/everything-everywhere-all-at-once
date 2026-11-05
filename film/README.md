@@ -4,6 +4,10 @@ An offline, shot-driven film renderer. Requires Node 22+, Chrome, FFmpeg and
 FFprobe on PATH. Set `CHROME_PATH` if Chrome is outside its usual installation.
 No packages, network services, microphone, or model runtime are involved.
 
+The demo film's narration is a third-party synthetic voice (Deepgram Aura), used
+for the film only; the app itself calls Meta models only. Narration provenance
+and media-rights review remain separate from rendering checks.
+
 ```sh
 node film/cut.mjs /path/to/shots.json --preview --out /path/to/preview.mp4
 node film/cut.mjs /path/to/shots.json --final --out /path/to/final.mp4
@@ -32,7 +36,7 @@ All direction lives in the JSON `shots` array:
 | `plane` | `clip`, `start` in source seconds, `seconds`, `tilt: [x,y,z]` in degrees |
 | `planes` | `seconds`, two or three `clips`, each with plane fields |
 | `wall` | `seconds` (usually 8), `tiles` array of `{image}` or `{clip, start?, loopSeconds?}`; first tile is a clip |
-| `card` | `word`, `seconds`, `colour` (default Meta blue) |
+| `card` | `word`, `seconds`, `colour` (default black) |
 | `list` | `names`, `seconds` **per name**, `colour`; finish with `and much more` |
 | `end` | `word` (default E2A2O), `seconds`; current app icon and name |
 
@@ -60,6 +64,21 @@ Decision: Chrome DevTools runs over an inherited pipe, so rendering opens no
 listening ports. Scratch Chrome profiles remain in the system temporary
 directory; takes remain under the ignored `renders/` folder. No shared app
 files or dependencies change.
+
+## Live app clips
+
+[The live clip recorder](../scripts/film-capture.mjs) captures the app in an
+isolated local core and Chrome profile. Set `FILM_OUT` to an external media
+directory, plus `FILM_KEYCHAIN_SERVICE` and `FILM_KEYCHAIN_ACCOUNT` for the Meta
+key, then run `node scripts/film-capture.mjs`. These captures make live Meta
+calls. `FILM_URL` can select an already-running isolated local core.
+
+`FILM_CLIPS=ask,crew` selects individual clips and prepares their required
+thought or sketch. Crew captures check that the board keeps the supplied
+Saturday without inventing another weekday. `FILM_SPOKEN=1` uses supplied WAVs
+from `FILM_VOICE_DIR` through Chrome's file-backed audio device, without a
+physical microphone. Review the recorded checks and footage before using a
+clip in the film.
 
 ## Feature wall
 
@@ -119,6 +138,24 @@ second fresh renderer, rather than PNG compression bytes.
 complete square coverage and writes eight actual review frames; review those
 at film size before accepting a take.
 
+### Title made of app frames
+
+`wall-3-media.py MEDIA_ROOT` reuses the recorded square crops and separates
+them by measured brightness. `layout: "title"` places those real frames in a
+64×36 field: light frames form EVERYTHING / EVERYWHERE / ALL AT ONCE and dark
+frames fill the background. Repetition is deliberate at the pixel scale;
+the opening neighbourhood uses distinct sources. No recolouring or generated
+tile images are used.
+
+The 14-second pull-back holds the full mosaic, resolves to matching type, and
+ends on the exact first frame of `wall-3-handoff.json`. A `titlemorph` shot with
+`fromTitle: true` starts with all three lines already formed, then drops the
+non-initial letters. Title geometry and caption painting are shared, so there
+is no position jump at the cut. Tiles do not fall; the cut on the held title
+is the intentional handoff. `wall-title-check.mjs SHOTS.json` checks the
+distinct opening, three-line pixel contrast, repeatable frames, exact handoff,
+and the five retained initials, and writes eight full-size review frames.
+
 ## Incremental cut
 
 `cut.mjs` is the working-film entrypoint. By default its shots, `cuts/`, and
@@ -137,7 +174,7 @@ are retained. The adjacent JSON reports cached/rendered shots and failures.
 
 Planes accept `crop: [x,y,width,height]` in normalized source coordinates and
 `playSeconds` to hold the last real frame after that much source playback.
-Disclosures appear only on the final signature card; per-shot `label` and
+No disclosure or fine-print line is displayed; per-shot `label` and
 `caption` metadata are not displayed. Never use a hold or a crop to invent a result. The end card uses the current app icon.
 
 Focused verification: `node film/cut-check.mjs`. It checks cache reuse, isolated
@@ -166,7 +203,7 @@ single-shot manifest with `node film/render.mjs SHOTS.json --out TITLE.mp4`.
 
 A plane can enter with `tilt: [x,y,z]` and settle to `tiltTo: [x,y,z]` over
 `settleSeconds` (default 0.7). Rotation uses smooth interpolation independently
-of the slow `drift` and `zoom` camera. `background: "meta"` selects the Meta-blue
+of the slow `drift` and `zoom` camera. `background: "meta"` selects the quiet white-to-mist
 stage gradient. `fullFrame: true` removes the plane edge for an already-rendered
 wall movie. The end card has a centered icon/name, a `tagline`, and plain
 `credits` beneath it.
@@ -188,7 +225,7 @@ uses `word` for a compressed, blurred entrance on the blue field, with optional
 `shrink` for the final abundance card. `laptop` uses a real `clip` inside an
 unbranded device; `phase` selects `rise` or `push`. `brand` selects `opening`,
 `assembly`, or `hold` and builds from the canonical icon SVG before crossing
-to the glass PNG. Its final disclosure remains visible through the hold.
+to the glass PNG. Only the quiet model credit remains beneath the final hold.
 
 A plane may use an `image` instead of a `clip`. Optional `rate` changes source
 playback speed without changing the shot allocation. Each input and source
@@ -198,3 +235,14 @@ lets the stream-copy join hit the specified millisecond endpoint exactly.
 `node film/film3-check.mjs /path/to/shots.json` exercises the word timing,
 canonical-shape assembly, matching final hold, laptop motion, clean overlays,
 and fractional endpoint. It uses external media and never starts a microphone.
+
+## Final pass
+
+The stage uses a 68-degree gradient from white to mist, with neutral soft
+shadows and no bright plane edge. Chapter and feature-name cards use black.
+Per-shot headings and disclosure fields are ignored. The only final credit is
+“Muse Spark · Muse Image · Muse Voice Transcribe”. Title exports can be used as
+full-frame planes, split at existing shot boundaries with their final frame held.
+
+`node film/final-check.mjs /path/to/shots.json` checks the final palette,
+credit-only ending, latest source ranges and 1080p/30 export format.

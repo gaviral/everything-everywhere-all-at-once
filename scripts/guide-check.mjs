@@ -794,7 +794,8 @@ try {
   await page.close();
   page = null;
 
-  // The shell owns the space between its notice and composer, even while the caption is in the top layer.
+  // The shell reserves caption space below its notice, even in the top layer. A docked composer follows it;
+  // the canvas input has its own position and must stay clear of the caption.
   for (const [width, height] of [[1440, 900], [390, 844]]) {
     step(`shell captions at ${width}`);
     page = await openPage(`http://127.0.0.1:${core.port}/?shell=2`, { width, height });
@@ -817,7 +818,9 @@ try {
         assert.equal(await evaluate(`document.querySelectorAll('.guide-caption').length`), 1, "exactly one caption on the page");
         assert.ok(slot.bottom > slot.top && Math.abs((slot.bottom - slot.top) - (cap.bottom - cap.top)) <= 1, "the slot reserves the rendered caption height");
         assert.ok(inside(cap, width, height), `the shell caption stays inside the viewport (${JSON.stringify(cap)})`);
-        assert.ok(!overlap(cap, composer) && !overlap(cap, notice) && notice.bottom <= cap.top && cap.bottom <= composer.top, "between notice and composer without overlap");
+        assert.ok(!overlap(cap, composer) && !overlap(cap, notice) && notice.bottom <= cap.top, "below the notice and clear of the composer");
+        if (await evaluate(`!!document.querySelector('[data-guide="composer"]')?.closest('.dock')`))
+          assert.ok(cap.bottom <= composer.top, "a docked composer follows the caption");
         assert.ok(Math.abs(cap.top - slot.top) <= 1 && Math.abs(cap.bottom - slot.bottom) <= 1, "the visible caption follows its reserved box");
         assert.ok(await evaluate(`(() => { const line = document.querySelector('.guide-line'); return line.getBoundingClientRect().height <= 2 * parseFloat(getComputedStyle(line.parentElement).lineHeight) + 1; })()`), "sentence pages fit two lines at the slot's width");
         if (await layer() === "aimed") await lands("search", "the shell caption's arrow");

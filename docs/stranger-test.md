@@ -19,7 +19,7 @@ The README command, `./run.sh sample`, downloaded dependencies, built the Rust c
 
 ## Validation
 
-The focused browser command is `node scripts/stranger-check.mjs`, run against a freshly started sample. It checks the populated map, recovery, saved pictures, a saved typed thought, Features, a drawn stroke and label, and Crew's setup guidance. Microphone access is denied through Chrome's permission policy and that denial is checked; no microphone control is activated.
+The focused browser command is `node scripts/stranger-check.mjs`, run against a freshly started `./run.sh sample student`. The check uses the student fixture explicitly because the default `./run.sh sample` now opens the developer sample; the fresh-clone run recorded above predates that default change. It checks the populated map, recovery, saved pictures, a saved typed thought, Features, a drawn stroke and label, and Crew's setup guidance. Microphone access is denied through Chrome's permission policy and that denial is checked; no microphone control is activated.
 
 Final browser result: **PASS** for every listed interaction and the denied microphone permission. Crew's setup guidance passed; no live Crew build was attempted.
 

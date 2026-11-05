@@ -1,4 +1,4 @@
-// Start/restart ./run.sh sample before each run: node scripts/stranger-check.mjs.
+// Start/restart ./run.sh sample student before each run: node scripts/stranger-check.mjs.
 // This path saves thoughts and resumes unfinished work, so it needs the freshly restored fixture.
 // Real core, real browser, no model key; microphone access is blocked before loading the app.
 import assert from "node:assert/strict";

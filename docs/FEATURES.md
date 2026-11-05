@@ -44,6 +44,6 @@ Ask to make an app from a watcher, an optional prompt and an output such as a ca
 
 ## Built from named parts
 
-The React and TypeScript board connects to a Rust core. The core holds the API key and sends model requests to Meta. Speech uses Muse Voice Transcribe, reasoning uses Muse Spark, and pictures use Muse Image. See the [models table](../README.md#meta-models) for the feature-to-model mapping.
+The React and TypeScript board connects to a Rust core. The core holds the API key and sends model requests to Meta. Speech uses Muse Voice Transcribe, reasoning uses Muse Spark, and pictures use Muse Image. See the [models table](../README.md#powered-by-meta-models) for the feature-to-model mapping.
 
 [Model requests](../core/src/model.rs) · [Architecture and parts](ARCHITECTURE.md) · [Run it](../README.md#run-it) · [Commands](COMMANDS.md) · [Storage](storage.md)

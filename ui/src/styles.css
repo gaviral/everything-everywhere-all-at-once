@@ -1,18 +1,18 @@
 :root {
-  --bg: #f4efe5;
-  --card: #fffdf7;
-  --ink: #2d2820;
-  --muted: #6c6255;
+  --bg: #f7f2eb;
+  --card: #fffaf4;
+  --ink: #35302b;
+  --muted: #71675d;
   /* A warm hairline keeps card edges visible without a heavy frame. */
-  --line: #d6cdbd;
-  --accent: #80601f;
-  --accent-soft: #eee3c9;
-  --amber: #80601f;
-  --amber-soft: #eee3c9;
-  --ai: #80601f;
-  --ai-soft: #eee3c9;
+  --line: #ded3c7;
+  --accent: #8f523d;
+  --accent-soft: #f2dfd2;
+  --amber: #8f523d;
+  --amber-soft: #f2dfd2;
+  --ai: #8f523d;
+  --ai-soft: #f2dfd2;
   --ai-button-ink: #fff;
-  --accent-button-ink: #fffdf7;
+  --accent-button-ink: #fffaf4;
   --amber-button-ink: #fff;
   /* One color per room, as its pictures are painted (rooms.ts); each passes 4.5:1 on cards, the page and its soft tint. */
   --room-red: #b4253f; --room-red-soft: #fbe1e5;
@@ -20,7 +20,7 @@
   --room-pink: #a3307f; --room-pink-soft: #f8e0f0;
   --room-teal: #0e6e69; --room-teal-soft: #d9f0ee;
   --room-lime: #566b0f; --room-lime-soft: #ecf3d2;
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 6px 20px rgba(0, 0, 0, 0.07);
+  --shadow: 0 1px 2px rgba(65, 47, 31, .04), 0 8px 24px rgba(65, 47, 31, .06);
   color-scheme: light;
 }
 
@@ -52,24 +52,24 @@
 
 /* The shell, the default (shell/flag.ts): Paper's warm paper in light, space in dark (the takes'), one set of
    roles in both. Its own names first, then the app's own mapped onto them, so the map, the features and the sheets
-   share warm paper, charcoal and quiet gold. The legacy --blue name aliases the action ink; ✦ still identifies AI
+   share warm paper, charcoal and a quiet accent: peach in light, gold in dark. The legacy --blue name aliases the action ink; ✦ still identifies AI
    and words identify status. Red remains the Stop level; topic hues retain their identity. */
 html.shell2 {
-  --space: #f4efe5; --surface: #fffdf7; --surface-2: #fffdf7; --surface-3: #e9e1d2; --raised: #fffdf7;
-  --line-2: rgba(42, 37, 30, .2); --ink-2: #4c4235; --faint: #82745e;
-  --blue: #80601f; --blue-ink: #fff; --blue-soft: rgba(128, 96, 31, .10);
-  --red: #a4352b; --status-bg: #e9e1d2; --btn: #2d2820; --btn-ink: #fffdf7; --dots: rgba(42, 37, 30, .07);
-  --glass: rgba(255, 253, 248, .66); --glass-line: rgba(42, 37, 30, .16);
-  --bg: var(--space); --card: var(--surface); --ink: #2d2820; --muted: #6c6255; --line: rgba(42, 37, 30, .13);
-  --accent: var(--blue); --accent-soft: var(--blue-soft); --accent-button-ink: #fffdf7;
-  --amber: #80601f; --amber-soft: #eee3c9; --amber-button-ink: #fff;
-  --ai: #80601f; --ai-soft: rgba(128, 96, 31, .10); --ai-button-ink: #fff;
+  --space: #f7f2eb; --surface: #fffaf4; --surface-2: #f5eee5; --surface-3: #eae0d5; --raised: #fffaf4;
+  --line-2: rgba(65, 47, 31, .24); --ink-2: #51473e; --faint: #74685d;
+  --blue: #8f523d; --blue-ink: #fffaf4; --blue-soft: #f2dfd2;
+  --red: #a4352b; --status-bg: #eae0d5; --btn: #35302b; --btn-ink: #fffaf4; --dots: rgba(65, 47, 31, .07);
+  --glass: rgba(255, 250, 244, .86); --glass-line: rgba(65, 47, 31, .16);
+  --bg: var(--space); --card: var(--surface); --ink: #35302b; --muted: #71675d; --line: rgba(65, 47, 31, .13);
+  --accent: var(--blue); --accent-soft: var(--blue-soft); --accent-button-ink: #fffaf4;
+  --amber: #8f523d; --amber-soft: #f2dfd2; --amber-button-ink: #fffaf4;
+  --ai: #8f523d; --ai-soft: #f2dfd2; --ai-button-ink: #fffaf4;
   --room-red: #6e665a; --room-red-soft: #ebe6dc;
   --room-green: #2a7148; --room-green-soft: #dcefe2;
   --room-pink: #a3366e; --room-pink-soft: #f6e1ec;
   --room-teal: #17707a; --room-teal-soft: #d8ecec;
   --room-lime: #5b6b10; --room-lime-soft: #e9eed2;
-  --shadow: 0 1px 2px rgba(42, 37, 30, .06), 0 8px 24px rgba(42, 37, 30, .08);
+  --shadow: 0 1px 2px rgba(65, 47, 31, .04), 0 8px 24px rgba(65, 47, 31, .06);
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -842,7 +842,7 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   /* The press only dims: nothing moves, the mic included (its own press sinks 5% with transform, so it dims here too,
      or it would show nothing at all). */
   :where(button, summary, [role="button"], a[href]):active { scale: none; }
-  .composer .mic:not(:disabled):active { transform: none; opacity: .75; }
+  .mic:not(:disabled):active { transform: none; opacity: .75; }
 }
 
 /* A compact map keeps its branch structure even when thread contents are folded. */

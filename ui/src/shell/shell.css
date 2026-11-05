@@ -140,9 +140,9 @@ html.shell2 .shell-stage .notice, html.shell2 .shell-stage .map-change {
 html.shell2 .shell-stage .notice > span:first-child, html.shell2 .shell-stage .map-change > span:first-child { flex: 1; }
 html.shell2 .shell-stage :is(.pullback, .away, .first-hint, .brick-card, .install-hint) { margin: 0; }
 
-/* The composer: the mic, your typing, the mic's key. Voice never enters the box: your words show in the status line. */
+/* The composer holds typed thoughts; the microphone lives in its own corner. */
 html.shell2 .shell-composer {
-  display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 8px 0 6px; border: 1px solid var(--line-2); border-radius: 24px;
+  display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 16px; border: 1px solid var(--line-2); border-radius: 24px;
   background: var(--surface); box-shadow: var(--shadow);
 }
 html.shell2 .shell-composer:focus-within { border-color: color-mix(in srgb, var(--blue) 55%, var(--line-2)); }
@@ -151,20 +151,6 @@ html.shell2 .shell-composer textarea {
   color: var(--ink); font: inherit; font-size: 15px; line-height: 22px;
 }
 html.shell2 .shell-composer textarea::placeholder { color: var(--muted); }
-html.shell2 .shell-composer .mic {
-  display: grid; flex: none; place-items: center; width: 36px; height: 36px; margin: 0; padding: 0; border: 0; border-radius: 50%;
-  background: var(--surface-3); box-shadow: none; color: var(--ink-2);
-}
-html.shell2 .shell-composer .mic.on { background: var(--blue); color: var(--blue-ink); box-shadow: 0 0 0 calc(2px + var(--fill, 0) * 4px) color-mix(in srgb, var(--blue) 30%, transparent); }
-html.shell2 .shell-composer .mic[data-state="nokey"], html.shell2 .shell-composer .mic[data-state="refused"],
-html.shell2 .shell-composer .mic[data-state="resting"], html.shell2 .shell-composer .mic[data-state="blocked"] { color: var(--amber); }
-html.shell2 .shell-composer .mic:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
-html.shell2 .shell-composer-label { flex: none; padding-right: 12px; border-right: 1px solid var(--line-2); color: var(--ink); font-size: 15px; font-weight: 600; }
-/* First open: a bigger mic with a blue ring, "Tap to talk"; the first tap shrinks it. */
-html.shell2 .shell-composer-big { height: 60px; padding: 0 12px 0 8px; border-radius: 30px; }
-html.shell2 .shell-composer-big .mic { width: 46px; height: 46px; background: transparent; box-shadow: inset 0 0 0 2px var(--blue); color: var(--ink); }
-html.shell2 .shell-composer-big .mic svg { width: 22px; height: 22px; }
-
 /* ── The bottom bar: the status line and one input row ─────────────── */
 
 html.shell2 .shell-status {
@@ -372,7 +358,6 @@ html.shell2 .shell-sample { cursor: pointer; }
   html.shell2 .shell-find-open .shell-find-field input { opacity: 1; }
   html.shell2 .shell-find-open { position: fixed; top: 10px; right: 16px; left: 16px; z-index: 46; }
   html.shell2 .shell-find-open .shell-find-results { width: 100%; }
-  html.shell2 .shell-composer-big { height: 56px; }
   html.shell2 .shell-composer .keycap { display: none; }
   html.shell2 .shell-status { padding-right: 12px; padding-left: 12px; column-gap: 10px; }
   html.shell2 .shell-status-hint, html.shell2 .shell-status-state .shell-status-sep { display: none; }
@@ -425,7 +410,6 @@ html.shell2 .spine-phone-compare .inline-phone { touch-action: pan-y; }
 .shell-tool-slot, .shell-tool-body { display: contents; }
 html.shell2 .canvas-tool .shell-composer { margin: 12px; width: auto; max-width: calc(100% - 24px); }
 html.shell2 .canvas-tool .shell-composer textarea { min-width: 0; width: 100%; }
-html.shell2 .canvas-tool .shell-composer-big { flex-wrap: wrap; }
 
 /* The lower controls have their own band. The conversation lens keeps its existing layout. */
 html.shell2 .spine-frame:not([data-lens]) .spine-flow {
@@ -465,3 +449,6 @@ html.shell2 .shell-find-word { font-weight: 500; }
 }
 
 html.shell2 .shell-fullscreen-error { position: absolute; top: calc(100% + 12px); right: 0; max-width: min(320px, calc(100vw - 32px)); padding: 10px; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 10px; }
+
+/* Leave room for the persistent mic on every screen width. */
+html.shell2 .shell-status { padding-right: 80px; }

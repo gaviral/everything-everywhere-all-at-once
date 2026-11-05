@@ -33,7 +33,7 @@ try {
       overflow: s.overflowY, metrics: [s.fontSize, s.lineHeight, s.fontFamily, s.fontWeight, s.letterSpacing],
       boxes: [box(".shell-composer textarea"), box(".shell-composer"), box(".shell-dock")],
       camera: document.querySelector(".react-flow__viewport").getAttribute("style"),
-      page: [scrollX, scrollY], mic: document.querySelectorAll(".shell-composer .mic").length,
+      page: [scrollX, scrollY], mic: document.querySelectorAll(".mic-corner .mic").length,
       submits: __wbSubmits };
   })()`);
   const original = await state();

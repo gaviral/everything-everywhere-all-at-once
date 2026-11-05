@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -6,6 +7,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { openStage } from './chrome.mjs';
 import { timeline, shotAt, frameRange } from './timeline.mjs';
 import { render, run } from './render.mjs';
+import { pngPixels } from './png-pixels.mjs';
+
+const pixelsHash = png => createHash('sha256').update(pngPixels(png)).digest('hex');
 
 const here = dirname(fileURLToPath(import.meta.url));
 await mkdir(join(here, 'renders'), { recursive: true });
@@ -29,9 +33,9 @@ try {
   const early = await stage.screenshot();
   await stage.frame(plane, 1.3);
   const later = await stage.screenshot();
-  assert.notDeepEqual(early, later, 'Decoded video must visibly advance');
+  assert.notEqual(pixelsHash(early), pixelsHash(later), 'Decoded video must visibly advance');
   await stage.frame(plane, 0.3);
-  assert.deepEqual(await stage.screenshot(), early, 'Seeking backwards must reproduce the same pixels');
+  assert.equal(pixelsHash(await stage.screenshot()), pixelsHash(early), 'Seeking backwards must reproduce the same pixels');
   const group = { ...sample.shots[4], index: 102, clips: sample.shots[4].clips.map(p => ({ ...p, source: pathToFileURL(clip).href })) };
   assert.deepEqual((await stage.frame(group, 0.5)).times, [0.5, 0.5, 0.5]);
   await writeFile(join(directory, 'planes.png'), await stage.screenshot());
@@ -43,7 +47,7 @@ try {
   assert.deepEqual([...pixel.stdout.subarray(0, 3)], [8, 102, 255], 'Card must render Meta blue');
   const list = { ...sample.shots[6], index: 104 };
   assert.equal((await stage.frame(list, 0.9)).text, 'and much more');
-  assert.equal((await stage.frame({ ...sample.shots[7], index: 105 }, 1)).text, 'E2A2OThink out loud. Build what you mean.Muse Spark · Muse Image · Muse Voice TranscribeExample project. Sequences shortened. One fault added for the demonstration. Narration AI-generated.');
+  assert.equal((await stage.frame({ ...sample.shots[7], index: 105 }, 1)).text, 'E2A2OThink out loud. Build what you mean.Muse Spark · Muse Image · Muse Voice Transcribe');
   await writeFile(join(directory, 'end.png'), await stage.screenshot());
 } finally { await stage.close(); }
 

@@ -8,8 +8,8 @@ import { dirname, join, normalize } from "node:path";
 
 const root = new URL("..", import.meta.url).pathname;
 // The pages a visitor reads on GitHub: the README and the Markdown it links into.
-const pages = execFileSync("git", ["ls-files", "README.md", "CHANGELOG.md", "docs/*.md"], { cwd: root, encoding: "utf8" })
-  .split("\n").filter(Boolean);
+const files = execFileSync("git", ["ls-files"], { cwd: root, encoding: "utf8" }).split("\n").filter(Boolean);
+const pages = files.filter((file) => file === "README.md" || file === "THIRD_PARTY_NOTICES.md" || /^docs\/.*\.md$/.test(file));
 
 // GitHub's anchors: lowercase, punctuation dropped (hyphens and underscores kept), spaces to hyphens, repeats get -1, -2.
 export const anchors = (markdown) => {
@@ -42,7 +42,7 @@ export const inGit = (files) => {
   assert.ok(has("ui/src/App.tsx") && has("samples/images") && has("samples/images/") && has("."), "tracked paths land");
   assert.ok(!has("ui/dist/index.html") && !has("readme.md") && !has("ui/sr"), "untracked, wrong-case or partial paths don't");
 }
-const tracked = inGit(execFileSync("git", ["ls-files"], { cwd: root, encoding: "utf8" }).split("\n").filter(Boolean));
+const tracked = inGit(files);
 
 const broken = [];
 for (const page of pages) {
