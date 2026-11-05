@@ -7,3 +7,5 @@ html.shell2 .sample-tools-toggle:focus-visible { outline: 3px solid var(--accent
 html.shell2 .sample-tools-toggle[aria-expanded="true"] .shell-icon { transform: rotate(180deg); }
 /* Keep camera clearance stable when the shortcuts close, so the destination cannot jump under the identity pill. */
 html.shell2 .sample-tools .sample-recovery-actions[hidden] { display: flex; visibility: hidden; pointer-events: none; }
+
+.sample-tools-note { display: block; margin-top: 6px; font-size: 12px; opacity: .75; }

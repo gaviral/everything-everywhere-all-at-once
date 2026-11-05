@@ -76,7 +76,7 @@ echo "UI build complete."
 case "${1:-}" in
   demo) echo "When it says \"E2A2O core on\", open http://localhost:$port, then in a second terminal run: node scripts/demo.mjs scripts/demo-talk.jsonl --port $port" ;;
   room) echo "On this laptop open http://localhost:$port. The link for the second laptop is printed below." ;;
-  sample) echo "After the core starts, open the sample fixture (no key or mic): $url" ;;
+  sample) echo "After the core starts, open the sample map (no key or mic): $url" ;;
   "") ;;
   # Any other name is a map of its own; say so, or a mistyped `sample` just looks like an empty sample.
   *) echo "Map kept in $data. For the ready-made sample map: ./run.sh sample" ;;

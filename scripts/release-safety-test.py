@@ -91,6 +91,49 @@ class SafetyTests(unittest.TestCase):
         self.git("commit", "-qm", "Update camera")
         self.assertEqual(self.scan().returncode, 0, "historical JS expressions are not credentials")
 
+    def test_runtime_randomness_and_property_reads_are_not_stored_credentials(self):
+        generator = "secrets." + "token_urlsafe"
+        call = generator + "(32)"
+        member = "generation." + "current"
+        protected = "protected-" + "literal"
+        argument = "argument-" + "literal"
+        python = f"import secrets\ntoken = {call}\n"
+        javascript = f"const token = {member};\n"
+        for code in (python, python.replace("32", "24"), javascript,
+                     javascript.replace("const", "let"), javascript.replace("const", "var")):
+            self.assertFalse(SCAN.findings(code.encode()))
+        controls = [
+            f'import secrets\ntoken = "{call}"',
+            f'TOKEN={call}',
+            f'token = {call}',
+            f'import secrets\ntoken = {generator}("{argument}")',
+            f'import secrets\ntoken = {call}; password = "{protected}"',
+            f'import secrets\ntoken = {call}; token = {generator}("{argument}")',
+            f'import secrets\ntoken = {call} + "{protected}"',
+            f'const token = "{member}";',
+            f'TOKEN={member}',
+            f'const token = {member} + "{protected}";',
+            f'const token = ++{member} + "{protected}";',
+            'const token = state.' + "ghp_" + "A1" * 20 + ';',
+        ]
+        for code in controls:
+            self.assertTrue(SCAN.findings(code.encode()), "literal or provider control was missed")
+        self.init_repo()
+        self.write("helper.py", python)
+        self.write("change.ts", javascript)
+        self.git("add", ".")
+        self.git("commit", "-qm", "Runtime generation")
+        self.write("helper.py", "ready = True\n")
+        self.write("change.ts", "const ready = true;\n")
+        self.git("add", ".")
+        self.git("commit", "-qm", "Replace runtime expressions")
+        self.assertEqual(self.scan().returncode, 0, "historical runtime expressions are not literal secrets")
+        key = "R7" * 16
+        self.write("helper.py", python + 'api_key = "' + key + '"\n')
+        result = self.scan()
+        self.assertEqual(result.returncode, 1)
+        self.assertNotIn(key, result.stdout)
+
     def test_short_key_fixtures_and_real_key_in_start_check(self):
         self.init_repo()
         path = "scripts/start-check.mjs"

@@ -52,6 +52,7 @@ export function SampleTools({ returnResult, onReturn, onPictures }: SampleToolsP
     <div id={id} className="sample-recovery-actions" role="group" aria-label="Sample map actions" aria-hidden={!open} inert={!open} hidden={!open}>
       <button type="button" className="shell-btn" onClick={() => act(onReturn)}>Where was I?</button>
       <button type="button" className="shell-btn" onClick={() => act(onPictures)}>Pictures</button>
+      <span className="sample-tools-note">Crew, Draw and Ask about words need a Meta key.</span>
     </div>
   </div>;
 }

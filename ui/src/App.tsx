@@ -1264,7 +1264,7 @@ export default function App() {
       requestAnimationFrame(() => document.querySelector<HTMLElement>(SHELL2 ? '[data-guide="catalog"]' : '[data-guide="view:focused-find"]')?.focus({ preventScroll: true }));
     },
     select: core.select,
-    notify: (text) => core.showNotice(text),
+    notify: (text) => core.showNotice(text.replace("MODEL_API_KEY is not set", "This copy has no Meta key yet; add one to .env to use Crew, Draw and Ask about words")),
     position: core.position,
     listen: (on) => {
       const capturing = !!stopMic;
@@ -1918,11 +1918,10 @@ export default function App() {
             style={{ height: "1.466667em", maxHeight: "1.466667em", lineHeight: "1.466667em" }}
             onChange={(e) => { typedSinceSend.current = true; setDraft(e.target.value); }}
             placeholder={inCall ? NAMES.composer.call : NAMES.composer.idle} aria-label="Type a thought" aria-keyshortcuts="Enter" />
-          {captureInPlace && core.noKey && <button type="button" className="shell-link map-capture-setup" aria-keyshortcuts="Enter" onClick={() => setKeyHelp(true)}>Typed thoughts save · Set up AI</button>}
+          {captureInPlace && core.noKey && <button type="button" className="shell-link map-capture-setup" aria-keyshortcuts="Enter" onClick={() => setKeyHelp(true)}>Set up Meta AI for voice and topics</button>}
           {captureInPlace && empty && site.sample && !draft && !stopMic && !startingMic && <button type="button" className="shell-link map-capture-example" aria-keyshortcuts="E" onClick={() => loadSample()} disabled={!core.connected || waitingCaptures.length > 0}>See an example</button>}
           {captureInPlace && captures.at(-1)?.saved && !draft && <span className="map-capture-saved" data-saved-id={captures.at(-1)?.id}>Saved</span>}
         </form>
-          {captureInPlace && (comparison || <PartnerStatus onStopConversation={stopConversation} />)}
           {captureInPlace && !stopMic && !core.partial && !core.handoff && !captures.some(row => row.text === core.voiceDraft) && recognizedDraft}
           {captureInPlace && placedCapture && <div className="capture-placed map-capture-receipt" data-capture-placed={placedCapture.id}>
             <button type="button" onClick={() => { const thought = world.thoughts.find(row => row.id === placedCapture.thought_ids[0]); if (thought?.thread_id) { core.focus(thought.thread_id); reveal(thought.thread_id, thought.id); } }}>
@@ -2071,7 +2070,7 @@ export default function App() {
         </div>}
         {!captureInPlace && recognizedDraft}
           <FormattedReply />
-          {!captureInPlace && (comparison || <PartnerStatus onStopConversation={stopConversation} captureActive={!!stopMic || startingMic} />)}
+          {comparison || <PartnerStatus onStopConversation={stopConversation} captureActive={!!stopMic || startingMic} />}
         <div className="shell-captions" id="shell-caption" />
       </section>
 

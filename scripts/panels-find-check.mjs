@@ -93,7 +93,7 @@ try {
   };
   assert.ok(await until(`!!document.querySelector('.spine-ready')`, 15000), 'baseline canvas');
   assert.equal(await evaluate(`!!document.querySelector('[data-brick="focused-find"]')`), false);
-  const disabledCapability = m => ['partner','voice_shortcuts','reply_format','agreement_switch','connections_switch'].includes(m.type) && m.on === false && Object.keys(m).length === 2;
+  const disabledCapability = m => ['partner','voice_shortcuts','reply_format','agreement_switch','connections_switch','corrections'].includes(m.type) && m.on === false && Object.keys(m).length === 2;
   const baseline = core.heard.length;
   await sleep(250);
   assert.deepEqual(core.heard.slice(baseline).filter(m => !['heartbeat','this','read'].includes(m.type) && !disabledCapability(m)), [], 'fresh storage has no enabled feature or mutation messages');

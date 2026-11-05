@@ -82,9 +82,33 @@ const reload = async b => {
   await b.page('Page.reload');
   assert.ok(await b.until(`window.focusDocument !== ${previous} && !!document.querySelector('[aria-label="Type a thought"]')`, 10000), 'new document after reload');
 };
+const focusLayoutReady = `(() => {
+  const panel = document.querySelector('${card}');
+  const input = document.querySelector('[aria-label="Type a thought"]');
+  const r = panel.getBoundingClientRect(), c = input.getBoundingClientRect();
+  const inside = box => box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight;
+  const separate = r.right <= c.left || c.right <= r.left || r.bottom <= c.top || c.bottom <= r.top;
+  const exposed = input.contains(document.elementFromPoint(c.left + c.width / 2, c.top + c.height / 2));
+  return panel.checkVisibility() && input.checkVisibility() && inside(r) && inside(c) && separate && exposed;
+})()`;
+const returnFromEnlargedEditor = async b => {
+  const before = await b.evaluate(`(() => {
+    const fields = [...document.querySelectorAll('.session-focus-form input,.session-focus-form textarea')];
+    const button = document.querySelector('.capture-return button'), r = button?.getBoundingClientRect();
+    return { values: fields.map(e => e.value), focused: fields.indexOf(document.activeElement),
+      point: r && button.checkVisibility() && button.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))
+        ? {x:r.x+r.width/2,y:r.y+r.height/2} : null };
+  })()`);
+  assert.ok(before.point, 'enlarged focus editor offers a visible Return to input action');
+  for (const type of ['mousePressed','mouseReleased']) await b.page('Input.dispatchMouseEvent', {type,...before.point,button:'left',clickCount:1});
+  assert.ok(await b.until(focusLayoutReady,10000), 'Return to input restores the reachable thought input');
+  assert.deepEqual(await b.evaluate(`[...document.querySelectorAll('.session-focus-form input,.session-focus-form textarea')].map(e=>e.value)`), before.values, 'returning to the input preserves every focus draft field');
+  if (before.focused >= 0) await b.evaluate(`document.querySelectorAll('.session-focus-form input,.session-focus-form textarea')[${before.focused}].focus({preventScroll:true})`);
+};
 const layout = async b => {
-  assert.ok(await b.evaluate(`document.documentElement.scrollWidth <= innerWidth`), "no horizontal page overflow");
-  assert.ok(await b.evaluate(`(() => { const r = document.querySelector('${card}').getBoundingClientRect(); const c = document.querySelector('[aria-label="Type a thought"]').getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= c.top && c.bottom <= innerHeight; })()`), "focus card leaves the input visible");
+  assert.ok(await b.until(`document.documentElement.scrollWidth <= innerWidth`), 'no horizontal page overflow');
+  if (!await b.evaluate(focusLayoutReady) && await b.evaluate(`!!document.querySelector('.session-focus-form')`)) await returnFromEnlargedEditor(b);
+  assert.ok(await b.until(focusLayoutReady,10000), 'focus card and thought input settle visible, separate and reachable');
 };
 const socketMark = () => core.heard.length;
 const noFocusSend = mark => {

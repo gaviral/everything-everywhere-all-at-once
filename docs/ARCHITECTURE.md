@@ -11,11 +11,13 @@ Browser, one page per window (ui/src)
   appearance.ts keeps the manifest and Apple touch icon in sync with the browser's light or dark appearance
   MapCards.tsx   Cards rendering: memoized topics, points, action rows, pictures and shared speech fixes; state stays in App
   RecoveryPanel.tsx  unfinished speech, other-map words and explicit online sends; consumes the core hook’s typed recovery state
+  dev-build.ts   waits for speaking, typing and sends to finish before reloading a new served build
   core.ts        the WebSocket; applies each Change to its own copy of the world (mirrors world.rs)
   topic-images.ts the topic pictures a view shows
   dev-build.ts   defers optional development-build reloads while the page is speaking, typing or sending
   mic.ts         the mic as 24 kHz 16-bit PCM in 80 ms frames (worklet in ui/public)
   film.ts        opt-in `?film` camera, pointer and caption controls; film.css hides recording distractions (checked by scripts/film-check.mjs)
+  topic-images.ts shares the browser-local switch for topic visuals
   pictures.ts    the one picture-slot rule (Cards view, Unfinished thought card, Pictures view): letter until decoded, capped refetches
   MicButton.tsx  the mic's states (off, starting, listening, hearing you, paused, no key, refused, connecting)
   Tips.tsx       one shared tip for every element with `data-tip` (each ✦ says what the AI did and its undo)
@@ -118,6 +120,13 @@ Browser, one page per window (ui/src)
   page-speech.ts  speaks a flagged caption or AI reply in this page (speechSynthesis), so the browser's echo cancellation keeps it out of the mic; stops when a person starts talking
       |  /ws: JSON both ways, audio frames up      POST /import: an export file (host only)
 Core, one process (core/src: axum, tokio)
+  system_view.rs passive local projection of core messages, without prompts, identities or saved words
+  code_canvas.rs local source-map metadata and inspectable part relationships, without source bodies or machine paths
+  dev_build.rs   optional local build status and per-window activity receipts
+  clarify.rs     Meta questions about ambiguous terms, without saving the answers
+  draw.rs        explicit Meta sketch interpretation and image replies, held in the window
+  flow.rs        validates and runs saved serial Meta prompt pipelines
+  workshop.rs    model trial list, saved Flow parts and optional configured event data
   storage.rs     validates and resolves platform map-directory locations without consulting environment files or services
   main.rs        Core state, the gate, one session per window, voice commands, "where was I?"; /room gives a member the code and invite link to share (invite())
   surface.rs     HTTP routes, request path and body limits, and loopback-only tool admission; hosted mode keeps local tools closed
@@ -318,7 +327,7 @@ All go from the core to `api.meta.ai/v1`. Every chat call except Explain asks fo
 
 Additional offline checks run separately: [correction controls](../scripts/correction.mjs), [email dry runs](../scripts/email-dry-run.mjs), [offline test runner](../scripts/offline-driver-test.py), [playground readiness](../scripts/playground-ready-test.mjs), and [publication guard](../scripts/publication-guard-test.py).
 
-Explicit opt-in checks cover live [Flow](../scripts/flow-happy-live.mjs), [capture-to-send](../scripts/film-chain-live.mjs), and [synthetic speech](../scripts/voice-live.mjs). They need an isolated local setup and live Meta access; they are separate from offline documentation checks.
+Explicit opt-in checks cover live [Flow](../scripts/flow-happy-live.mjs), and [synthetic speech](../scripts/voice-live.mjs). They need an isolated local setup and live Meta access; they are separate from offline documentation checks.
 
 ## Prototype scope
 
@@ -332,4 +341,4 @@ Live placement, sketch reading, image generation and Crew need a working Meta ke
 
 Historical typed-input measurements do not validate this merged build or human microphone performance. Human microphone and interruption behavior, including loud-voice calibration, still need validation. The selected build, current live Meta demonstration, final film/link, media rights and owner approvals remain separate checks. Sample pictures are public generated fixtures; private journals, prompts, answers and owner words do not belong in the submission.
 
-`node scripts/readme-check.mjs`, `node scripts/links-check.mjs`, `node scripts/dates-check.mjs` and `python3 scripts/model-guards.py meta-only` check documentation and model-integration scope without service credentials. Their success does not establish a full build, browser flow, release clearance or validation of all historical merges. See the [film guide](../film/README.md) for narration provenance and rendering checks.
+`node scripts/readme-check.mjs`, `node scripts/links-check.mjs`, `node scripts/dates-check.mjs` and `python3 scripts/model-guards.py meta-only` check documentation and model-integration scope without service credentials. Their success does not establish a full build, browser flow, release clearance or validation of all historical merges. See the the film tooling kept outside this repository for narration provenance and rendering checks.

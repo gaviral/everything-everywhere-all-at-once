@@ -1,4 +1,4 @@
-# E2A2O
+# Everything Everywhere All at Once
 The IDE from the future, for developers and AI to follow each other.
 Speak, type and sketch; build reusable board parts with Muse Spark; inspect the work across real Git branches.
 
@@ -10,11 +10,24 @@ Speak, type and sketch; build reusable board parts with Muse Spark; inspect the 
 
 AI is racing ahead of the person directing it. Here, you keep up with your agents, and they keep up with you.
 
-## Try the IDE
-
-**Local sample:** `./run.sh sample` (fictional payments API team) → `http://localhost:4321/?sample` (no key or mic).
+![Crew's board: seven parts merged through real Git branches](docs/looks/crew-look.png)
 
 <!-- Film link goes here. -->
+
+## What sets it apart
+
+- **The canvas is the project.** Not a file tree: your thinking, organized by what it's about, with your original words one step away.
+- **Composition you can see.** Every piece is a named part made of smaller parts, and finished parts get reused.
+- **You see the agents.** Muse Spark builds parts in parallel on real Git branches; checked work merges through dev, staging and main, and what breaks gets repaired.
+- **Talk and draw.** Speak a thought, sketch how it fits, and Muse Spark reads the sketch while Muse Image draws it back.
+
+## Try the IDE
+
+**Local sample:** `./run.sh sample` → `http://localhost:4321/?sample`, a fictional payments API team (no key or mic). The first run installs dependencies and compiles Rust, about four minutes, and needs network access. Live model features need a Meta key.
+
+## Built during the hackathon
+
+Before the event there were only ideas and design notes, no app code. All application code in this repository was written during the Meta x Cerebral Valley hackathon, by the author with AI coding agents. Third-party dependencies keep their licences.
 
 ## Powered by Meta models
 

@@ -1506,7 +1506,7 @@ async fn main() -> anyhow::Result<()> {
 
     let key = std::env::var("MODEL_API_KEY").ok().filter(|k| !k.trim().is_empty());
     if key.is_none() {
-        tracing::warn!("MODEL_API_KEY is not set: listening and placement are off (see .env.example)");
+        if std::env::var("E2A2O_MODE").as_deref() == Ok("sample") { tracing::info!("Sample map: running without a Meta key"); } else { tracing::warn!("MODEL_API_KEY is not set: listening and placement are off (see .env.example)"); }
     }
     let room = room_code()?;
     let tunnel = tunnel::Tunnel::from_env(room.as_deref())?;

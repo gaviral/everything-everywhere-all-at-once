@@ -15,7 +15,10 @@ export function useShellCountdownPlacement(enabled: boolean) {
     };
     // The map and gallery end above the lowest controls, so words never peek between them.
     const clearance = () => {
-      const covers = Array.from(document.querySelectorAll<HTMLElement>(".shell-stage, .shell-bl, .spine-corner, .spine-corner-row, .countdown-card"))
+      // A card positioned around canvas capture cannot also clip that capture's canvas.
+      const canvasCapture = document.querySelector('[data-map-capture="active"] .shell-composer');
+      const selectors = ".shell-stage, .shell-bl, .spine-corner, .spine-corner-row" + (canvasCapture ? "" : ", .countdown-card");
+      const covers = Array.from(document.querySelectorAll<HTMLElement>(selectors))
         .map(el => el.getBoundingClientRect()).filter(r => r.width && r.height);
       const bottom = Math.max(0, innerHeight - Math.min(innerHeight, ...covers.map(r => r.top)) + 12);
       publish("--shell-content-bottom", bottom);
@@ -32,9 +35,12 @@ export function useShellCountdownPlacement(enabled: boolean) {
       // On phones the camera's controls share the corner row with the shelf (and Following can be hidden).
       const camera = document.querySelector<HTMLElement>(".spine-corner-left .spine-camera, .spine-corner-row");
       const stage = document.querySelector<HTMLElement>(".shell-stage");
-      const composer = document.querySelector<HTMLElement>(".shell-composer");
       const controls = document.querySelector<HTMLElement>(".shell-bl");
-      const elements = [countdown, card, editor, camera, camera?.parentElement, stage, composer, controls].filter((e): e is HTMLElement => !!e);
+      const composer = document.querySelector<HTMLElement>(".shell-composer");
+      const captureBody = composer?.closest<HTMLElement>('[data-map-capture="active"]') ?? composer;
+      const captureNode = composer?.closest<HTMLElement>(".react-flow__node");
+      const canvasViewport = composer?.closest<HTMLElement>(".react-flow__viewport");
+      const elements = [countdown, card, editor, camera, camera?.parentElement, stage, controls, composer, captureBody, captureNode, canvasViewport].filter((e): e is HTMLElement => !!e);
       if (elements.length !== observed.length || elements.some((e, i) => e !== observed[i])) {
         resize.disconnect(); positions.disconnect();
         for (const element of elements) {
@@ -61,7 +67,12 @@ export function useShellCountdownPlacement(enabled: boolean) {
         const r = element.getBoundingClientRect();
         if (r.width && r.height && r.left < left + box.width && r.right > left) bottom = Math.min(bottom, r.top);
       }
-      bottom = Math.max(y + edge + box.height, Math.min(bottom - gap, y + height - edge));
+      bottom = Math.min(bottom - gap, y + height - edge);
+      const captureBox = captureBody?.getBoundingClientRect();
+      // Capture is canvas content: a clear gap below it stays usable. Lift only on an actual collision.
+      if (captureBox?.width && captureBox.height && captureBox.left < left + box.width && captureBox.right > left
+          && bottom - box.height < captureBox.bottom && bottom > captureBox.top) bottom = captureBox.top - gap;
+      bottom = Math.max(y + edge + box.height, bottom);
       const room = Math.max(0, bottom - box.height - gap - y - edge);
       // Keep enough scrollable space for a control even when the stage leaves no room above the card.
       // In that case the editor starts at the viewport edge and extends down over the card.

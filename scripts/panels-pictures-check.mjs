@@ -6,6 +6,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ready, standInCore, openPage, sleep } from "./headless.mjs";
+import { expectRecognizedWords } from "./recognized-words.mjs";
 
 // openPage spawns Chrome with this environment. Never hand provider credentials to children.
 for (const name of Object.keys(process.env)) if (/KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL/i.test(name)) delete process.env[name];
@@ -113,7 +114,13 @@ const open = async ({ width = 1440, height = 900, extra = "" } = {}) => {
   await browser.page("Page.navigate", { url });
   assert.ok(await until(`!!document.querySelector('.spine-ready, .shell-welcome')`), "real UI ready");
 };
-const catalog = async () => { await ev(`document.querySelector('[data-guide="catalog"]').focus(); document.querySelector('[data-guide="catalog"]').click()`); assert.ok(await until(`!!document.querySelector('[data-row="warm-pictures"]')`)); };
+const catalog = async () => {
+  if (!await ev(`document.querySelector('[data-guide="catalog"]').getAttribute('aria-pressed') === 'true'`)) {
+    const r = await ev(`document.querySelector('[data-guide="catalog"]').getBoundingClientRect().toJSON()`);
+    for (const type of ['mousePressed','mouseReleased']) await browser.page('Input.dispatchMouseEvent', {type,x:r.x+r.width/2,y:r.y+r.height/2,button:'left',clickCount:1});
+  }
+  assert.ok(await until(`document.querySelector('[data-row="warm-pictures"]')?.checkVisibility()`), 'Features opens with the warm-picture control visible');
+};
 const toggle = async (id = "warm-pictures") => {
   await ev(`document.querySelector('[data-row="${id}"] [role="switch"]').focus()`);
   await key(" ");
@@ -217,7 +224,7 @@ try {
       assert.ok(await until(`document.querySelector('button.mic').getAttribute('aria-pressed') === 'true'`), "synthetic capture starts");
       core.send({ type: "status", listening: true });
       core.send({ type: "partial", text: "Synthetic words" });
-      assert.ok(await until(`document.querySelector('.voice-draft')?.textContent.includes('Synthetic words')`), "real partial accepted");
+      await expectRecognizedWords(browser, 'Synthetic words', 'synthetic partial is visibly accepted');
     }
     if (gate === "disconnected") { online = false; core.drop(); await sleep(150); }
     await warm(); await sleep(1300);
