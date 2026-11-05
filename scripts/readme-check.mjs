@@ -34,7 +34,7 @@ assert.ok(words.length <= MAX_WORDS, `the first screen has ${words.length} words
 // Keep the visible IDE opening and its concrete capabilities, without a performance promise.
 const outcome = first.split("\n").slice(0, 3).join("\n");
 assert.equal(outcome, [
-  "# E2A2O",
+  "# Everything Everywhere All at Once",
   "The IDE from the future, for developers and AI to follow each other.",
   "Speak, type and sketch; build reusable board parts with Muse Spark; inspect the work across real Git branches.",
 ].join("\n"), "the opening must introduce the IDE and its speech, sketch, parts and Git capabilities");
