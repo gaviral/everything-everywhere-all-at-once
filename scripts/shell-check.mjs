@@ -1,5 +1,5 @@
 // Hold the shell (the page with no flag) to its small type scale, keys on controls, one copy of each sentence and state,
-// honest mode stamps, AI-only purple, stop-only red, and regions that fit the window. Check first opens and maps
+// honest mode stamps, marked AI contributions, stop-only red, and regions that fit the window. Check first opens and maps
 // on a laptop and phone, light and dark (also reduced motion on your map), so features cannot quietly break the
 // shell's shared rules. The Catalog and History must also open and close from their keys.
 // No dependencies; uses ui/dist and headless.mjs. SHOTS=dir saves shell-<scene>-<width>-<scheme>.png.
@@ -108,7 +108,8 @@ function inspect({ stamp, state, width, controlsOnly = false }) {
   for (const e of all("*")) {
     if (!e.closest(scope) || !shown(e)) continue;
     const color = getComputedStyle(e).color;
-    if (ai && color === ai && !e.closest(".ai-mark") && !normal(e.textContent).startsWith("✦")) fail(e, `AI purple outside an AI mark on ${name(e)}`);
+    // Gold is shared by active, attention and AI roles in the warm Look; the star identifies AI.
+    if (e.matches('.ai-mark') && (!normal(e.textContent).startsWith('✦') || color !== ai)) fail(e, `AI contribution needs its star and accent on ${name(e)}`);
     if (red && color === red && !e.closest('[data-level="stop"]')) fail(e, `red outside a stop on ${name(e)}`);
   }
 
