@@ -161,6 +161,31 @@ pub(crate) fn sound_spec(spec: &Value) -> Result<(), String> {
     Ok(())
 }
 
+/// Read and validate the committed tree, never a caller's claimed specs.
+async fn branch_specs(dir: &Path, branch: &str) -> anyhow::Result<Vec<(String, Value)>> {
+    let files = git(dir, &["ls-tree", "-r", "--name-only", branch, "--", "parts/"]).await?;
+    let mut specs = Vec::new();
+    for file in files.lines() {
+        let id = file.strip_prefix("parts/").and_then(|f| f.strip_suffix(".json"))
+            .filter(|id| is_name(id)).ok_or_else(|| anyhow::anyhow!("Invalid committed part path"))?;
+        let text = git(dir, &["show", &format!("{branch}:{file}")]).await?;
+        let spec: Value = serde_json::from_str(&text)?;
+        sound_spec(&spec).map_err(anyhow::Error::msg)?;
+        specs.push((id.to_string(), spec));
+    }
+    anyhow::ensure!(!specs.is_empty(), "The branch has no parts");
+    Ok(specs)
+}
+
+fn verified_catalog_parts(keep: Vec<Value>, specs: &[(String, Value)]) -> anyhow::Result<Vec<Value>> {
+    keep.into_iter().map(|value| {
+        let mut part: Kept = serde_json::from_value(value)?;
+        part.spec = specs.iter().find(|(id, _)| *id == part.id)
+            .ok_or_else(|| anyhow::anyhow!("Catalog part is absent from the branch"))?.1.clone();
+        Ok(serde_json::to_value(part)?)
+    }).collect()
+}
+
 async fn commit_part(run: &str, part: &Part, spec: &Value, message: &str) -> anyhow::Result<String> {
     let dir = repository(run)?;
     let branch = format!("part/{}", part.id);
@@ -245,6 +270,9 @@ pub async fn merge(Json(request): Json<MergeRequest>) -> Json<Value> {
         let dir = repository(&request.run)?;
         anyhow::ensure!(is_name(&request.id), "Unknown part");
         let _turn = WRITER.lock().await;
+        let branch = format!("part/{}", request.id);
+        let specs = branch_specs(&dir, &branch).await?;
+        anyhow::ensure!(specs.iter().any(|(id, _)| *id == request.id), "Part is absent from its branch");
         git(&dir, &["checkout", "-q", "dev"]).await?;
         git(&dir, &["merge", "-q", "--no-ff", "-m", &format!("Merge part {}", request.id), &format!("part/{}", request.id)]).await?;
         git(&dir, &["rev-parse", "--short", "HEAD"]).await
@@ -283,12 +311,14 @@ pub async fn promote(Json(request): Json<PromoteRequest>) -> Json<Value> {
         let dir = repository(&request.run)?;
         let from = match request.to.as_str() { "staging" => "dev", "main" => "staging", _ => anyhow::bail!("Unknown level") };
         let _turn = WRITER.lock().await;
+        let specs = branch_specs(&dir, from).await?;
+        let keep = verified_catalog_parts(request.keep, &specs)?;
         git(&dir, &["checkout", "-q", &request.to]).await?;
         git(&dir, &["merge", "-q", "--no-ff", "-m", &format!("Promote {from} to {}", request.to), from]).await?;
         if request.to == "main" { git(&dir, &["tag", "-f", "stable"]).await?; }
         let commit = git(&dir, &["rev-parse", "--short", "HEAD"]).await?;
         let commits = git(&dir, &["rev-list", "--count", "--all"]).await?;
-        let catalog_size = if request.to == "main" { keep_in_catalog(request.keep)? } else { catalog().len() };
+        let catalog_size = if request.to == "main" { keep_in_catalog(keep)? } else { catalog().len() };
         Ok::<Value, anyhow::Error>(json!({"commit": commit, "commits": commits, "catalog": catalog_size}))
     }.await;
     match result { Ok(done) => Json(done), Err(error) => Json(json!({"error": format!("{error}")})) }
@@ -297,6 +327,27 @@ pub async fn promote(Json(request): Json<PromoteRequest>) -> Json<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn audit_validates_committed_specs_and_catalog_values() {
+        let folder = std::env::temp_dir().join(format!("crew-audit-{}", uuid::Uuid::new_v4().simple()));
+        tokio::fs::create_dir_all(folder.join("parts")).await.unwrap();
+        git(&folder, &["init", "-q", "-b", "main"]).await.unwrap();
+        let file = folder.join("parts/one.json");
+        tokio::fs::write(&file, r#"{"blocks":[]}"#).await.unwrap();
+        git(&folder, &["add", "-A"]).await.unwrap();
+        git(&folder, &["commit", "-q", "-m", "Invalid part"]).await.unwrap();
+        let sound = json!({"title":"Water","blocks":[{"kind":"big","text":"Drink water"}]});
+        tokio::fs::write(&file, sound.to_string()).await.unwrap();
+        assert!(branch_specs(&folder, "main").await.is_err(), "uncommitted repairs cannot validate a bad branch");
+        git(&folder, &["add", "-A"]).await.unwrap();
+        git(&folder, &["commit", "-q", "-m", "Repair part"]).await.unwrap();
+        let specs = branch_specs(&folder, "main").await.unwrap();
+        let requested = json!({"id":"one","name":"Water","job":"Reminder","spec":{"title":"Forged"}});
+        let kept = verified_catalog_parts(vec![requested], &specs).unwrap();
+        assert_eq!(kept[0]["spec"], sound, "catalog uses the branch's actual spec");
+        assert!(verified_catalog_parts(vec![json!({"id":"missing","name":"Missing","job":"None","spec":sound})], &specs).is_err());
+    }
 
     #[test]
     fn a_plan_keeps_only_sound_parts_in_an_order_that_can_finish() {
