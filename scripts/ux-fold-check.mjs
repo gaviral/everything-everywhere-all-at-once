@@ -63,7 +63,8 @@ async function checkSize(width, height) {
     assert.equal(await evaluate(`document.querySelectorAll('.spine-tile img').length`), 0, 'topic images start off');
     assert.ok(await evaluate(`!!document.querySelector('.spine-letter') && document.querySelector('.spine-title').textContent.includes('Balcony garden')`), 'title visuals remain');
     assert.equal(await evaluate(`document.querySelectorAll('.spine-point > .spine-text > .spine-speaker').length`), 0, 'no repeated solo author');
-    assert.ok(await evaluate(`document.querySelector('.map-capture-mic').textContent.includes('Mic off')`));
+    assert.equal(await evaluate(`document.querySelector('.mic-corner .mic').getAttribute('aria-label')`), 'Start listening');
+    assert.equal(await evaluate(`document.querySelector('.shell-composer .mic')`), null);
     await evaluate(`document.querySelector('#type-a-thought').focus()`);
     await page('Input.insertText', { text: 'Keep the garden draft' });
     await click('[data-guide="catalog"]');

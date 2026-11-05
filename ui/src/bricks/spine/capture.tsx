@@ -5,7 +5,7 @@ import type { Box, Layout } from "./layout";
 
 export type CaptureRow = { id: string; text: string; thoughtIds: string[]; waiting: boolean; status: string; saved: boolean; retry?: () => void };
 export const CaptureContext = createContext<{
-  host: HTMLElement; words: string; draft: boolean; rows: CaptureRow[]; micText: string;
+  host: HTMLElement; words: string; draft: boolean; rows: CaptureRow[];
 } | null>(null);
 export type CaptureNode = Node<{ row?: CaptureRow; words?: string; host?: HTMLElement }, "capture">;
 
@@ -105,7 +105,7 @@ export function CaptureView({ data }: NodeProps<CaptureNode>) {
   </section>;
 }
 
-/** Exploration can leave capture off screen. Keep a named route back to the real input and its mic. */
+/** Exploration can leave capture off screen. Keep a named route back to the real input. */
 export function CaptureAccess({ box, free, reveal }: { box?: Box; free: { x0: number; y0: number; x1: number; y1: number }; reveal: () => void }) {
   const capture = useContext(CaptureContext);
   const x = useStore(state => state.transform[0]);
@@ -115,6 +115,6 @@ export function CaptureAccess({ box, free, reveal }: { box?: Box; free: { x0: nu
   const left = box.x * zoom + x, top = box.y * zoom + y;
   if (left >= free.x0 && left + box.w * zoom <= free.x1 && top >= free.y0 + 8 && top + box.h * zoom <= free.y1 - 8) return null;
   return <Panel position="top-center" className="capture-return" style={{ top: free.y0 + 12, marginTop: 0 }}><button type="button" onClick={reveal}>
-    <span>{capture.micText}</span><span>Return to input ↗</span>
+    <span>Return to input ↗</span>
   </button></Panel>;
 }

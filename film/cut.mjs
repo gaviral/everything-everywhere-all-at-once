@@ -113,7 +113,7 @@ async function joinShots(results, opts) {
   const lastPTS=Math.round((frameCount-1)*90000/opts.fps);
   const tail=Math.round(opts.duration*90000)-lastPTS;
   if(tail<=0 || tail>Math.ceil(90000/opts.fps)) throw new Error('Last-frame duration is outside one frame');
-  const timing=`setts=duration=if(gte(PTS\\,${lastPTS})\\,${tail}\\,DURATION)`;
+  const timing=`setts=pts=PTS:dts=DTS:duration=if(gte(PTS\\,${lastPTS})\\,${tail}\\,DURATION)`;
   run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-n', '-f', 'concat', '-safe', '0', '-i', list, '-map', '0:v:0', '-c', 'copy', '-bsf:v', timing, '-movie_timescale', '1000', '-movflags', '+faststart', partial]);
   // Preserve previous review versions rather than overwriting them.
   try { await rename(opts.out, opts.out.replace(/\.mp4$/, `.previous-${randomUUID()}.mp4`)); } catch (e) { if (e.code !== 'ENOENT') throw e; }

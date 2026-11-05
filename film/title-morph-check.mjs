@@ -69,7 +69,13 @@ try {
     const beadPositions = [];
     for (const time of [spec.impact, (spec.impact + spec.seated) / 2, spec.seated]) {
       await stage.frame(shot, time);
-      beadPositions.push(await stage.evaluate('(() => { const r = document.querySelector(".tm-bead").getBoundingClientRect(); return r.y + r.height / 2; })()'));
+      beadPositions.push(await stage.evaluate(`(() => {
+        const pixels = document.querySelector('.tm-bead').getContext('2d').getImageData(0, 0, 1920, 1080).data;
+        let top = 1080, bottom = -1;
+        for (let y = 0; y < 1080; y++) for (let x = 0; x < 1920; x++)
+          if (pixels[(y * 1920 + x) * 4 + 3] > 127) { top = Math.min(top, y); bottom = y; }
+        return (top + bottom) / 2;
+      })()`));
     }
     assert.ok(beadPositions[1] < beadPositions[0] - 60, 'The bead rebounds visibly after impact');
     assert.ok(Math.abs(beadPositions[0] - beadPositions[2]) < .01, 'The bead seats at the impact height after one bounce');
