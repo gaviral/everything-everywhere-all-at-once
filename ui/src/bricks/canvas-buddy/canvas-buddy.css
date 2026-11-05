@@ -1,0 +1,60 @@
+.canvas-buddy { --buddy-gold: #edc77c; --buddy-muted: #b6ad9f; color: #f6eddf; font-family: inherit; position: fixed; inset: 0; pointer-events: none; z-index: 34; }
+.canvas-buddy-home, .canvas-buddy-note { pointer-events: auto; background: #272522; border: 1px solid #67563c; box-shadow: 0 18px 70px #0005; border-radius: 25px 30px 24px 12px; }
+.canvas-buddy-home { position: absolute; top: 112px; left: 24px; width: min(520px, calc(100vw - 48px)); }
+.canvas-buddy-example { padding: 23px 25px 18px; }
+.canvas-buddy-heading { display: flex; justify-content: space-between; gap: 12px; align-items: center; font-size: 10px; letter-spacing: .15em; color: var(--buddy-gold); }
+.canvas-buddy-label { color: var(--buddy-muted); font-size: 11px; letter-spacing: 0; }
+.canvas-buddy-sketch { height: 166px; position: relative; margin: 14px -5px 0; }
+.canvas-buddy-paths { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.canvas-buddy-paths path { stroke: #8d7852; stroke-width: 1.3; fill: none; stroke-dasharray: 3 5; }
+.canvas-buddy-seed, .canvas-buddy-rollback, .canvas-buddy-launch { position: absolute; font-size: 16px; padding: 12px 16px; border-radius: 45% 50% 40% 45%; background: #34312a; border: 1px solid #5e5544; transform: rotate(-4deg); }
+.canvas-buddy-seed { left: 0; top: 42px; width: 38%; font-size: 20px; line-height: 1.15; }
+.canvas-buddy-rollback { left: 43%; top: 70px; transform: rotate(3deg); }
+.canvas-buddy-launch { right: 0; top: 6px; transform: rotate(-6deg); }
+.canvas-buddy-seed span, .canvas-buddy-rollback span, .canvas-buddy-launch span { display: block; margin-top: 6px; font-size: 11px; color: var(--buddy-muted); }
+.canvas-buddy-rollback[data-active="true"], .canvas-buddy-launch[data-active="true"] { border-color: var(--buddy-gold); }
+.canvas-buddy-demo-bead, .canvas-buddy-live-bead { width: 12px; height: 12px; border-radius: 50%; background: var(--buddy-gold); box-shadow: 0 0 16px #edc77c90; pointer-events: none; transition: left 800ms cubic-bezier(.22,.7,.2,1), top 800ms cubic-bezier(.22,.7,.2,1); }
+.canvas-buddy-demo-bead { position: absolute; }
+.canvas-buddy-demo-bead i, .canvas-buddy-live-bead i { position: absolute; inset: -7px; border: 1px solid #edc77c70; border-radius: 50%; animation: canvas-buddy-pulse 2.5s ease-out infinite; }
+.canvas-buddy-paper { padding: 0 6px; animation: canvas-buddy-appear 700ms ease both; }
+.canvas-buddy-line { font-family: "Bradley Hand", "Segoe Print", "Comic Sans MS", cursive; font-size: clamp(25px, 2.5vw, 31px); line-height: 1.25; font-weight: 400; color: var(--buddy-gold); margin: 0 0 20px; letter-spacing: -.025em; }
+.canvas-buddy-choices { display: flex; flex-wrap: wrap; gap: 8px; }
+.canvas-buddy-choices button, .canvas-buddy-form button { color: #f7e6c4; border: 1px solid #76603b; background: #3b3326; border-radius: 18px; font: inherit; font-size: 13px; min-height: 40px; padding: 8px 13px; cursor: pointer; }
+.canvas-buddy-form { display: flex; gap: 8px; margin-top: 12px; }
+.canvas-buddy-form input { width: 0; flex: 1; min-width: 0; color: #f6eddf; background: transparent; border: 0; border-bottom: 1px solid #645a4b; font: inherit; font-size: 14px; padding: 8px 2px; border-radius: 0; }
+.canvas-buddy-form input::placeholder { color: var(--buddy-muted); }
+.canvas-buddy-form button { min-width: 40px; font-size: 20px; padding: 4px; }
+.canvas-buddy-footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.canvas-buddy-footer button, .canvas-buddy-source { background: transparent; border: 0; padding: 7px 0; min-height: 36px; font: inherit; font-size: 12px; color: var(--buddy-gold); cursor: pointer; text-align: left; }
+.canvas-buddy-footer button:first-child { color: var(--buddy-muted); }
+.canvas-buddy button:disabled { opacity: .45; cursor: default; }
+.canvas-buddy button:focus-visible, .canvas-buddy input:focus-visible, .canvas-buddy-wake:focus-visible { outline: 2px solid var(--buddy-gold, #edc77c); outline-offset: 4px; }
+.canvas-buddy-receipt q { display: block; color: #f6eddf; font-size: 17px; }
+.canvas-buddy-receipt small, .canvas-buddy-hint { display: block; color: var(--buddy-muted); font-size: 11px; margin-top: 9px; }
+.canvas-buddy-message { color: #e2cda9; font-size: 12px; line-height: 1.5; margin: 12px 24px 18px; }
+.canvas-buddy-note .canvas-buddy-message { margin: 12px 0 0; }
+.canvas-buddy-hide { position: fixed; left: 24px; top: 78px; pointer-events: auto; background: #272522; color: #edc77c; border: 1px solid #67563c; border-radius: 50%; width: 28px; height: 28px; cursor: pointer; }
+.canvas-buddy-wake { position: fixed; left: 24px; top: 90px; z-index: 34; background: #272522; color: #edc77c; border: 1px solid #67563c; border-radius: 24px; min-height: 44px; padding: 10px 18px; cursor: pointer; }
+.canvas-buddy-live-bead { position: fixed; left: -6px; top: -6px; transform: translate(40px, 120px); transition: transform 650ms cubic-bezier(.22,.7,.2,1); opacity: 0; }
+.canvas-buddy-live-bead[data-visible="true"] { opacity: 1; }
+.canvas-buddy-note { position: fixed; left: 0; top: 0; transform: translate(24px, 112px); width: min(340px, calc(100vw - 32px)); padding: 22px; box-sizing: border-box; }
+.canvas-buddy-note[data-anchored="false"] { transform: translate(24px, 112px) !important; }
+.canvas-buddy-note .canvas-buddy-line { margin-top: 20px; margin-bottom: 8px; }
+.canvas-buddy-source { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 10px; color: var(--buddy-muted); }
+@keyframes canvas-buddy-pulse { 0% { transform: scale(.6); opacity: .9; } 80%, 100% { transform: scale(1.45); opacity: 0; } }
+@keyframes canvas-buddy-appear { 0%, 40% { opacity: 0; transform: translateY(4px); } 100% { opacity: 1; transform: translateY(0); } }
+@media (max-width: 560px) {
+  .canvas-buddy-home { left: 12px; top: 118px; width: calc(100vw - 24px); }
+  .canvas-buddy-example { padding: 19px 18px 16px; }
+  .canvas-buddy-heading { gap: 8px; font-size: 9px; letter-spacing: .08em; }
+  .canvas-buddy-label { font-size: 10px; }
+  .canvas-buddy-seed { font-size: 17px; padding: 10px; }
+  .canvas-buddy-rollback, .canvas-buddy-launch { font-size: 14px; padding: 10px; }
+  .canvas-buddy-rollback { left: 39%; }
+  .canvas-buddy-hide { left: 14px; top: 84px; }
+  .canvas-buddy-note[data-anchored="false"] { transform: translate(16px, 118px) !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .canvas-buddy-paper, .canvas-buddy-demo-bead i, .canvas-buddy-live-bead i { animation: none; }
+  .canvas-buddy-demo-bead, .canvas-buddy-live-bead { transition: none; }
+}
