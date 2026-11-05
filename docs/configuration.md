@@ -32,6 +32,8 @@ MODEL_API_KEY=
 # IMPORT_MERGE_MODEL=muse-spark-1.3
 # Optional: the most model calls the core makes in any hour (default 400; 0 turns the cap off).
 # MODEL_CALLS_PER_HOUR=400
+# Optional: in-RAM thought index, focused model context and exact answer reuse (default off).
+# E2A2O_MEMORY=1
 # Optional: JSON allowances for the Usage feature; no file keeps the meter hidden. Read every 60 seconds.
 # USAGE_FILE=
 # Optional: draw no thread pictures (no Muse Image calls); threads keep their letter tiles.
@@ -64,6 +66,9 @@ MODEL_API_KEY=
 # Optional, Full only: "save this thread as a note" really writes a new note into Apple Notes. Off, it's a dry run.
 # NOTES_WRITE=on
 ```
+
+The [Memory feature](memory.md) can also be enabled from Features for the current
+connection. Its card reports lookup time, context bytes saved and answer reuse.
 
 ## Containers
 

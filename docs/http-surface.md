@@ -9,6 +9,7 @@ methods receive 405. The UI fallback serves GET/HEAD only.
 | GET → WebSocket | `/ws` | Map and commands; 64 KiB messages/frames |
 | GET → WebSocket | `/ws/my-words` | Map-bound glossary; 16 KiB messages/frames |
 | GET | `/room` | Availability and join information; join code only for members |
+| GET | `/memory/stats` | In-RAM index, lookup, context savings and cache counts; zero while off |
 | POST | `/terse` | Short display lines |
 | POST | `/clarify` | Clarification from Meta |
 | POST | `/draw/read` | Read a bounded sketch with Meta |
@@ -56,7 +57,7 @@ The additional router registrations under `#[cfg(test)]` in `core/src` are:
 | --- | --- | --- |
 | POST | `/` | `helpers/tests.rs` provider fixtures |
 | POST | `/chat` | `conversation/tests.rs` provider fixture |
-| POST | `/v1/chat/completions` | `model.rs`, `topics.rs`, `placer.rs`, `placer_route_tests.rs` |
+| POST | `/v1/chat/completions` | `model.rs`, `topics.rs`, `placer.rs`, `placer_route_tests.rs`, `memory/tests.rs` |
 | POST | `/__mechanics/release`, `/__mechanics/stop`, `/__mechanics/cleanup` | `helpers/tests.rs` |
 | GET | `/f7-stats` | `explain.rs` |
 | GET | `/fixture.wav` | `asr/tests/identity.rs` |
