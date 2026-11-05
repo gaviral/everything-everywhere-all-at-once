@@ -1922,7 +1922,6 @@ export default function App() {
           {captureInPlace && empty && site.sample && !draft && !stopMic && !startingMic && <button type="button" className="shell-link map-capture-example" aria-keyshortcuts="E" onClick={() => loadSample()} disabled={!core.connected || waitingCaptures.length > 0}>See an example</button>}
           {captureInPlace && captures.at(-1)?.saved && !draft && <span className="map-capture-saved" data-saved-id={captures.at(-1)?.id}>Saved</span>}
         </form>
-          {captureInPlace && (comparison || <PartnerStatus onStopConversation={stopConversation} />)}
           {captureInPlace && !stopMic && !core.partial && !core.handoff && !captures.some(row => row.text === core.voiceDraft) && recognizedDraft}
           {captureInPlace && placedCapture && <div className="capture-placed map-capture-receipt" data-capture-placed={placedCapture.id}>
             <button type="button" onClick={() => { const thought = world.thoughts.find(row => row.id === placedCapture.thought_ids[0]); if (thought?.thread_id) { core.focus(thought.thread_id); reveal(thought.thread_id, thought.id); } }}>
@@ -2071,7 +2070,7 @@ export default function App() {
         </div>}
         {!captureInPlace && recognizedDraft}
           <FormattedReply />
-          {!captureInPlace && (comparison || <PartnerStatus onStopConversation={stopConversation} captureActive={!!stopMic || startingMic} />)}
+          {comparison || <PartnerStatus onStopConversation={stopConversation} captureActive={!!stopMic || startingMic} />}
         <div className="shell-captions" id="shell-caption" />
       </section>
 

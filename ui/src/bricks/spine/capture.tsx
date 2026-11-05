@@ -26,6 +26,22 @@ function roomNear(at: Box | undefined, occupied: Box[], height: number): Box {
   return next;
 }
 
+/** Publish measured height after observer delivery, so layout changes cannot feed back into that delivery. */
+function useCaptureHeight(host: HTMLElement | undefined) {
+  const [height, setHeight] = useState(230);
+  useLayoutEffect(() => {
+    if (!host) return;
+    let frame = 0, measuredHeight = 230;
+    const observer = new ResizeObserver(([entry]) => {
+      measuredHeight = Math.max(190, Math.ceil(entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height + 14));
+      if (!frame) frame = requestAnimationFrame(() => { frame = 0; setHeight(measuredHeight); });
+    });
+    observer.observe(host.closest(".map-capture") ?? host);
+    return () => { observer.disconnect(); cancelAnimationFrame(frame); };
+  }, [host]);
+  return height;
+}
+
 /** Capture locations belong to this visit. Saved thoughts and hand-placed map positions remain core-owned. */
 export function useCaptureNodes(layout: Layout, map: MapSnapshot) {
   const capture = useContext(CaptureContext);
@@ -37,13 +53,7 @@ export function useCaptureNodes(layout: Layout, map: MapSnapshot) {
     visit.current = map.visitKey;
     origins.current.clear(); finished.current.clear(); active.current = undefined;
   }
-  const [height, setHeight] = useState(230);
-  useLayoutEffect(() => {
-    if (!capture) return;
-    const observer = new ResizeObserver(([entry]) => setHeight(Math.max(190, Math.ceil(entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height + 14))));
-    observer.observe(capture.host.closest(".map-capture") ?? capture.host);
-    return () => observer.disconnect();
-  }, [capture?.host]);
+  const height = useCaptureHeight(capture?.host);
   if (!capture) return { nodes: [] as CaptureNode[], seeds: new Map<string, Box>(), box: undefined, activeBox: undefined };
   const occupied = layout.items.filter(item => item.kind !== "slot" && item.kind !== "group").map(item => item.box);
   const latest = [...map.thoughts].reverse().find(thought => thought.speaker === map.me && thought.placed);
