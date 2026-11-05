@@ -255,6 +255,7 @@ pub struct Outgoing {
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMsg {
+    Pictures { on: bool },
     ImageEvidence { on: bool },
     CancelEvidence { request_id: String },
     EvidenceChunk { request_id: String, target: String, title: String, index: usize, data: String },

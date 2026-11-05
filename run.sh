@@ -31,7 +31,9 @@ node -e 'const [a, b] = process.versions.node.split(".").map(Number); process.ex
   { echo "Node.js 22.12 or newer is needed; this is $(node -v)." >&2; exit 1; }
 core="$(node scripts/start.mjs --bundled-core)" || exit 1
 if [ -z "$core" ]; then
+  command -v git >/dev/null 2>&1 || { echo "Git is needed for Crew: https://git-scm.com/downloads (install it, then run this again)." >&2; exit 1; }
   command -v cargo >/dev/null 2>&1 || { echo "Rust is needed: https://rustup.rs (install it, open a new terminal, run this again)." >&2; exit 1; }
+  node scripts/start.mjs --check-toolchain || exit 1
   echo "Checking map storage (first source build can take several minutes)..."
 fi
 # Rust is authoritative; validate before keys, network checks or any runtime writes.

@@ -25,7 +25,7 @@ USER 10001:10001
 ENTRYPOINT ["socat", "TCP-LISTEN:8080,bind=0.0.0.0,reuseaddr,fork", "TCP:127.0.0.1:4321"]
 
 FROM alpine:3.22 AS app
-RUN apk add --no-cache ca-certificates libgcc libssl3 \
+RUN apk add --no-cache ca-certificates git libgcc libssl3 \
     && mkdir -p /data/map && chown -R 10001:10001 /data
 WORKDIR /app
 COPY --from=core-build /build/core/target/release/e2a2o-core /usr/local/bin/e2a2o-core

@@ -102,18 +102,24 @@ type Listener = tokio::sync::mpsc::UnboundedSender<String>;
 static LISTENERS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, Vec<Listener>>>> = std::sync::LazyLock::new(Default::default);
 #[derive(Deserialize)]
 pub struct TurnQuery { name: String }
-pub async fn turns(axum::extract::Query(query): axum::extract::Query<TurnQuery>) -> impl axum::response::IntoResponse {
-    use axum::response::sse::{Event, KeepAlive, Sse};
+pub async fn turns(
+    State(core): State<Arc<Core>>,
+    axum::extract::ConnectInfo(link): axum::extract::ConnectInfo<crate::Link>,
+    axum::extract::Query(query): axum::extract::Query<TurnQuery>,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    if !crate::owns_stream(&core, &query.name, link) {
+        return (axum::http::StatusCode::FORBIDDEN, "Join with this name before opening its stream.").into_response();
+    }
+    use axum::response::sse::{KeepAlive, Sse};
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<String>();
     {
         let mut listeners = LISTENERS.lock().unwrap_or_else(|e| e.into_inner());
         listeners.retain(|_, senders| { senders.retain(|s| !s.is_closed()); !senders.is_empty() });
-        listeners.entry(query.name).or_default().push(tx);
+        listeners.entry(query.name.clone()).or_default().push(tx);
     }
-    let stream = futures_util::stream::unfold(rx, |mut rx| async move {
-        rx.recv().await.map(|text| (Ok::<_, std::convert::Infallible>(Event::default().data(text)), rx))
-    });
-    Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(10)))
+    let stream = crate::owned_turn_stream(core, query.name, link, rx);
+    Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(10))).into_response()
 }
 fn is_command(text: &str) -> bool {
     let text = text.trim().trim_end_matches(['.', '!', '?']).to_lowercase();

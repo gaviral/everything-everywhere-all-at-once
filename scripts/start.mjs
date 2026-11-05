@@ -303,6 +303,12 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     if (path) console.log(path);
     process.exit(0);
   }
+  // Check native prerequisites before --data-path can trigger the first Rust build.
+  if (args[0] === "--check-toolchain") {
+    const lacks = toolchainProblem({ floor: rustFloor(root) });
+    if (lacks) console.error(lacks);
+    process.exit(lacks ? 1 : 0);
+  }
   if (["--data-path", "--seed-sample"].includes(args[0])) {
     try {
       const out = storageCommand(root, args[1], args[0], args[2]);
