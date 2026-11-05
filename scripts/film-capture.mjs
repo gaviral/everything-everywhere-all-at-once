@@ -1,5 +1,6 @@
 // Real-app film capture. No model fixtures, physical microphone, saved credentials or generated results.
 // FILM_SPOKEN=1 captures spoken and spoken-build using only Chrome's file-backed fake audio device.
+// FILM_VOICE_CLIPS=spoken limits spoken mode to the thought-and-answer take.
 // FILM_ALL=1 rebuilds and recaptures all twelve clips, plus the real Git proof still, in the default dark look.
 // FILM_VOICE_DIR selects the supplied WAV folder; defaults to ../voice/user beside FILM_OUT.
 // FILM_OUT=/path/to/clips node scripts/film-capture.mjs captures all ten clips.
@@ -504,8 +505,10 @@ async function spokenClips() {
       note('real-question-in-place', { question });
       contentCheck('Who is Mira appears in place', question.includes('Who is Mira?'), { question });
       await waitVoice(()=>heardThoughts().length >= 2, 'spoken answer');
-      note('transcribed-answer', { text: heardThoughts()[1].text });
-      await waitVoice(()=>voiceEvents.filter(e=>e.value.type==='change' && e.value.change.type==='thought_placed').length >= 2, 'answer placement');
+      const answer = heardThoughts()[1];
+      note('transcribed-answer', { text: answer.text, thought_id: answer.id });
+      await waitVoice(()=>voiceEvents.some(e=>e.value.type==='change' && e.value.change.type==='thought_placed' && e.value.change.thought_id===answer.id), 'answer placement');
+      note('spoken-answer-placed', { thought_id: answer.id });
       const normal = text => text.toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
       contentCheck('spoken words match supplied thought and answer', normal(heardThoughts()[0].text) === normal(story) && normal(heardThoughts()[1].text) === normal('Mira runs the volunteers'), heardThoughts().map(t=>t.text));
       await checkNoSecondQuestion();
@@ -513,6 +516,17 @@ async function spokenClips() {
     } finally { await stopFileVoice(); }
   }, 'person speaking through Chrome file capture, real Muse Voice Transcribe live words, Spark placement and question');
   try { await finishVoiceAudio(rows.get('spoken'), ['thought','answer'], assets); } catch(error) { rows.get('spoken').audio_error=error.message; console.log(`spoken audio: ${error.message}`); }
+  if (process.env.FILM_VOICE_CLIPS === 'spoken') {
+    const record = rows.get('spoken');
+    const otherPath=join(output,'spoken-build.json');
+    const other=existsSync(otherPath)?JSON.parse(readFileSync(otherPath,'utf8')).audio||[]:[];
+    record.audio_manifest=[...(record.audio||[]),...other];
+    writeFileSync(join(output,'spoken.json'),JSON.stringify(record,null,2));
+    writeFileSync(join(record.folder,'timing.json'),JSON.stringify(record,null,2));
+    saveVerification({...await verifyClip(record),virtual_microphone:true,audio:record.audio||[],audio_error:record.audio_error||null});
+    writeReadme();
+    return;
+  }
   await closeBrowser(); fakeAudioFile = assets.build; await connect();
   await click('.draw-open');
   await box(.14,.26,.24,.18,'volunteer shifts',true);
