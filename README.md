@@ -1,16 +1,22 @@
-# <img src="ui/public/icons/icon-192.png" width="48" alt="E2A2O logo"> E2A2O
+# E2A2O
+The IDE from the future, for developers and AI to follow each other.
+Speak, type and sketch; build reusable board parts with Muse Spark; inspect the work across real Git branches.
 
-E2A2O turns your words and sketches into a board of reusable parts. Capture a thought, question a word, draw an idea and ask Muse to build it. Your ideas stay in view.
+<img src="ui/public/icons/icon-192.png" width="48" alt="E2A2O logo">
 
 **Think out loud. Build what you mean.**
 
-## Try it
+## Why
+
+AI is racing ahead of the person directing it. Here, you keep up with your agents, and they keep up with you.
+
+## Try the IDE
 
 **Local sample:** `./run.sh sample` → `http://localhost:4321/?sample` (no key or mic).
 
 <!-- Film link goes here. -->
 
-## Meta models
+## Powered by Meta models
 
 | You… | Model | Code |
 |---|---|---|
@@ -28,7 +34,7 @@ E2A2O turns your words and sketches into a board of reusable parts. Capture a th
 
 <!-- end of the first screen -->
 
-## From words to parts
+## Speak, type, sketch and build
 
 - **Say it.** Speak or type. Thoughts become topics on the board, with the original words available beside them.
 - **Ask about words.** A question points to a word in your sentence. Your answer stays attached to that occurrence.
