@@ -148,6 +148,8 @@ cropping, and the preview/final profiles without rendering the whole film.
 
 `titlemorph` builds “Everything Everywhere All at Once”, drops the other
 letters, folds the initials to E² A² O, and turns the O into the gold bead.
+Title lines and both initial arrangements fill about two thirds of the frame;
+explicit word gaps preserve “ALL AT ONCE”. E² A² O holds still for half a second.
 One gravity drop and rebound precede the blue shell and drawn ribbon. Shapes
 come from `ui/public/icon.svg`; they cross to the real glass icon before the
 name settles. Both variants use the stage font and an absolute frame clock.
