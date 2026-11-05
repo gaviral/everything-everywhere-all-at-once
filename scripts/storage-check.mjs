@@ -47,11 +47,11 @@ assert.equal(readFileSync(join(unknown, 'journal.jsonl'), 'utf8'), 'synthetic ex
 const executable = (p, text) => { writeFileSync(p, text); chmodSync(p, 0o755); };
 const fixture = (index) => {
   const dir = join(scratch, `app-${index}`);
-  for (const sub of ['.git', 'core', 'scripts', 'ui', 'bin', 'samples/images/student-week', 'samples/images/founder-day']) mkdirSync(join(dir, sub), { recursive: true });
+  for (const sub of ['.git', 'core', 'scripts', 'ui', 'bin', 'samples/images/student-week', 'samples/images/founder-day', 'samples/images/developer-day']) mkdirSync(join(dir, sub), { recursive: true });
   for (const file of ['run.sh', 'scripts/start.mjs', 'scripts/trial.sh']) copyFileSync(join(root, file), join(dir, file));
   chmodSync(join(dir, 'run.sh'), 0o755);
   writeFileSync(join(dir, 'core/.env'), '');
-  for (const sample of ['student-week', 'founder-day']) {
+  for (const sample of ['student-week', 'founder-day', 'developer-day']) {
     writeFileSync(join(dir, `samples/${sample}.jsonl`), `synthetic ${sample}\n`);
     writeFileSync(join(dir, `samples/images/${sample}/picture.webp`), `synthetic ${sample} image`);
   }
@@ -78,7 +78,7 @@ console.log(JSON.stringify({data:p,mode:process.env.E2A2O_MODE,fixture:fs.exists
   return dir;
 };
 let index = 0;
-for (const mode of ['', 'sample', 'sample founder', 'demo', 'room', 'named map', 'trial']) {
+for (const mode of ['', 'sample', 'sample developer', 'sample student', 'sample founder', 'demo', 'room', 'named map', 'trial']) {
   for (const override of [false, true]) {
     const dir = fixture(index++), data = join(caller, `chosen map ${index}`);
     const env = { ...baseEnv, PATH: join(dir, 'bin') + ':' + process.env.PATH,
@@ -97,7 +97,7 @@ for (const mode of ['', 'sample', 'sample founder', 'demo', 'room', 'named map',
       const payload = JSON.parse(r.stdout.trim().split('\n').at(-1)); selected = payload.data;
       assert.equal(payload.mode, mode.startsWith('sample') ? 'sample' : mode);
       if (mode.startsWith('sample')) {
-        assert.equal(payload.fixture, mode.includes('founder') ? 'founder-day' : 'student-week');
+        assert.equal(payload.fixture, mode.includes('founder') ? 'founder-day' : mode.includes('student') ? 'student-week' : 'developer-day');
         assert.match(r.stdout, /\/\?sample/);
       }
     }
@@ -112,5 +112,5 @@ const dir = fixture(index++);
 r = spawnSync('/bin/sh', [join(dir, 'run.sh'), 'sample'], { cwd: caller, env: { ...baseEnv, PATH: join(dir, 'bin') + ':' + process.env.PATH, E2A2O_DATA: unknown }, encoding: 'utf8', timeout: 60_000 });
 assert.notEqual(r.status, 0); assert.match(r.stderr, /non-sample\/unknown map/);
 assert.deepEqual(readdirSync(unknown), ['journal.jsonl']);
-console.log('storage-check: keyless no-write resolver, unsafe refusals and 14 synthetic launcher cases passed');
+console.log('storage-check: keyless no-write resolver, unsafe refusals and 18 synthetic launcher cases passed');
 console.log(`Synthetic receipts retained: ${scratch}`);

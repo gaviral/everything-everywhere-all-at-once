@@ -11,6 +11,11 @@
       "provenance": "Authored simulated jobs, retaining demo=true labels; audit finding 6.",
       "sha256": "13d94acbc8e5a06d56028f46ebe1b73a291c4bc00fac33a58bcf7d0c7d25c88b"
     },
+    "samples/developer-day.jsonl": {
+      "kind": "synthetic",
+      "provenance": "Original authored fictional payments API team example; vector illustrations authored for this sample. No captured user or service data.",
+      "sha256": "1198f898bcb4ab735d719fde93b9d55ece6180ecce3948841f5626bf0921b8c6"
+    },
     "samples/founder-day.jsonl": {
       "kind": "synthetic",
       "provenance": "Authored synthetic sample map, confirmed handwritten in rules audit Demo honesty (2026-11-03); not captured personal state.",
@@ -50,6 +55,36 @@
       "kind": "synthetic",
       "provenance": "Generated illustration/thumbnail for this synthetic sample map; audited media inventory. Data provenance only, rights clearance separate.",
       "sha256": "f864c5017f0a07f52456549b52c0a544bdeaa174cec5554ad15e5044ca4b75dc"
+    },
+    "samples/images/developer-day/T1-developer.svg": {
+      "kind": "synthetic",
+      "provenance": "Original authored fictional payments API team example; vector illustrations authored for this sample. No captured user or service data.",
+      "sha256": "5c0753fc84fcde50be13a59094ae3fb5b9dffced8125f2c99f60e1e3bac83685"
+    },
+    "samples/images/developer-day/T2-developer.svg": {
+      "kind": "synthetic",
+      "provenance": "Original authored fictional payments API team example; vector illustrations authored for this sample. No captured user or service data.",
+      "sha256": "6f8d47ae79b065aff7563b0cbdc35675e7cf4d9a9398c819c4e4e8c21659857a"
+    },
+    "samples/images/developer-day/T3-developer.svg": {
+      "kind": "synthetic",
+      "provenance": "Original authored fictional payments API team example; vector illustrations authored for this sample. No captured user or service data.",
+      "sha256": "81dc6cbb3a85426556747b7e3d040cc5e4404d332b3175b257e2794e1161f621"
+    },
+    "samples/images/developer-day/T4-developer.svg": {
+      "kind": "synthetic",
+      "provenance": "Original authored fictional payments API team example; vector illustrations authored for this sample. No captured user or service data.",
+      "sha256": "98ba8ed2ac3799ac6fdeb661f1cd48ac2ab36cc08b8a8035d1902290469a12de"
+    },
+    "samples/images/developer-day/T5-developer.svg": {
+      "kind": "synthetic",
+      "provenance": "Original authored fictional payments API team example; vector illustrations authored for this sample. No captured user or service data.",
+      "sha256": "284a6db4e78322f2abff7340b72a2b25dc455a9275e996b1c4830b7c016f0fda"
+    },
+    "samples/images/developer-day/T6-developer.svg": {
+      "kind": "synthetic",
+      "provenance": "Original authored fictional payments API team example; vector illustrations authored for this sample. No captured user or service data.",
+      "sha256": "b6bc3ecd4933e6cbe9c1e0f3263499b6bd087f77ca1fbf8a7715edc7d516f58e"
     },
     "samples/images/founder-day/T1-987e92be818f4c0ba997a3c2ba0f6238-palace.webp": {
       "kind": "synthetic",

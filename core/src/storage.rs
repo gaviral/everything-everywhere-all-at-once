@@ -121,19 +121,21 @@ fn legacy(root: &Path, _name: Option<&str>) -> Result<()> {
     Ok(())
 }
 
+const SAMPLE_FIXTURES: [&str; 3] = ["student-week", "founder-day", "developer-day"];
+
 const MARKER: &str = ".sample-map.json";
 const ID: &str = "journal.jsonl.map-id";
 
 /// An existing destination must carry both our fixture marker and its journal's identity.
 /// This check runs before acquiring a lock (which can create a directory).
 pub fn sample_destination(data: &Path, fixture: &str) -> Result<()> {
-    if !["student-week", "founder-day"].contains(&fixture) { bail!("unknown sample fixture"); }
+    if !SAMPLE_FIXTURES.contains(&fixture) { bail!("unknown sample fixture"); }
     if !data.exists() { return Ok(()); }
     if fs::read_dir(data)?.next().is_none() { return Ok(()); }
     let marker: serde_json::Value = fs::read(data.join(MARKER)).ok()
         .and_then(|b| serde_json::from_slice(&b).ok()).context("sample refuses an existing non-sample/unknown map; choose a new synthetic destination")?;
     let id = fs::read_to_string(data.join(ID)).context("sample identity is missing; refusing reset")?;
-    if marker["version"] != 1 || !marker["fixture"].as_str().is_some_and(|f| ["student-week", "founder-day"].contains(&f)) || marker["map_id"] != id
+    if marker["version"] != 1 || !marker["fixture"].as_str().is_some_and(|f| SAMPLE_FIXTURES.contains(&f)) || marker["map_id"] != id
         || uuid::Uuid::parse_str(&id).is_err() {
         bail!("sample marker/identity does not match; choose a new synthetic destination");
     }

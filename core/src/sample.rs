@@ -1,7 +1,8 @@
-//! "Try a sample map": an empty map fills with the student's week from `samples/` (the one `./run.sh sample` opens),
+//! "Try a sample map": an empty map fills with the student's week from `samples/` (also available via `./run.sh sample student`),
 //! pictures included, so a newcomer on a hosted link sees a full map at once instead of a blank page. Below it, three
 //! shorter maps show other moments where talking into a live map helps: a team meeting that drifts off its first
-//! item, a bug left mid-sentence for a call, and a walk through a house with your hands full.
+//! item, a bug left mid-sentence for a call, and a walk through a house with your hands full. A full payments API
+//! release map is offered too; it is the default for `./run.sh sample`.
 //! The samples come from `E2A2O_SAMPLES`, else `../samples` beside the core's folder; without them the button
 //! doesn't show (`available`).
 
@@ -11,13 +12,14 @@ use crate::Core;
 use std::path::{Path, PathBuf};
 
 /// The maps the empty map offers, as (file in `samples/`, what the button and its notice call it). The first is what
-/// "Try a sample map" opens, the same one `./run.sh sample` does; the window offers the others by name, and only these
+/// "Try a sample map" opens; the window offers the others by name, and only these
 /// names load, so a message can never point the core at another file.
-pub const SAMPLES: [(&str, &str); 4] = [
+pub const SAMPLES: [(&str, &str); 5] = [
     ("student-week", "A student's week"),
     ("team-sync", "A team meeting"),
     ("debug-break", "A bug, then a call"),
     ("house-walk", "A walk through a house"),
+    ("developer-day", "A payments API release"),
 ];
 const SAMPLE: &str = SAMPLES[0].0;
 
@@ -402,7 +404,7 @@ mod tests {
                 let picture = thread.picture.as_deref().unwrap_or_else(|| panic!("{file} {}: a picture, so the Palace isn't blank", thread.id));
                 assert!(dir.join("images").join(picture.trim_start_matches("/images/")).is_file(), "{file}: {picture} copied");
             }
-            if file != SAMPLE {
+            if ![SAMPLE, "developer-day"].contains(&file) {
                 let n = world.thoughts.len();
                 assert!((6..=10).contains(&n), "{file}: {n} spoken lines, not 6 to 10");
                 for t in &world.thoughts {
