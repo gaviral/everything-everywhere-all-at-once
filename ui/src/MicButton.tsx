@@ -3,16 +3,7 @@ import { onReading } from "./apps-audio";
 import { keyWords, useSite } from "./site";
 import "./micbutton.css";
 
-// The mic is the main control, and doubt about being heard makes people stop or say it again. So each state it can be
-// in looks different at a glance, by shape and color, never by color alone, and says its words on hover, focus and
-// tap (Tips.tsx) and in the composer's placeholder:
-// - off: a soft blue disc, as before
-// - starting: a dashed ring, not yet whole
-// - listening: a filled blue disc with a thin ring; hearing you: the ring swells with your voice
-// - paused ("stop listening"): the off disc with a pause badge, so it isn't mistaken for never started
-// - no key, refused, resting (the hosted site's daily limit) and blocked (the browser or the computer keeps the mic
-//   from this page): an amber mic struck through (amber is what needs you); each says why on a tap
-// - connecting: faded, and it can't be pressed
+// Capture state belongs to the corner control; the composer only holds typed thoughts.
 export type MicState = "capturing" | "reply-paused" | "failed" | "offline" | "off" | "starting" | "listening" | "hearing" | "paused" | "nokey" | "refused" | "resting" | "blocked";
 
 export function micState(s: { connected: boolean; capturing: boolean; starting: boolean; serviceOn: boolean;
@@ -60,19 +51,17 @@ export const MIC_WORDS: Record<MicState, { tip: string; label: string }> = {
   blocked: { tip: "The microphone is blocked for this page. Tap to see how to allow it, or type.", label: "Start listening, microphone blocked" },
 };
 
-/** The composer's placeholder, which sits where your eyes are while you talk. */
-export function composerHint(state: MicState): string {
-  return state === "reply-paused" ? "Capture paused during reply · or type"
-    : state === "failed" ? "Tap the mic to retry, or type"
-    : state === "listening" || state === "hearing" ? "Or type a thought"
-    : state === "starting" ? "Starting the microphone… or type"
-    : state === "paused" ? "Paused · tap the mic to talk, or type"
-    : state === "nokey" ? "Type a thought · listening is off right now"
-    : state === "refused" ? "Type a thought · listening is unavailable"
-    : state === "resting" ? "Type a thought · saved for tomorrow"
-    : state === "blocked" ? "Type a thought · the mic is blocked"
-    : state === "offline" ? "Type a thought — it will send when connected"
-    : "Type a thought, or tap the mic";
+/** Typing stays available independently of capture state. */
+export function composerHint(_state: MicState): string {
+  return "Type a thought";
+}
+
+/** One persistent control, with feedback only after an intentional attempt is refused. */
+export function MicCorner({ note, ...button }: Parameters<typeof MicButton>[0] & { note: string }) {
+  return <div className="mic-corner">
+    {note && <span className="mic-corner-note" role="status">{note}</span>}
+    <MicButton {...button} />
+  </div>;
 }
 
 // The ring follows each loudness reading the core gets (every 320 ms, apps-audio.ts), on a log scale from a quiet
