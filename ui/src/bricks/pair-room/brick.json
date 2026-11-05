@@ -1,0 +1,9 @@
+{
+  "id": "pair-room",
+  "name": "Pair session",
+  "does": "Two developers, separate context, one shared conversation. Play a mic-free example.",
+  "kind": "view",
+  "defaultOn": false,
+  "demoSafe": true,
+  "flag": "pair-room"
+}
