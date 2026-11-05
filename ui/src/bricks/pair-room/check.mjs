@@ -63,11 +63,11 @@ try {
   await click("Replay from start");
   assert.ok(await until(`document.querySelectorAll('.pair-room-turn:not(.pair-room-partial)').length === 0`));
   await click("Pause");
-  await click("Connected room");
+  await click("Connected shared map");
   assert.ok(await until(`document.querySelector('.pair-room-waiting')?.textContent.includes('Bring two voices')`));
   assert.equal(await evaluate(`document.querySelectorAll('.pair-room-turn').length`), 0);
   assert.equal(await evaluate(`document.querySelectorAll('.pair-room-output').length`), 0);
-  await click("Open example room");
+  await click("Open example shared map");
   for (const width of [390, 320, 1280]) {
     await page("Emulation.setDeviceMetricsOverride", { width, height: 900, deviceScaleFactor: 1, mobile: width < 600 });
     assert.ok(await until(`document.documentElement.scrollWidth <= innerWidth + 1`), `Fits ${width}px without horizontal overflow`);

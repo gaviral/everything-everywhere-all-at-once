@@ -20,13 +20,13 @@ export default function PairRoom({ map }: BrickProps) {
   const changeMode = (value: boolean) => { playback.pause(); setExample(value); };
 
   return <div className="pair-room" data-guide="pair-room">
-    <div className="pair-room-top"><span className="pair-room-wordmark">◌ &nbsp; pair room</span>
+    <div className="pair-room-top"><span className="pair-room-wordmark">◌ &nbsp; pair session</span>
       <div className="pair-room-modes" aria-label="Conversation source">
-        <button type="button" aria-pressed={example} onClick={() => changeMode(true)}>Example room</button>
-        <button type="button" aria-pressed={!example} onClick={() => changeMode(false)}>Connected room</button>
+        <button type="button" aria-pressed={example} onClick={() => changeMode(true)}>Example shared map</button>
+        <button type="button" aria-pressed={!example} onClick={() => changeMode(false)}>Connected shared map</button>
       </div><span className="pair-room-model">Muse Voice → Muse Spark</span>
     </div>
-    <div className="pair-room-intro"><div><span className="pair-room-eyebrow">Two developers. One room.</span><h1>Think together.<br /><em>Keep your own thread.</em></h1></div>
+    <div className="pair-room-intro"><div><span className="pair-room-eyebrow">Two developers. One shared map.</span><h1>Think together.<br /><em>Keep your own topic.</em></h1></div>
       <p>One mic, two voices.<br />Your words find your lane.<br />Your common ground travels with you.</p>
     </div>
     <div className="pair-room-session"><div><span className={indicatorClass} />
@@ -44,10 +44,10 @@ export default function PairRoom({ map }: BrickProps) {
     </div>}
     <div className="pair-room-grid">
       {people.map((person, i) => <DeveloperLane key={`${example ? "example" : map.visitKey ?? map.mapIdentity ?? "room"}:${person.id}`} person={person} tone={i === 0 ? "peach" : "mint"} turns={turns} shared={shared} partial={example ? playback.partial : null} example={example} />)}
-      {!example && people.length < 2 && <section className="pair-room-waiting"><h2>{people.length ? "Room for a second voice" : "Bring two voices together"}</h2><p>Completed turns from two named speakers will fill their lanes here. You can play the example without a microphone.</p><button type="button" onClick={() => changeMode(true)}>Open example room ↗</button></section>}
+      {!example && people.length < 2 && <section className="pair-room-waiting"><h2>{people.length ? "Room for a second voice" : "Bring two voices together"}</h2><p>Completed turns from two named speakers will fill their lanes here. You can play the example without a microphone.</p><button type="button" onClick={() => changeMode(true)}>Open example shared map ↗</button></section>}
       <SharedColumn topics={shared} people={people} />
     </div>
-    <div className="pair-room-footer"><span>◌ Separate threads. Shared momentum.</span><span>{example ? "Illustrative transcript and Spark outputs · nothing sent or executed" : "This view reads context only · start capture using the app's own controls"}</span></div>
+    <div className="pair-room-footer"><span>◌ Separate topics. Shared momentum.</span><span>{example ? "Illustrative transcript and Spark outputs · nothing sent or executed" : "This view reads context only · start capture using the app's own controls"}</span></div>
   </div>;
 }
 
