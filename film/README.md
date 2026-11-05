@@ -111,6 +111,9 @@ the first square during a single smooth pull-back. The field holds for one
 second and lifts to white, retaining “Recorded demonstrations”. All movement
 and video seeking are evaluated at frame time. A fixed-resolution software
 canvas with fixed bilinear sampling keeps image resampling independent of earlier camera frames.
+Stills are decoded and frozen at native resolution before zooming; field frames
+export directly from that canvas. Checks compare decoded pixels, including a
+second fresh renderer, rather than PNG compression bytes.
 `wall-field-check.mjs` checks
 complete square coverage and writes eight actual review frames; review those
 at film size before accepting a take.
