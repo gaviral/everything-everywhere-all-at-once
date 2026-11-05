@@ -106,10 +106,8 @@ async function makeIcon(parent) {
   const mark = shell.querySelector('g');
   const ribbon = mark.querySelector('path');
   const sphere = mark.querySelector('circle');
-  sphere.classList.add('tm-bead');
   mark.remove();
   makeGradient(defs, 'tm-blue', [['0%', '#39b6ff'], ['55%', '#078dff'], ['100%', '#0064e9']], { cx: '.3', cy: '.05', r: '1.12' });
-  makeGradient(defs, 'tm-gold', [['0%', '#fff2b6'], ['38%', '#ffd16e'], ['78%', '#eda52c'], ['100%', '#cc7a0c']], { cx: '.32', cy: '.65', r: '.8' });
   shell.firstElementChild.setAttribute('fill', 'url(#tm-blue)');
   shell.style.filter = 'drop-shadow(0 .25px .4px #0045a844)';
   const shellPose = svgElement('g'); shellPose.append(shell); svg.append(shellPose);
@@ -117,15 +115,13 @@ async function makeIcon(parent) {
   const ribbonMirror = svgElement('g', { transform: mark.getAttribute('transform') });
   ribbonMirror.append(ribbon); ribbonPose.append(ribbonMirror); svg.append(ribbonPose);
   const length = ribbon.getTotalLength(); ribbon.style.strokeDasharray = `${length} ${length}`;
-  const beadPose = svgElement('g');
-  const beadMirror = svgElement('g', { transform: mark.getAttribute('transform') });
-  sphere.setAttribute('fill', 'url(#tm-gold)'); beadMirror.append(sphere); beadPose.append(beadMirror);
-  const glint = svgElement('ellipse', { cx: '21.95', cy: '14.35', rx: '.70', ry: '.34', fill: '#fff', transform: 'rotate(38 21.95 14.35)' });
-  beadPose.append(glint); svg.append(beadPose); root.append(svg);
+  root.append(svg);
+  const bead = bitmap(parent, 'tm-bead');
+  const beadRadius = Number(sphere.getAttribute('r'));
   const photograph = new Image(); photograph.src = new URL('../ui/public/icons/icon-512.png', import.meta.url).href;
   await photograph.decode();
   const glass = bitmap(parent, 'tm-glass');
-  return { root, svg, shellPose, ribbonPose, ribbon, length, beadPose, glint, glass, photograph };
+  return { root, svg, shellPose, ribbonPose, ribbon, length, bead, beadRadius, glass, photograph };
 }
 function drawLetters(layer, t, clock, colour) {
   const paint = layer.context, visible = [];
@@ -187,13 +183,10 @@ function drawIcon(icon, shadow, t, clock, destination, originX) {
   const y = t < clock.morph[1] ? mix(540, 312, morph) : beadY(t, clock);
   const x = mix(originX, 960 + 5 * PIXEL, morph) - (960 + 5 * PIXEL);
   const beadScale = mix(.85, .77, smooth(phase(t, clock.bounce[0], clock.glass[1])));
-  icon.beadPose.setAttribute('transform', `translate(${x / PIXEL} ${(y - 540) / PIXEL}) translate(21 16) scale(${beadScale}) translate(-21 -16)`);
-  icon.beadPose.style.opacity = String(smooth(phase(morph, .35, .95)));
   // One travelling highlight, over before the static photographed highlight takes over.
   const flash = phase(t, clock.drop[0] + .02, clock.bounce[0] + .12);
-  icon.glint.style.opacity = String(Math.sin(Math.PI * flash) ** 2 * .92);
-  icon.glint.setAttribute('cx', String(mix(19.5, 22.3, flash)));
   const glass = smooth(phase(t, ...clock.glass));
+  paintBead(icon, cx + 5 * PIXEL + x, y, beadScale, smooth(phase(morph, .35, .95)) * (1 - glass), flash);
   icon.svg.style.opacity = String(1 - glass); icon.glass.node.style.opacity = String(glass);
   const paint = icon.glass.context, photoSize = SIZE * 1.24272;
   paint.clearRect(0, 0, 1920, 1080);
@@ -202,6 +195,18 @@ function drawIcon(icon, shadow, t, clock, destination, originX) {
   shadow.style.left = `${cx + 5 * PIXEL - 56}px`; shadow.style.top = '572px';
   shadow.style.opacity = String((1 - phase(t, clock.shell[0], clock.shell[1])) * phase(t, ...clock.morph) * height * .16);
   shadow.style.transform = `scale(${mix(.45, 1, height)})`;
+}
+function paintBead(icon, x, y, scale, opacity, flash) {
+  const paint = icon.bead.context, radius = icon.beadRadius;
+  paint.clearRect(0, 0, 1920, 1080); paint.save();
+  paint.translate(x, y); paint.scale(PIXEL * scale, PIXEL * scale); paint.globalAlpha = opacity;
+  const gold = paint.createRadialGradient(-.36 * radius, .30 * radius, 0, -.36 * radius, .30 * radius, 1.6 * radius);
+  for (const [stop, colour] of [[0, '#fff2b6'], [.38, '#ffd16e'], [.78, '#eda52c'], [1, '#cc7a0c']]) gold.addColorStop(stop, colour);
+  paint.fillStyle = gold; paint.beginPath(); paint.arc(0, 0, radius, 0, Math.PI * 2); paint.fill();
+  paint.globalAlpha *= Math.sin(Math.PI * flash) ** 2 * .92;
+  paint.fillStyle = '#fff'; paint.beginPath();
+  paint.ellipse(mix(19.5, 22.3, flash) - 21, -1.65, .70, .34, 38 * Math.PI / 180, 0, Math.PI * 2); paint.fill();
+  paint.restore();
 }
 function makeName(parent, colour) {
   const name = bitmap(parent, 'tm-name'), paint = name.context;
