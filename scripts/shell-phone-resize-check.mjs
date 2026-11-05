@@ -69,7 +69,7 @@ try {
       const presentation = (width, height, open) => {
         const phone = width <= 560;
         return `innerWidth === ${width} && innerHeight === ${height}
-          && !!document.querySelector(".shell-wordmark") === ${!phone}
+          && !!document.querySelector('.shell-wordmark img[alt="E2A2O"]')
           && !!document.querySelector('[data-held-id="resize-question"]') === ${!phone || open}
           && !!document.querySelector('.shell-held-chip[aria-expanded="false"]') === ${phone && !open}
           && !!document.querySelector('.shell-held-chip[aria-expanded="true"]') === ${phone && open}`;

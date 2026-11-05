@@ -149,12 +149,11 @@ try {
   assert.ok((await initialNamePart()).font >= 300, "4K name readable across a room");
   await shotPart("01-4k-full-name");
   await scrubPart(1200); await shotPart("02-4k-compact");
-  const centeredPart = await evaluatePart("[...document.querySelectorAll('.intro-parts-lead')].map(part => { const r = part.getBoundingClientRect(); return { x:r.x, y:r.y }; })");
-  assert.ok(centeredPart.every(part => Math.abs(part.y - centeredPart[0].y) < 1), "five parts compress onto one baseline");
-  assert.ok(centeredPart.every((part, index) => index === 0 || part.x > centeredPart[index-1].x), "mark reads E2A2O left to right");
+  assert.equal(await evaluatePart("getComputedStyle(document.querySelector('.intro-parts-icon')).opacity"), "1", "the mirrored icon is visible at center");
+  assert.equal(await evaluatePart("[...document.querySelectorAll('.intro-parts-word')].every(part => getComputedStyle(part).opacity === '0')"), true, "the name gives way to the icon");
   await scrubPart(1950);
-  const landingPart = await evaluatePart("({ lead:document.querySelector('.intro-parts-lead').getBoundingClientRect().toJSON(), home:document.querySelector('.shell-wordmark').getBoundingClientRect().toJSON() })");
-  assert.ok(Math.abs(landingPart.lead.x - landingPart.home.x) < 2 && Math.abs(landingPart.lead.y - landingPart.home.y) < 3, `mark lands at the real interface identity: ${JSON.stringify(landingPart)}`);
+  const landingPart = await evaluatePart("({ icon:document.querySelector('.intro-parts-icon').getBoundingClientRect().toJSON(), home:document.querySelector('.shell-wordmark').getBoundingClientRect().toJSON() })");
+  assert.ok(Math.abs(landingPart.icon.x - landingPart.home.x) < 2 && Math.abs(landingPart.icon.y - landingPart.home.y) < 3 && Math.abs(landingPart.icon.width - landingPart.home.width) < 2, `icon lands at the real interface identity: ${JSON.stringify(landingPart)}`);
   await evaluatePart("document.querySelector('.intro-parts-word').getAnimations()[0].finish()");
   await untilPart("!document.querySelector('.intro-parts')", "opening finishes within its deadline", 2600);
   await shotPart("03-4k-app-ready");

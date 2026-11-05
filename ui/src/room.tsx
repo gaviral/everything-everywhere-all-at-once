@@ -1,3 +1,4 @@
+import { AppMark } from "./AppMark";
 import { builtInOn, watchBuiltIns } from "./shell/features";
 import { hearPartner, ignorePartner, resetPartner } from "./partner";
 // Rooms: two people think out loud on one map, each on their own laptop. When the core runs with a
@@ -327,7 +328,7 @@ export function Room({ children }: { children: ReactNode }) {
   if (!door) return <div className="join"><div className="join-loading" role="status">{initialFailed ? "Connection unavailable. Retrying…" : "Loading…"}</div></div>;
   return (
     <main className="join">
-      <div className="join-brand">E2A2O <span>topics</span></div>
+      <div className="join-brand"><AppMark size={36} /><span>topics</span></div>
       <form className="join-card" onSubmit={join}>
         {REMOTE ? (
           <>
