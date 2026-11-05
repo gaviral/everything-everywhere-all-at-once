@@ -12,7 +12,7 @@ let data = { functions: [root, leaf], branches: [branch('main', null, 'main'), b
 data.branches.splice(1, 0, branch('staging', 'main', 'staging'), branch('dev', 'staging', 'dev'));
 data.parts = [root, leaf].map(f => ({ id: f.id, name: f.name, file: f.file, line: f.line, tags: ['function', 'mechanism'], version: 3, version_scope: 'file history' }));
 data.parts.push({ id: 'core/src/prompt.rs', name: 'prompt.rs', file: 'core/src/prompt.rs', line: 1, tags: ['prompt', 'data'], version: 2, version_scope: 'file history' });
-data.agents = { available: true, updated_at: new Date().toISOString(), lanes: [{ id: 'dev/pieces', branch: 'dev/pieces', who: 'Worker', now: 'Checking the new parts view', finished: ['Built the source reader', 'Added the branch columns'], state: 'Working', updated_at: new Date().toISOString() }], needs_you: [{ id: 'ask-route', title: 'Choose the next route', detail: 'Should the agent build search or tags next?', lane: 'dev/pieces' }], summary: ['Two lanes are ready for review.'], notice: '' };
+data.agents = { available: true, updated_at: new Date().toISOString(), lanes: [{ id: 'dev/pieces', branch: 'dev/pieces', who: 'Agent', now: 'Checking the new parts view', finished: ['Built the source reader', 'Added the branch columns'], state: 'Working', updated_at: new Date().toISOString() }], needs_you: [{ id: 'ask-route', title: 'Choose the next route', detail: 'Should the agent build search or tags next?', lane: 'dev/pieces' }], summary: ['Two lanes are ready for review.'], notice: '' };
 const idleWork = { available: true, observed_ms: Date.now(), counts: { running_now: 0, built_on_tv: 2, written_only: 23, waiting_on_you: 1 }, live_jobs: 0, top_written: ['Find a saved thought', 'Explain the result', 'Connect the sketch'], idle_warning: true };
 data.agents.work_status = idleWork;
 let fail = false, failAnswer = false;
@@ -50,7 +50,7 @@ try {
   assert.deepEqual(await page.evaluate(`[...document.querySelectorAll('.cc-work-counts dd')].map(n=>n.textContent)`), ['0', '2', '23', '1']);
   assert.equal(await page.evaluate(`getComputedStyle(document.querySelector('.cc-header')).backgroundColor`), 'rgba(0, 0, 0, 0)', 'dark canvas header stays legible under the light app theme');
   assert.ok(await page.evaluate(`(() => { const names=['main','staging','dev','dev/pieces']; const boxes=names.map(name=>[...document.querySelectorAll('[data-branch]')].find(n=>n.dataset.branch===name).getBoundingClientRect()); return boxes.every((b,i)=>!i||b.left>boxes[i-1].left); })()`), 'main, staging, dev, lanes appear left to right');
-  assert.ok(await page.until(`document.querySelector('.cc-branches').textContent.includes('Worker') && document.querySelector('.cc-agent').textContent.includes('Checking the new parts view')`), 'agent identity and current task are visible');
+  assert.ok(await page.until(`document.querySelector('.cc-branches').textContent.includes('Agent') && document.querySelector('.cc-agent').textContent.includes('Checking the new parts view')`), 'agent identity and current task are visible');
   await page.evaluate(`document.querySelector('.cc-agent details').open=true`);
   assert.ok(await page.evaluate(`document.querySelector('.cc-agent').textContent.includes('Built the source reader')`), 'finished work remains visible on expansion');
   assert.ok(await page.evaluate(`document.querySelector('.cc-needs').textContent.includes('Choose the next route')`), 'waiting request stays at bottom right');
