@@ -7,6 +7,8 @@ One Rust process, the core, holds the map and talks to Meta's models; one web pa
 ```
 Browser, one page per window (ui/src)
   App.tsx        map and shared state/actions; the shell by default, the classic header/bottom bar with `?shell=1` (below)
+  AppMark.tsx    shared app icon with light and dark variants and an accessible E2A2O name
+  appearance.ts keeps the manifest and Apple touch icon in sync with the browser's light or dark appearance
   MapCards.tsx   Cards rendering: memoized topics, points, action rows, pictures and shared speech fixes; state stays in App
   RecoveryPanel.tsx  unfinished speech, other-map words and explicit online sends; consumes the core hook’s typed recovery state
   core.ts        the WebSocket; applies each Change to its own copy of the world (mirrors world.rs)
