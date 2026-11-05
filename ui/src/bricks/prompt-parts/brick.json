@@ -1,0 +1,9 @@
+{
+  "id": "prompt-parts",
+  "name": "Prompt parts",
+  "does": "Twelve developer prompts. Run one with Muse Spark, or connect two in a small composition.",
+  "kind": "view",
+  "defaultOn": false,
+  "demoSafe": true,
+  "flag": "prompt-parts"
+}
