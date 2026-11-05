@@ -1,19 +1,18 @@
 :root {
-  --bg: #f6f6f3;
-  --card: #ffffff;
-  --ink: #1d1d1f;
-  --muted: #696970;
-  /* Card edges have to survive video compression: #e7e6e1 was 1.15:1 on the page and cards turned into floating text
-     in the demo's frames; this is 1.35:1, still a hairline (UX audit fix 3). */
-  --line: #d9d7cf;
-  --accent: #245fbd;
-  --accent-soft: #e8f0fe;
-  --amber: #95600f;
-  --amber-soft: #fdf1df;
-  --ai: #7041b5;
-  --ai-soft: #f4effb;
+  --bg: #f4efe5;
+  --card: #fffdf7;
+  --ink: #2d2820;
+  --muted: #6c6255;
+  /* A warm hairline keeps card edges visible without a heavy frame. */
+  --line: #d6cdbd;
+  --accent: #80601f;
+  --accent-soft: #eee3c9;
+  --amber: #80601f;
+  --amber-soft: #eee3c9;
+  --ai: #80601f;
+  --ai-soft: #eee3c9;
   --ai-button-ink: #fff;
-  --accent-button-ink: #fff;
+  --accent-button-ink: #fffdf7;
   --amber-button-ink: #fff;
   /* One color per room, as its pictures are painted (rooms.ts); each passes 4.5:1 on cards, the page and its soft tint. */
   --room-red: #b4253f; --room-red-soft: #fbe1e5;
@@ -27,20 +26,20 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #161618;
-    --card: #1f1f22;
-    --ink: #f2f2f2;
-    --muted: #aaaab0;
-    --line: #2d2d31;
-    --accent: #83b0ff;
-    --accent-soft: #1c2840;
-    --amber: #f0b65d;
-    --amber-soft: #33281a;
-    --ai: #c4a5ff;
-    --ai-soft: #2b2239;
-    --ai-button-ink: #20152f;
-    --accent-button-ink: #102344;
-    --amber-button-ink: #30200b;
+    --bg: #171613;
+    --card: #211f1a;
+    --ink: #f1eadc;
+    --muted: #b5aa97;
+    --line: #383329;
+    --accent: #d2b779;
+    --accent-soft: #302a1e;
+    --amber: #d2b779;
+    --amber-soft: #302a1e;
+    --ai: #d2b779;
+    --ai-soft: #302a1e;
+    --ai-button-ink: #231e14;
+    --accent-button-ink: #231e14;
+    --amber-button-ink: #231e14;
     --room-red: #ff8a9c; --room-red-soft: #3a1d23;
     --room-green: #76d39c; --room-green-soft: #1b3125;
     --room-pink: #f293d2; --room-pink-soft: #341c2e;
@@ -53,18 +52,18 @@
 
 /* The shell, the default (shell/flag.ts): Paper's warm paper in light, space in dark (the takes'), one set of
    roles in both. Its own names first, then the app's own mapped onto them, so the map, the features and the sheets
-   take the shell's look without knowing it. Blue is you (heard, here, now); amber needs you; purple ✦ is the AI's;
-   red is the Stop level only. Thread hues are identity: green, teal, lime, rose, stone, none near the roles. */
+   share warm paper, charcoal and quiet gold. The legacy --blue name aliases the action ink; ✦ still identifies AI
+   and words identify status. Red remains the Stop level; topic hues retain their identity. */
 html.shell2 {
-  --space: #f5f1e8; --surface: #fcfaf5; --surface-2: #fcfaf5; --surface-3: #efe9dc; --raised: #fffdf8;
-  --line-2: rgba(42, 37, 30, .2); --ink-2: #3f382e; --faint: #a39886;
-  --blue: #2b4a94; --blue-ink: #fff; --blue-soft: rgba(43, 74, 148, .1);
-  --red: #a4352b; --status-bg: #efeadf; --btn: #2a251e; --btn-ink: #fcfaf5; --dots: rgba(42, 37, 30, .07);
+  --space: #f4efe5; --surface: #fffdf7; --surface-2: #fffdf7; --surface-3: #e9e1d2; --raised: #fffdf7;
+  --line-2: rgba(42, 37, 30, .2); --ink-2: #4c4235; --faint: #82745e;
+  --blue: #80601f; --blue-ink: #fff; --blue-soft: rgba(128, 96, 31, .10);
+  --red: #a4352b; --status-bg: #e9e1d2; --btn: #2d2820; --btn-ink: #fffdf7; --dots: rgba(42, 37, 30, .07);
   --glass: rgba(255, 253, 248, .66); --glass-line: rgba(42, 37, 30, .16);
-  --bg: var(--space); --card: var(--surface); --ink: #2a251e; --muted: #645b4f; --line: rgba(42, 37, 30, .13);
-  --accent: var(--blue); --accent-soft: var(--blue-soft); --accent-button-ink: #fff;
-  --amber: #87570a; --amber-soft: #f7e3ad; --amber-button-ink: #fff;
-  --ai: #6a3e9e; --ai-soft: rgba(106, 62, 158, .1); --ai-button-ink: #fff;
+  --bg: var(--space); --card: var(--surface); --ink: #2d2820; --muted: #6c6255; --line: rgba(42, 37, 30, .13);
+  --accent: var(--blue); --accent-soft: var(--blue-soft); --accent-button-ink: #fffdf7;
+  --amber: #80601f; --amber-soft: #eee3c9; --amber-button-ink: #fff;
+  --ai: #80601f; --ai-soft: rgba(128, 96, 31, .10); --ai-button-ink: #fff;
   --room-red: #6e665a; --room-red-soft: #ebe6dc;
   --room-green: #2a7148; --room-green-soft: #dcefe2;
   --room-pink: #a3366e; --room-pink-soft: #f6e1ec;
@@ -75,15 +74,15 @@ html.shell2 {
 }
 @media (prefers-color-scheme: dark) {
   html.shell2 {
-    --space: #0e1013; --surface: #181b20; --surface-2: #1d2026; --surface-3: #272b33; --raised: #20242b;
-    --line-2: rgba(255, 255, 255, .16); --ink-2: #d6d8dc; --faint: #6e727b;
-    --blue: #83b0ff; --blue-ink: #0f2244; --blue-soft: rgba(131, 176, 255, .16);
-    --red: #ff6e61; --status-bg: #0a0c0f; --btn: #f2f2f3; --btn-ink: #0e1013; --dots: rgba(255, 255, 255, .045);
-    --glass: rgba(44, 48, 57, .6); --glass-line: rgba(255, 255, 255, .2);
-    --ink: #f2f2f3; --muted: #a3a6ae; --line: rgba(255, 255, 255, .1);
-    --accent-button-ink: #0f2244;
-    --amber: #f0b65d; --amber-soft: rgba(240, 182, 93, .15); --amber-button-ink: #30200b;
-    --ai: #c4a5ff; --ai-soft: rgba(196, 165, 255, .15); --ai-button-ink: #1d1430;
+    --space: #171613; --surface: #211f1a; --surface-2: #25221c; --surface-3: #312c23; --raised: #29251e;
+    --line-2: rgba(255, 255, 255, .16); --ink-2: #d4cbbb; --faint: #998c75;
+    --blue: #d2b779; --blue-ink: #231e14; --blue-soft: rgba(210, 183, 121, .12);
+    --red: #ff6e61; --status-bg: #12110f; --btn: #f1eadc; --btn-ink: #171613; --dots: rgba(255, 255, 255, .045);
+    --glass: rgba(41, 37, 30, .85); --glass-line: rgba(255, 255, 255, .2);
+    --ink: #f1eadc; --muted: #b5aa97; --line: rgba(255, 255, 255, .1);
+    --accent-button-ink: #231e14;
+    --amber: #d2b779; --amber-soft: rgba(210, 183, 121, .12); --amber-button-ink: #231e14;
+    --ai: #d2b779; --ai-soft: rgba(210, 183, 121, .12); --ai-button-ink: #231e14;
     --room-red: #c9c0b2; --room-red-soft: #2c2a26;
     --room-green: #76d39c; --room-green-soft: #1b3125;
     --room-pink: #f29bc4; --room-pink-soft: #3a2230;
