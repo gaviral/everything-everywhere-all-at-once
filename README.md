@@ -40,7 +40,7 @@ E2A2O turns your words and sketches into a board of reusable parts. Capture a th
 
 ## Run it
 
-Needs Rust 1.89 or newer, Node.js 22.12 or newer, and npm. Source builds need Apple's command-line tools on macOS, or a C compiler, pkg-config and OpenSSL headers on Linux. Crew and the optional coding helpers also need Git. Linux and Windows are not validated here.
+Needs Rust 1.89 or newer, Node.js 22.12 or newer, and npm. The launcher detects macOS (Intel or Apple silicon) and Linux. Source builds need Apple's command-line tools on macOS (`xcode-select --install`), or a C compiler, pkg-config and OpenSSL headers on Linux (`sudo apt install build-essential pkg-config libssl-dev` on Debian/Ubuntu). Crew and the optional coding helpers also need Git. The first build needs internet access to download dependencies. Linux and Apple silicon have not been validated here. **Windows:** use WSL2 with the Linux prerequisites.
 
 ```sh
 ./run.sh sample
@@ -49,6 +49,10 @@ Needs Rust 1.89 or newer, Node.js 22.12 or newer, and npm. Source builds need Ap
 The launcher installs missing UI dependencies, builds the UI and starts the Rust core. Wait for `E2A2O core on`, then open the printed URL. The map is labelled SAMPLE: its thoughts, saved pictures and deadlines are examples. Try “where was I?” or search with `/`.
 
 `./run.sh sample founder` opens the founder sample. Each sample start restores its fixture and keeps a backup. To choose another port, run `PORT=4400 ./run.sh sample` and open http://localhost:4400/?sample.
+
+In the keyless sample, type a thought and press Enter to save it, or use **Where was I?** and **Pictures**. Open **Features** (`C`), enable **Draw**, close Features, then click **Draw** to sketch and label an idea. Drawing works locally; **Read it**, **Draw back**, automatic thought placement and **Crew** builds need a Meta key. Crew has no keyless sample build.
+
+**Docker:** from the repository root, run `docker compose up --build --wait`, then open http://localhost:8080/?sample. Requires Docker Engine/Desktop with Compose v2. This path has been reviewed by inspection, not run on this Mac; see [Docker setup and limits](docs/docker.md).
 
 For live model calls, copy the blank configuration template:
 
@@ -64,6 +68,8 @@ Add your Meta key as `MODEL_API_KEY` in `.env`, then run:
 
 Open the printed URL. Type and press Enter, or start the mic yourself. Open **Features** (`C`) to enable **Ask about words**, **Draw** and **Crew**. For topic images, switch on **Pictures**, then choose **Show**. In **Apps**, switch on **Argument resolver** or **Volume watcher** to use them; both start off.
 
+For **Crew**, start locally with `E2A2O_DEV_TOOLS=1 ./run.sh demo` and your Meta key configured. Enable **Crew** in Features, close Features, then click **Crew**. It creates Git repositories beside your map; Git must be installed. Crew is unavailable in hosted/Docker mode.
+
 Stop with Ctrl+C. Restart after changing the key. `./run.sh` opens your regular map; see [storage](docs/storage.md).
 
 ## How it's built
@@ -72,4 +78,4 @@ A React and TypeScript board connects to a Rust core. The core holds the key and
 
 The app calls Meta models only, with no GPT runtime dependency. ChatGPT and Claude are supported import formats: imports send selected content to Meta without calling either service. Optional coding helpers use the built-in Meta runner; leave `HELPERS_CMD` unset for this runtime.
 
-[Prototype evidence and limits](docs/release-evidence.md) · [Architecture and parts](docs/ARCHITECTURE.md) · [Commands](docs/COMMANDS.md) · [Configuration](docs/configuration.md) · [Dependencies](THIRD_PARTY_NOTICES.md) · [MIT license](LICENSE)
+[Fresh-clone check](docs/stranger-test.md) · [Prototype evidence and limits](docs/release-evidence.md) · [Architecture and parts](docs/ARCHITECTURE.md) · [Commands](docs/COMMANDS.md) · [Configuration](docs/configuration.md) · [Dependencies](THIRD_PARTY_NOTICES.md) · [MIT license](LICENSE)

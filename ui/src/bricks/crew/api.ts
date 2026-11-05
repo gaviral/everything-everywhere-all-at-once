@@ -7,6 +7,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   const room = new URLSearchParams(location.search).get("room");
   if (room) url.searchParams.set("room", room);
   const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (response.status === 404) throw new Error("Crew needs local development mode. Restart with E2A2O_DEV_TOOLS=1 ./run.sh demo and a Meta key. Crew is unavailable in hosted mode.");
   if (!response.ok) throw new Error(`Core returned ${response.status}`);
   const value = await response.json();
   if (value.error) throw new Error(value.error);

@@ -53,6 +53,8 @@ describes the musl dynamic-linking flag used in the build.
 
 ## What cannot run inside these containers
 
+- Crew and the local development routes: hosted mode intentionally disables them.
+  Use the local launch described in the README for Crew.
 - macOS automation: AppleScript, Reminders, Calendar.app, Notes, Messages,
   Mail.app, and login Keychain access. Calendar-file downloads can still work.
 - Host-local speech tools, audio devices and installed OS voices. Browser speech
