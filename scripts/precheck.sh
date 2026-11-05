@@ -86,7 +86,7 @@ if names=$(node scripts/names-check.mjs 2>&1); then pass "names-check passes"; e
 [ -f LICENSE ] || warn "no LICENSE file yet (the owner's call; MIT suggested)"
 check "no absolute home paths tracked" "[ -z \"\$(tracked '/Users/[A-Za-z]|/home/[A-Za-z]')\" ]"
 check "core listens on 127.0.0.1 unless a room is open" "grep -qF 'if room.is_some() { \"0.0.0.0\" } else { \"127.0.0.1\" }' core/src/main.rs && grep -qF 'TcpListener::bind((address, port))' core/src/main.rs"
-check "core refuses other sites (Origin and Host)" "grep -q 'header::ORIGIN' core/src/main.rs && grep -q 'header::HOST' core/src/main.rs && grep -q 'from_fn_with_state(core.clone(), gate)' core/src/main.rs"
+check "core refuses other sites (Origin and Host)" "(cd core && cargo test --locked --quiet surface_host_and_origin_reject_foreign_sites)"
 check "a room keeps the map behind its code (tested)" "grep -q 'fn a_room_lets_the_other_laptop_in_with_the_code' core/src/main.rs"
 check "a tunnel lets in only its own name, with the code, and no one as host (tested)" "grep -q 'fn tunnel_mode_refuses_every_other_way_in' core/src/tunnel.rs && grep -q 'fn through_the_tunnel_a_friend_joins_as_a_guest_never_the_host' core/src/main.rs"
 check "trial.sh parses and claims its map atomically" "sh -n scripts/trial.sh && grep -q 'trial-claim' scripts/trial.sh"

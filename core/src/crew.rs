@@ -69,7 +69,7 @@ async fn git(dir: &Path, args: &[&str]) -> anyhow::Result<String> {
     let done = Command::new("git").arg("-C").arg(dir)
         .args(["-c", "user.name=Crew", "-c", "user.email=crew@example.com", "-c", "commit.gpgsign=false"])
         .args(args).output().await?;
-    anyhow::ensure!(done.status.success(), "git {}: {}", args.first().unwrap_or(&""), String::from_utf8_lossy(&done.stderr).trim());
+    anyhow::ensure!(done.status.success(), "Git operation failed; generated parts were kept.");
     Ok(String::from_utf8_lossy(&done.stdout).trim().to_string())
 }
 
@@ -140,7 +140,8 @@ pub async fn plan(State(core): State<Arc<Core>>, Json(request): Json<PlanRequest
 const BLOCK_KINDS: [&str; 8] = ["big", "line", "time", "list", "count", "note", "done", "ask"];
 
 /// A part is a title and known blocks with words in them. Anything else is sent back for repair.
-fn sound_spec(spec: &Value) -> Result<(), String> {
+pub(crate) fn sound_spec(spec: &Value) -> Result<(), String> {
+    if spec.to_string().len() > PART_MAX { return Err("Part exceeds 24,000 bytes.".into()); }
     if !spec["title"].as_str().is_some_and(|title| !title.trim().is_empty()) { return Err("It has no title.".into()); }
     let Some(blocks) = spec["blocks"].as_array().filter(|blocks| !blocks.is_empty() && blocks.len() <= 6) else { return Err("It has no blocks, or too many.".into()) };
     for block in blocks {
@@ -202,6 +203,9 @@ fn build_body(request: &BuildRequest) -> Value {
 
 /// POST /crew/build: one part, on its own branch. With `broke`, the same part again, repaired.
 pub async fn build(State(core): State<Arc<Core>>, Json(request): Json<BuildRequest>) -> Json<Value> {
+    if request.fault && !crate::surface::development() {
+        return Json(json!({"error":"Fault injection is disabled."}));
+    }
     let started = Instant::now();
     let result = async {
         anyhow::ensure!(is_name(&request.part.id), "Unknown part");
@@ -259,6 +263,7 @@ fn keep_in_catalog(new: Vec<Value>) -> anyhow::Result<usize> {
     for value in new {
         let part: Kept = serde_json::from_value(value)?;
         anyhow::ensure!(is_name(&part.id) && part.spec.to_string().len() <= PART_MAX, "A part didn't fit the catalog");
+        sound_spec(&part.spec).map_err(anyhow::Error::msg)?;
         kept.retain(|old| old.id != part.id);
         kept.push(part);
     }
