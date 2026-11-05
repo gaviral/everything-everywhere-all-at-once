@@ -1,0 +1,8 @@
+{
+  "id": "memory",
+  "name": "Memory",
+  "does": "Use focused context, prefetch while you speak, and reuse exact answers in Rust.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": true
+}

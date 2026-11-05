@@ -265,6 +265,7 @@ pub enum ClientMsg {
     ChoiceMaps { on: bool },
     SaveChoice { request: crate::world::ChoiceRequest },
     ResearchFeature { on: bool },
+    MemoryFeature { on: bool },
     CancelResearch,
     ResearchAction { #[serde(flatten)] request: crate::research::Command },
     DiscussionFeature { on: bool },

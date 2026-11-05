@@ -1029,6 +1029,11 @@ export function useCore(speaker?: string) {
   const socket = useRef<WebSocket | null>(null);
   const connectionPending = useRef(new Map<string, { resolve: (r: ConnectionReply) => void; timer: number }>());
   const connectionsOn = useBricksOn().has("app-connections");
+  const memoryOn = useBricksOn().has("memory");
+  useEffect(() => {
+    const ws = socket.current;
+    if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "memory_feature", on: memoryOn }));
+  }, [memoryOn, connected]);
   const connectionSocket = useRef<WebSocket | null>(null);
   useEffect(() => {
     const ws = socket.current;
@@ -1134,6 +1139,7 @@ export function useCore(speaker?: string) {
         if (evidenceOn.current) ws.send(JSON.stringify({type:"image_evidence",on:true}));
         if (choiceOn.current) ws.send(JSON.stringify({ type: "choice_maps", on: true }));
         if (researchOn.current) ws.send(JSON.stringify({ type: "research_feature", on: true }));
+        if (isOn("memory")) ws.send(JSON.stringify({ type: "memory_feature", on: true }));
         if (discussionOn.current) ws.send(JSON.stringify({ type: "discussion_feature", on: true }));
         savedWasOn = false;
         savedPreference();

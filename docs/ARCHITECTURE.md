@@ -106,6 +106,7 @@ Browser, one page per window (ui/src)
     keys/        an input: the map from the keyboard (j k h l and arrows, Enter, Esc, ?), and ⌘D for the mic, through contract.ts's `listen`
     tiny-transcript/ a panel: your words as you say them (`map.partial`), 11 px inside the input box (the status line once there is one), in place of the bottom bar's big line
     usage/       Usage, an off-by-default top-right panel: brick.json, index.tsx and usage.css show remaining allowances and per-row as-of times from map.usage; held by scripts/usage-check.mjs
+    memory/      optional live statistics card for the core's thought index, context savings and answer reuse; polls /memory/stats
     _template/   the feature to copy; playground.tsx (bricks.html) mounts any one against a sample map, without the core
   export-md.ts   Export ("export my map"): the map as a Markdown file, made in the window, nothing sent (held by `scripts/export-check.mjs`)
   Guide.tsx      another participant's ring and short arrow at a `data-guide` part, captions above the input box and held cards; projects held cards into the shell's stack and captions into #shell-caption, with floating placement in the legacy layout
@@ -173,6 +174,7 @@ Core, one process (core/src: axum, tokio)
   helper_result.rs bounded read-only proposed results and redacted diffs, tied to server-owned helper identity
   clock.rs       local wall-clock time from the system's date, so timers keep their hour
   model.rs       a refused or busy key (a fallback for a Contributor-mode default stays, unused); the hourly call cap
+  memory.rs      opt-in in-RAM thought index, focused context, transcript prefetch and exact answer reuse; delegates to memory/ and serves /memory/stats (docs/memory.md)
   secrets.rs     removes the model credential from provider responses, errors and traces, including split streaming deltas
   usage.rs       reads USAGE_FILE at startup and every 60 seconds, pushes usage messages and replays the latest on joining, with model.rs's own rolling-hour call count; never journaled
   import.rs      past AI chats into topics

@@ -588,9 +588,11 @@ async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Durat
     // An answer cut off at its room is asked for once more with twice the room, not again with the same.
     let (mut room, mut again) = (room_for(&thought.text), false);
     let candidates = candidates(&world, &thought);
+    let memory_context = core.memory.placement_context(&world, &thought, core.placer_model.name(), room, new_thread);
     // From when the first calls went, so a round cut off and asked again counts too: the tag says what the wait was.
     let went = std::time::Instant::now();
     let (world_at, thought_at) = (&world, &thought);
+    let memory_at = memory_context.as_ref();
     let (lane, model, lanes, race_ms, placement) = loop {
         // Placements take 2–3 s; a stall should cost seconds, not the shared client's two minutes a try. The same
         // call goes `placer_race` times at once, each lane to its own model (`MODELS`), and the first good answer
@@ -615,9 +617,10 @@ async fn place(core: &Core, thought_id: &str, url: &str, limit: fn(u32) -> Durat
                             if let Ok(mut asked) = asked.lock() {
                                 model.clone_into(&mut asked);
                             }
-                            request(world_at, thought_at, model, room, new_thread)
+                            request_with_context(world_at, thought_at, model, room, new_thread, memory_at)
                         },
-                        json!({"thought": thought_id, "room": room, "lane": lane}),
+                        memory_at.map_or_else(|| json!({"thought": thought_id, "room": room, "lane": lane}),
+                            |context| json!({"thought": thought_id, "room": room, "lane": lane, "memory_bytes_saved": context.bytes_saved})),
                     )
                     .await;
                 (lane, asked.into_inner().unwrap_or_default(), answer)
@@ -945,12 +948,18 @@ pub(crate) fn perf(world: &World, thought: &Thought) {
     }, |(changes, _)| serde_json::to_vec(changes).unwrap().len());
 }
 
+#[cfg(test)]
 fn request(world: &World, thought: &Thought, model: &str, room: u32, new_thread: bool) -> serde_json::Value {
+    request_with_context(world, thought, model, room, new_thread, None)
+}
+
+pub(crate) fn request_with_context(world: &World, thought: &Thought, model: &str, room: u32, new_thread: bool, context: Option<&crate::memory::Context>) -> serde_json::Value {
     // Oldest-touched first, the one just spoken on last (refiner.rs orders its list the same way): a placement
     // rewrites only its own thread's line, so with the threads in the order they were made every line after it was a
     // new prefix, and the cache held the system prompt only (625 tokens) in 14 of 24 calls on a 300-thread map
     // (scale-2026-11-01.md). Ties (an import, a map made at once) keep the order they were made in.
-    let mut ordered: Vec<&Thread> = world.threads.iter().collect();
+    let mut ordered: Vec<&Thread> = world.threads.iter()
+        .filter(|thread| context.is_none_or(|c| c.thread_ids.contains(&thread.id))).collect();
     ordered.sort_by_key(|t| t.touched_ms);
     // A thread shows its latest points (`POINTS`), not only its last: by its title and last point, a thread that had
     // taken in a few ideas looked like the place for any of them, or for anything near its title. Only the threads
@@ -958,7 +967,8 @@ fn request(world: &World, thought: &Thought, model: &str, room: u32, new_thread:
     // part a placement rewrites anyway.
     let recent: HashSet<&str> = ordered.iter().rev().take(RECENT).map(|t| t.id.as_str()).collect();
     let mut points: HashMap<&str, Vec<&str>> = HashMap::new();
-    for t in world.thoughts.iter().filter(|t| t.placed && !t.point.trim().is_empty()) {
+    for t in world.thoughts.iter().filter(|t| t.placed && !t.point.trim().is_empty()
+        && context.is_none_or(|c| c.thought_ids.contains(&t.id))) {
         if let Some(on) = t.thread_id.as_deref().filter(|on| recent.contains(on)) {
             points.entry(on).or_default().push(t.point.trim());
         }
@@ -1007,7 +1017,7 @@ fn request(world: &World, thought: &Thought, model: &str, room: u32, new_thread:
         .and_then(|first| first.thread_id.as_deref().map(|on| world.resolve(on)))
         .map(|on| format!("It is the rest of the turn just before, cut into separate points. Place by its own subject: it may continue {on}, return to another thread or start a new one.\n"))
         .unwrap_or_default();
-    let names = names(world);
+    let names = names_in(world, context);
     let names = if names.is_empty() { String::new() } else { format!("Names said: {}\n", names.join(", ")) };
     // The thread it starts is new whatever the answer (see `decide`); told, the model gives it a title.
     let starts =
@@ -1068,11 +1078,17 @@ const NAMES: usize = 30;
 /// Names said so far, the latest first: runs of capitalized words ("Muse Spark", "Main Street", "Collaborator") in the
 /// words as said. Points are summaries and often drop the name, and then a near miss of it ("Muse Bark") has
 /// nothing on the map to be a near miss of. Words still asked about ("Did you mean …?") don't count.
+#[cfg(test)]
 fn names(world: &World) -> Vec<String> {
+    names_in(world, None)
+}
+
+fn names_in(world: &World, context: Option<&crate::memory::Context>) -> Vec<String> {
     // Newest first by when it was said (see `Thought::said_at`): an import lands last in the list, with old times.
     // Reversed first, so the stable sort keeps a split turn's rest (same time) ahead of its first part.
     let now = now_ms();
-    let mut said: Vec<&Thought> = world.thoughts.iter().rev().filter(|t| t.placed).collect();
+    let mut said: Vec<&Thought> = world.thoughts.iter().rev().filter(|t| t.placed
+        && context.is_none_or(|c| c.thought_ids.contains(&t.id))).collect();
     said.sort_by_key(|t| std::cmp::Reverse(t.said_at(now)));
     let mut seen = HashSet::new();
     said.into_iter()

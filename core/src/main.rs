@@ -38,6 +38,7 @@ mod import;
 mod messages;
 mod notes;
 mod model;
+mod memory;
 mod pictures;
 mod placer;
 mod positions;
@@ -85,6 +86,7 @@ use tokio::sync::{broadcast, mpsc};
 use world::{Change, Journal, Thought, ThreadStatus, World};
 
 pub struct Core {
+    memory: memory::Runtime,
     #[cfg(test)]
     asr_test_url: Option<String>,
     alias_windows: Mutex<HashMap<(String, u64), Arc<std::sync::atomic::AtomicBool>>>,
@@ -398,6 +400,7 @@ impl Core {
             for change in &changes {
                 let state = Arc::make_mut(&mut world);
                 state.apply(change);
+                self.memory.changed(change, state);
                 if let Some((speaker, id, text)) = world::source_capture() { state.capture(&speaker, &id, Some(&text), change); }
                 positions::settle(self, &world);
             }
@@ -466,6 +469,12 @@ impl Core {
 
     /// Only to one speaker's windows.
     pub fn send_to(&self, speaker: &str, message: ServerMsg) {
+        if let ServerMsg::Partial { text } = &message {
+            if self.memory.enabled() && !text.is_empty() {
+                let world = self.snapshot();
+                self.memory.speculate(speaker, text, world.active_for(speaker).map(String::as_str));
+            }
+        }
         self.system_view.observe(&message);
         let _ = self.updates.send(Outgoing { to: Some(speaker.into()), message, speak: false });
     }
@@ -1519,6 +1528,7 @@ async fn main() -> anyhow::Result<()> {
     let (updates, _) = broadcast::channel(1024);
     let (placer_queue, queue) = mpsc::unbounded_channel();
     let core = Arc::new(Core {
+        memory: memory::Runtime::from_env(&world),
         #[cfg(test)]
         asr_test_url: None,
         alias_windows: Default::default(),
@@ -2246,6 +2256,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                     research_gate.lock().unwrap().invalidate(on);
                     if let Some(task) = research_task.take() { task.abort(); }
                 }
+                Ok(ClientMsg::MemoryFeature { on }) => { core.memory_switch(window, on && !remote && !ai); }
                 Ok(ClientMsg::CancelResearch) => {
                     let mut s = research_gate.lock().unwrap(); let on = s.on; s.invalidate(on);
                     if let Some(task) = research_task.take() { task.abort(); }
@@ -2536,6 +2547,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
     evidence_gate.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     *evidence_state.lock().unwrap() = evidence::Session::default();
     choice_maps_on.store(false, std::sync::atomic::Ordering::SeqCst);
+    core.memory_switch(window, false);
     research_gate.lock().unwrap().invalidate(false);
     if let Some(task) = research_task { task.abort(); }
     discussion_on.store(false, std::sync::atomic::Ordering::SeqCst);
@@ -2659,6 +2671,7 @@ fn start_listening(core: &Arc<Core>, speaker: &str, listens: &Arc<std::sync::ato
 impl Core {
     pub(crate) fn test(journal: Journal, world: World) -> Core {
         Core {
+            memory: memory::Runtime::default(),
             asr_test_url: None,
             typed_receipts: Default::default(),
             glossary: Default::default(),

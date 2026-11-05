@@ -67,6 +67,7 @@ fn product_routes() -> Router<Arc<Core>> {
         .route("/ws", get(crate::connect))
         .route("/ws/my-words", get(crate::glossary::connect))
         .route("/room", get(crate::room_info))
+        .route("/memory/stats", get(crate::memory::read))
         .route("/terse", post(crate::terse::read))
         .route("/clarify", post(crate::clarify::ask))
         .route("/draw/read", post(crate::draw::read))
