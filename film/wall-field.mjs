@@ -31,7 +31,7 @@ export function fieldFrame(shot, local) {
     crop:smooth(Math.min(1,local/1.25)),
     white:smooth(Math.max(0,Math.min(1,(local-(shot.duration-1))/.9)))};
 }
-async function freezeStill(image) {
+export async function freezeStill(image) {
   const bitmap=await createImageBitmap(image);
   const canvas=document.createElement('canvas');canvas.width=bitmap.width;canvas.height=bitmap.height;
   const context=canvas.getContext('2d',{willReadFrequently:true});context.drawImage(bitmap,0,0);bitmap.close();

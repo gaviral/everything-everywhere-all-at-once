@@ -56,7 +56,7 @@ async function mount(shot){
  const clips=shot.kind==='plane'?[shot]:shot.kind==='planes'?shot.clips:[];for(let i=0;i<clips.length;i++)await createPlane(clips[i],clips.length,i);
  if(shot.kind==='laptop')laptop=await createLaptop(shot,camera,videos,bounded);
  if(shot.kind==='wall')wallTiles=await createWall(shot,camera,videos,bounded);
- if(shot.layout==='field'){stage.style.background='#fff';raster=wallTiles.surface.canvas;}active=shot.index;
+ if(['field','title'].includes(shot.layout)){stage.style.background=shot.layout==='title'?'#000':'#fff';raster=wallTiles.surface.canvas;}active=shot.index;
 }
 async function seek(video,target){
  if(target>=video.duration)throw Error(`Clip too short: needs ${target.toFixed(3)}s, has ${video.duration.toFixed(3)}s`);
@@ -75,13 +75,13 @@ window.filmFrame=async(shot,local,scale=1)=>{
  }
  if(shot.kind==='feature'){camera.firstChild.textContent=shot.word;word=wordMotion(camera.firstChild,local,{entrance:shot.entrance??.12,duration:shot.duration,shrink:shot.shrink});}
  if(shot.kind==='card')camera.firstChild.textContent=shot.word;
- titleMorph?.draw(local);
+ titleMorph?.draw(local);if(shot.kind==='titlemorph'&&shot.fromTitle)raster=local===0?titleMorph.firstFrame:null;
  if(shot.kind==='list')camera.firstChild.textContent=shot.names[Math.min(shot.names.length-1,Math.floor((local+1e-8)/shot.seconds))];
  const tilts=planes.map(p=>posePlane(p,local)),wall=shot.kind==='wall'?drawWall(shot,local,camera,wallTiles):null;
  const brandState=brand?drawBrand(brand,shot,local):null,laptopState=laptop?drawLaptop(laptop,shot,local):null;
  await Promise.all(videos.map(({video,spec})=>seek(video,(spec.start??0)+(spec.loop?local%(spec.loopSeconds??video.duration-(spec.start??0)):Math.min(local*(spec.rate??1),spec.playSeconds??local*(spec.rate??1))))));
  if(shot.kind==='wall')paintWall(shot,local,wallTiles);
- await document.fonts.ready;await Promise.all([...camera.querySelectorAll('img')].map(img=>img.decode()));if(shot.layout!=='field')await new Promise(yes=>requestAnimationFrame(()=>requestAnimationFrame(yes)));
+ await document.fonts.ready;await Promise.all([...camera.querySelectorAll('img')].map(img=>img.decode()));if(!['field','title'].includes(shot.layout))await new Promise(yes=>requestAnimationFrame(()=>requestAnimationFrame(yes)));
  return {kind:shot.kind,text:camera.textContent,times:videos.map(({video})=>video.currentTime),tilts,wall,word,brand:brandState,laptop:laptopState};
 };
   window.filmRaster = (scale = 1) => {

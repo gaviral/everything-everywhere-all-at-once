@@ -119,6 +119,24 @@ second fresh renderer, rather than PNG compression bytes.
 complete square coverage and writes eight actual review frames; review those
 at film size before accepting a take.
 
+### Title made of app frames
+
+`wall-3-media.py MEDIA_ROOT` reuses the recorded square crops and separates
+them by measured brightness. `layout: "title"` places those real frames in a
+64×36 field: light frames form EVERYTHING / EVERYWHERE / ALL AT ONCE and dark
+frames fill the background. Repetition is deliberate at the pixel scale;
+the opening neighbourhood uses distinct sources. No recolouring or generated
+tile images are used.
+
+The 14-second pull-back holds the full mosaic, resolves to matching type, and
+ends on the exact first frame of `wall-3-handoff.json`. A `titlemorph` shot with
+`fromTitle: true` starts with all three lines already formed, then drops the
+non-initial letters. Title geometry and caption painting are shared, so there
+is no position jump at the cut. Tiles do not fall; the cut on the held title
+is the intentional handoff. `wall-title-check.mjs SHOTS.json` checks the
+distinct opening, three-line pixel contrast, repeatable frames, exact handoff,
+and the five retained initials, and writes eight full-size review frames.
+
 ## Incremental cut
 
 `cut.mjs` is the working-film entrypoint. By default its shots, `cuts/`, and

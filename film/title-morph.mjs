@@ -1,11 +1,12 @@
 // One clock, in seconds. Recompute every pose, including on a backward seek.
+import { TITLE_FONT, titleLayout, titleCard, paintRecorded } from './title-layout.mjs';
 const clamp = n => Math.max(0, Math.min(1, n));
 const mix = (a, b, t) => a + (b - a) * t;
 const phase = (t, a, b) => clamp((t - a) / (b - a));
 const smooth = t => t * t * (3 - 2 * t);
 const settle = t => t === 1 ? 1 : 1 - (1 - t) ** 3 * Math.cos(t * Math.PI * 1.6);
 const NS = 'http://www.w3.org/2000/svg';
-const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+const FONT = TITLE_FONT;
 const SIZE = 248;
 const PIXEL = SIZE / 32;
 const TITLE_WIDTH = 1280;
@@ -47,17 +48,6 @@ function installStyle() {
     .tm-shadow { position:absolute;width:112px;height:18px;border-radius:50%;background:#000;filter:blur(9px);transform-origin:center; }
   `;
 }
-function wordLayout(context, text, fontSize) {
-  let cursor = 0;
-  const letters = [...text].flatMap((char, index) => {
-    if (char === ' ') { cursor += fontSize * .34; return []; }
-    if (index > 0 && text[index - 1] !== ' ') cursor -= fontSize * .04;
-    const width = context.measureText(char).width, x = cursor + width / 2;
-    cursor += width;
-    return [{ char, index, x }];
-  });
-  return { width: cursor, letters };
-}
 function fitInitials(context, fontSize, poses, glyphs) {
   const ratio = fontSize / 120;
   const bounds = poses.map(([x, , scale], i) => {
@@ -70,23 +60,12 @@ function fitInitials(context, fontSize, poses, glyphs) {
 }
 function makeLetters(parent) {
   const layer = bitmap(parent, 'tm-letters'), context = layer.context;
-  context.font = `650 120px ${FONT}`; context.textAlign = 'center';
-  const rows = ['EVERYTHING', 'EVERYWHERE', 'ALL AT ONCE'];
   const selected = [[0], [0], [0, 4, 7]];
-  const fontSize = 120 * TITLE_WIDTH / Math.max(...rows.map(text => wordLayout(context, text, 120).width));
-  context.font = `650 ${fontSize}px ${FONT}`;
+  const {fontSize,letters:positions}=titleLayout(context);
   const gathered = fitInitials(context, fontSize, [[-272, 0, 1], [-136, 0, 1], [0, 0, 1], [136, 0, 1], [272, 0, 1]], 'EEAAO');
   const folded = fitInitials(context, fontSize, [[-213, 0, 1], [-146, -47, .43], [3, 0, 1], [70, -47, .43], [220, 0, 1]], 'E2A2O');
   let initial = 0;
-  const letters = rows.flatMap((text, row) => {
-    const { width, letters } = wordLayout(context, text, fontSize);
-    return letters.map(({ char, index, x }) => {
-      const isInitial = selected[row].includes(index);
-      const metrics = context.measureText(char);
-      return { row, index, char, x: 960 - width / 2 + x, y: 315 + row * 225, height: metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent,
-        baseline: (metrics.actualBoundingBoxAscent - metrics.actualBoundingBoxDescent) / 2, initial: isInitial ? initial++ : -1 };
-    });
-  });
+  const letters=positions.map(letter=>({...letter,initial:selected[letter.row].includes(letter.index)?initial++:-1}));
   return { ...layer, letters, gathered, folded };
 }
 function makeGradient(defs, id, stops, attributes) {
@@ -236,12 +215,17 @@ export async function createTitleMorph(shot, parent) {
   const icon = await makeIcon(root);
   const name = makeName(root, variant === 'long' ? '#101114' : '#fff');
   const tagline = element('div', 'tm-tagline', root, variant === 'long' ? TAGLINE : '');
+  const caption=shot.fromTitle&&shot.caption?bitmap(root,'tm-caption'):null;
+  if(caption)paintRecorded(caption.context,shot.caption);
   const left = (1920 - SIZE - 48 - name.width) / 2;
   const destination = left + SIZE / 2, nameX = left + SIZE + 48;
   return {
     background: variant === 'long' ? '#fff' : '#000',
+    firstFrame:shot.fromTitle?titleCard(shot.caption,variant==='long'?'#fff':'#000',variant==='long'?'#101114':'#fff'):null,
     draw(local) {
-      const t = clamp(local / shot.duration) * clock.seconds;
+      const start=shot.fromTitle?clock.words[2]+.29:0;
+      const t = start+clamp(local / shot.duration)*(clock.seconds-start);
+      if(caption)caption.node.style.opacity=String(1-phase(local,0,.4));
       drawLetters(letters, t, clock, root.style.color);
       drawIcon(icon, shadow, t, clock, destination, letters.folded[4].x);
       drawName(name, tagline, t, clock, nameX);
