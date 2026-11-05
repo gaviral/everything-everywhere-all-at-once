@@ -12,8 +12,7 @@ const review = await mkdtemp(join(output, 'title-review-'));
 const stage = await openStage(join(here, 'stage.html'), 1920, 1080);
 const visible = () => stage.evaluate(`(() => {
   const alpha = n => Number(getComputedStyle(n).opacity);
-  const letters = [...document.querySelectorAll('.tm-letter')].filter(n => alpha(n) > .95)
-    .map(n => [...n.children].filter(c => alpha(c) > .95).map(c => c.textContent).join('')).join('');
+  const letters = document.querySelector('.tm-letters').textContent;
   const name = document.querySelector('.tm-name'), line = document.querySelector('.tm-tagline');
   return {letters, name: alpha(name) > .99 ? name.textContent : '',
     tagline: alpha(line) > .99 ? line.textContent : '', background: getComputedStyle(document.querySelector('#stage')).backgroundColor,
@@ -50,6 +49,11 @@ try {
     const still = await stage.screenshot();
     await stage.frame(shot, spec.seconds - 1 / 30);
     assert.deepEqual(await stage.screenshot(), still, 'The final signature holds completely still');
+    const cold = await openStage(join(here, 'stage.html'), 1920, 1080);
+    try {
+      await cold.frame(shot, spec.hold);
+      assert.deepEqual(await cold.screenshot(), still, 'A fresh renderer reproduces the held signature pixel for pixel');
+    } finally { await cold.close(); }
     await stage.frame(shot, spec.folded);
     assert.deepEqual(await stage.screenshot(), folded, 'Backward seeking reproduces the visible title');
     const count = frameRange(spec.seconds, 30).count;
@@ -76,7 +80,7 @@ try {
       await sheet.evaluate('Promise.all([...document.images].map(img => img.decode()))');
       await writeFile(join(review, `title-${spec.variant}-sheet.png`), await sheet.screenshot());
     } finally { await sheet.close(); }
-    console.log(`PASS ${spec.variant}: readable title/initials/twos, final glass/wording, still hold, backward seek, ${count} frames; 24-frame sheet.`);
+    console.log(`PASS ${spec.variant}: title/initials/twos, bounce, final glass/wording, still hold, cold renderer, backward seek, ${count} frames; 24-frame sheet.`);
   }
 } finally { await stage.close(); }
 console.log(`Review: ${review}`);

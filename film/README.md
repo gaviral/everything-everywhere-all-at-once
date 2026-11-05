@@ -149,6 +149,8 @@ letters, folds the initials to E² A² O, and turns the O into the gold bead.
 One gravity drop and rebound precede the blue shell and drawn ribbon. Shapes
 come from `ui/public/icon.svg`; they cross to the real glass icon before the
 name settles. Both variants use the stage font and an absolute frame clock.
+The type and glass image paint at fixed resolution to keep pixels independent
+of earlier compositor scales.
 The long variant follows the wall's white lift and adds “Think out loud.
 Build what you mean.” without credits. The final composition is still.
 

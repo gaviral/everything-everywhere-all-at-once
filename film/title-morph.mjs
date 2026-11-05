@@ -28,39 +28,42 @@ function svgElement(tag, attributes = {}) {
   for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, value);
   return node;
 }
+function bitmap(parent, className) {
+  const node = element('canvas', `tm-bitmap ${className}`, parent);
+  node.width = 1920; node.height = 1080;
+  // Fixed-resolution software paint avoids history-dependent compositor resampling.
+  return { node, context: node.getContext('2d', { willReadFrequently: true }) };
+}
 function installStyle() {
   if (document.getElementById('titlemorph-style')) return;
   const style = element('style', '', document.head); style.id = 'titlemorph-style';
   style.textContent = `
     .titlemorph { position:absolute;inset:0;overflow:hidden;perspective:1800px; }
-    .tm-letter { position:absolute;left:0;top:0;font-size:120px;font-weight:650;line-height:1;white-space:pre;will-change:transform; }
-    .tm-letter > span { position:absolute;left:0;top:0;transform:translate(-50%,-50%); }
     .tm-icon { position:absolute;left:0;top:0;width:${SIZE}px;height:${SIZE}px;transform-origin:50% 50%; }
     .tm-icon svg { position:absolute;inset:0;width:100%;height:100%;overflow:visible; }
-    .tm-glass { position:absolute;left:-12.136%;top:-12.136%;width:124.272%;height:124.272%; }
-    .tm-name { position:absolute;left:0;top:0;font-size:174px;font-weight:700;letter-spacing:-.065em;line-height:1;white-space:nowrap;transform-origin:0 50%; }
+    .tm-bitmap { position:absolute;left:0;top:0;width:1920px;height:1080px; }
     .tm-tagline { position:absolute;top:690px;left:0;width:1920px;text-align:center;font-size:52px;font-weight:500;letter-spacing:-.035em;line-height:1.2; }
     .tm-shadow { position:absolute;width:112px;height:18px;border-radius:50%;background:#000;filter:blur(9px);transform-origin:center; }
   `;
 }
 function makeLetters(parent) {
-  const context = document.createElement('canvas').getContext('2d'); context.font = `650 120px ${FONT}`;
+  const layer = bitmap(parent, 'tm-letters'), context = layer.context;
+  context.font = `650 120px ${FONT}`; context.textAlign = 'center';
   const rows = ['EVERYTHING', 'EVERYWHERE', 'ALL AT ONCE'];
   const selected = [[0], [0], [0, 4, 7]];
   let initial = 0;
-  return rows.flatMap((text, row) => {
+  const letters = rows.flatMap((text, row) => {
     const spacing = -4.8;
     const width = context.measureText(text).width + spacing * (text.length - 1);
     return [...text].flatMap((char, index) => {
       if (char === ' ') return [];
       const isInitial = selected[row].includes(index);
-      const node = element('div', 'tm-letter', parent);
-      const glyph = element('span', 'tm-glyph', node, char);
-      const number = element('span', 'tm-number', node, '2');
       const x = 960 - width / 2 + context.measureText(text.slice(0, index)).width + spacing * index + context.measureText(char).width / 2;
-      return [{ node, glyph, number, row, index, char, x, y: 370 + row * 145, initial: isInitial ? initial++ : -1 }];
+      const metrics = context.measureText(char);
+      return [{ row, index, char, x, y: 370 + row * 145, baseline: (metrics.actualBoundingBoxAscent - metrics.actualBoundingBoxDescent) / 2, initial: isInitial ? initial++ : -1 }];
     });
   });
+  return { ...layer, letters };
 }
 function makeGradient(defs, id, stops, attributes) {
   const gradient = svgElement('radialGradient', { id, ...attributes });
@@ -95,17 +98,20 @@ async function makeIcon(parent) {
   sphere.setAttribute('fill', 'url(#tm-gold)'); beadMirror.append(sphere); beadPose.append(beadMirror);
   const glint = svgElement('ellipse', { cx: '21.95', cy: '14.35', rx: '.70', ry: '.34', fill: '#fff', transform: 'rotate(38 21.95 14.35)' });
   beadPose.append(glint); svg.append(beadPose); root.append(svg);
-  const glass = element('img', 'tm-glass', root); glass.alt = ''; glass.src = new URL('../ui/public/icons/icon-512.png', import.meta.url).href;
-  await glass.decode();
-  return { root, svg, shellPose, ribbonPose, ribbon, length, beadPose, glint, glass };
+  const photograph = new Image(); photograph.src = new URL('../ui/public/icons/icon-512.png', import.meta.url).href;
+  await photograph.decode();
+  const glass = bitmap(parent, 'tm-glass');
+  return { root, svg, shellPose, ribbonPose, ribbon, length, beadPose, glint, glass, photograph };
 }
-function drawLetters(letters, t, clock) {
+function drawLetters(layer, t, clock, colour) {
+  const paint = layer.context, visible = [];
+  paint.clearRect(0, 0, 1920, 1080); paint.fillStyle = colour;
   const gather = settle(phase(t, ...clock.gather));
   const fold = smooth(phase(t, ...clock.fold));
   const morph = smooth(phase(t, ...clock.morph));
   const positions = [688, 824, 960, 1096, 1232];
   const folded = [[747, 540, 1], [814, 493, .43], [963, 540, 1], [1030, 493, .43], [1180, 540, 1]];
-  for (const letter of letters) {
+  for (const letter of layer.letters) {
     const entry = settle(phase(t, clock.words[letter.row], clock.words[letter.row] + .29));
     let x = letter.x, y = letter.y + (1 - entry) * 26, scale = 1, angle = 0;
     let opacity = phase(t, clock.words[letter.row], clock.words[letter.row] + .13);
@@ -126,10 +132,16 @@ function drawLetters(letters, t, clock) {
       if (i === 4) { x = mix(x, 960 + 5 * PIXEL, morph); y = mix(y, 312, morph); scale *= mix(1, .54, morph); }
       opacity *= 1 - (i === 4 ? phase(morph, .20, .88) : phase(morph, 0, .62));
     }
-    letter.node.style.transform = `translate(${x}px,${y}px) rotate(${angle}deg) scale(${scale})`;
-    letter.node.style.opacity = String(opacity);
-    letter.glyph.style.opacity = String(1 - digit); letter.number.style.opacity = String(digit);
+    paint.save(); paint.translate(x, y); paint.rotate(angle * Math.PI / 180); paint.scale(scale, scale);
+    paint.globalAlpha = opacity * (1 - digit); paint.fillText(letter.char, 0, letter.baseline);
+    paint.globalAlpha = opacity * digit; paint.fillText('2', 0, letter.baseline); paint.restore();
+    if (opacity > .95) {
+      if (digit > .95) visible.push('2');
+      else if (1 - digit > .95) visible.push(letter.char);
+    }
   }
+  // Canvas fallback text describes exactly the fully visible glyphs just painted.
+  layer.node.textContent = visible.join('');
 }
 function beadY(t, clock) {
   const drop = phase(t, ...clock.drop), bounce = phase(t, ...clock.bounce);
@@ -160,17 +172,31 @@ function drawIcon(icon, shadow, t, clock, destination) {
   icon.glint.style.opacity = String(Math.sin(Math.PI * flash) ** 2 * .92);
   icon.glint.setAttribute('cx', String(mix(19.5, 22.3, flash)));
   const glass = smooth(phase(t, ...clock.glass));
-  icon.svg.style.opacity = String(1 - glass); icon.glass.style.opacity = String(glass);
+  icon.svg.style.opacity = String(1 - glass); icon.glass.node.style.opacity = String(glass);
+  const paint = icon.glass.context, photoSize = SIZE * 1.24272;
+  paint.clearRect(0, 0, 1920, 1080);
+  paint.drawImage(icon.photograph, cx - photoSize / 2, 540 - photoSize / 2, photoSize, photoSize);
   const height = clamp((y - 312) / 228);
   shadow.style.left = `${cx + 5 * PIXEL - 56}px`; shadow.style.top = '572px';
   shadow.style.opacity = String((1 - phase(t, clock.shell[0], clock.shell[1])) * phase(t, ...clock.morph) * height * .16);
   shadow.style.transform = `scale(${mix(.45, 1, height)})`;
 }
+function makeName(parent, colour) {
+  const name = bitmap(parent, 'tm-name'), paint = name.context;
+  paint.font = `700 174px ${FONT}`; paint.letterSpacing = '-11.31px'; paint.fillStyle = colour;
+  const metrics = paint.measureText('E2A2O');
+  name.width = metrics.width; name.baseline = (metrics.actualBoundingBoxAscent - metrics.actualBoundingBoxDescent) / 2;
+  name.node.textContent = 'E2A2O';
+  return name;
+}
 function drawName(name, tagline, t, clock, x) {
   const p = phase(t, ...clock.name), arrival = settle(p);
-  name.style.opacity = String(phase(p, .12, .66));
-  name.style.transform = `translate(${x + (1 - arrival) * 72}px,453px) scaleX(${mix(.82, 1, arrival)})`;
-  name.style.filter = `blur(${(1 - smooth(p)) * 9}px)`;
+  name.node.style.opacity = String(phase(p, .12, .66));
+  const paint = name.context;
+  paint.clearRect(0, 0, 1920, 1080); paint.save();
+  paint.translate(x + (1 - arrival) * 72, 540); paint.scale(mix(.82, 1, arrival), 1);
+  paint.filter = `blur(${(1 - smooth(p)) * 9}px)`;
+  paint.fillText('E2A2O', 0, name.baseline); paint.restore();
   const line = clock.tagline ? smooth(phase(t, ...clock.tagline)) : 0;
   tagline.style.opacity = String(line); tagline.style.transform = `translateY(${(1 - line) * 12}px)`;
 }
@@ -186,15 +212,15 @@ export async function createTitleMorph(shot, parent) {
   const letters = makeLetters(root);
   const shadow = element('div', 'tm-shadow', root);
   const icon = await makeIcon(root);
-  const name = element('div', 'tm-name', root, 'E2A2O');
+  const name = makeName(root, variant === 'long' ? '#101114' : '#fff');
   const tagline = element('div', 'tm-tagline', root, variant === 'long' ? TAGLINE : '');
-  const left = (1920 - SIZE - 48 - name.offsetWidth) / 2;
+  const left = (1920 - SIZE - 48 - name.width) / 2;
   const destination = left + SIZE / 2, nameX = left + SIZE + 48;
   return {
     background: variant === 'long' ? '#fff' : '#000',
     draw(local) {
       const t = clamp(local / shot.duration) * clock.seconds;
-      drawLetters(letters, t, clock);
+      drawLetters(letters, t, clock, root.style.color);
       drawIcon(icon, shadow, t, clock, destination);
       drawName(name, tagline, t, clock, nameX);
     },
