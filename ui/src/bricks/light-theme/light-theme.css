@@ -4,18 +4,20 @@ html[data-light-theme] {
   --space: #f2ede3; --surface: #fffdf8; --surface-2: #fffdf8; --surface-3: #e8e0d2; --raised: #fffefa;
   --ink: #29241e; --ink-2: #40372e; --muted: #62574b; --faint: #786d60;
   --line: #c9bdab; --line-2: #ab9d89; --dots: #bfb3a0;
-  --blue: #284f89; --blue-ink: #fff; --blue-soft: #e3ebf6;
+  --blue: #80601f; --blue-ink: #fffdf7; --blue-soft: #eee3c9;
   --red: #a12f27; --status-bg: #e8e0d2; --btn: #29241e; --btn-ink: #fffdf8;
   --glass: #fffdf8e8; --glass-line: #b9ac9a;
   --bg: var(--space); --card: var(--surface); --accent: var(--blue); --accent-soft: var(--blue-soft); --accent-button-ink: #fff;
-  --amber: #805009; --amber-soft: #f7e6bc; --amber-button-ink: #fff;
-  --ai: #653d91; --ai-soft: #eee5f6; --ai-button-ink: #fff;
+  --amber: #80601f; --amber-soft: #eee3c9; --amber-button-ink: #fff;
+  --ai: #80601f; --ai-soft: #eee3c9; --ai-button-ink: #fff;
   --room-red: #76604d; --room-red-soft: #eee4d9; --room-green: #286841; --room-green-soft: #dcece0;
   --room-pink: #94345f; --room-pink-soft: #f5e1e9; --room-teal: #176870; --room-teal-soft: #d8eceb;
   --room-lime: #58650e; --room-lime-soft: #e9edd1;
   --shadow: 0 2px 4px #49382112, 0 10px 28px #49382118;
 }
 html[data-light-theme="studio"] {
+  --blue: #284f89; --blue-ink: #fff; --blue-soft: #e3ebf6;
+  --amber: #805009; --amber-soft: #f7e6bc; --ai: #653d91; --ai-soft: #eee5f6;
   --space: #e9eff1; --surface: #fbfefe; --surface-2: #fbfefe; --surface-3: #dae5e8; --raised: #fff;
   --ink: #1c3036; --ink-2: #304a51; --muted: #4c646b; --faint: #657d83;
   --line: #b4c9ce; --line-2: #8ba8af; --dots: #afc5ca; --status-bg: #dce7e9;
@@ -26,7 +28,7 @@ html[data-light-theme="contrast"] {
   --ink: #151515; --ink-2: #242424; --muted: #393939; --faint: #555;
   --line: #827b6f; --line-2: #575147; --dots: #a49b8b; --status-bg: #e4dfd2;
   --glass: #fffffff2; --glass-line: #827b6f; --btn: #151515; --btn-ink: #fff;
-  --blue: #173d7a; --blue-soft: #dbe7f8; --ai: #57277d; --ai-soft: #eedff7;
+  --blue: #173d7a; --blue-ink: #fff; --blue-soft: #dbe7f8; --amber: #805009; --amber-soft: #f7e6bc; --ai: #57277d; --ai-soft: #eedff7;
 }
 .light-theme-switch { position: fixed; z-index: 950; left: 50%; top: 10px; transform: translateX(-50%); display: flex; align-items: center; gap: 3px; padding: 4px; border: 1px solid var(--line-2); border-radius: 999px; background: var(--glass); color: var(--ink); box-shadow: var(--shadow); font: 600 12px/1.2 system-ui, sans-serif; }
 .light-theme-switch span { padding: 0 7px; color: var(--muted); }

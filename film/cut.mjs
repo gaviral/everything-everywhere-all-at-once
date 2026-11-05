@@ -36,7 +36,7 @@ function probe(path) {
   return JSON.parse(run('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries',
     'stream=codec_name,width,height,r_frame_rate,nb_frames,duration', '-of', 'json', path])).streams[0];
 }
-function mediaSpecs(shot) { return shot.kind === 'plane' ? [shot] : shot.kind === 'planes' ? shot.clips : shot.kind === 'wall' ? shot.tiles : []; }
+function mediaSpecs(shot) { return ['plane','laptop'].includes(shot.kind) ? [shot] : shot.kind === 'planes' ? shot.clips : shot.kind === 'wall' ? [...shot.tiles,...(shot.opening?[shot.opening]:[])] : []; }
 async function prepareShot(original, config, shared, hashFile) {
   const shot = structuredClone(original);
   // Film position and editorial notes never affect a shot's pixels or cache key.
@@ -48,7 +48,7 @@ async function prepareShot(original, config, shared, hashFile) {
       const video = probe(path);
       const duration = Number(video.duration);
       if (!Number.isFinite(duration)) throw new Error(`Clip has no finite duration: ${spec.clip}`);
-      const needed = shot.kind === 'wall' ? spec.loopSeconds ?? duration - (spec.start ?? 0) : Math.min(shot.duration, spec.playSeconds ?? shot.duration);
+      const needed = shot.kind === 'wall' ? spec.loopSeconds ?? duration - (spec.start ?? 0) : Math.min(shot.duration*(spec.rate??1), spec.playSeconds ?? shot.duration*(spec.rate??1));
       if (needed < 0 || (spec.start ?? 0) + needed > duration + 1e-6)
         throw new Error(`Clip too short: ${spec.clip}`);
     }
@@ -109,7 +109,12 @@ async function joinShots(results, opts) {
   const list = join(opts.cuts, `join-${randomUUID()}.ffconcat`);
   await writeFile(list, 'ffconcat version 1.0\n' + results.map(r => `file '${r.file.replaceAll("'", "'\\''")}'`).join('\n') + '\n');
   const partial = opts.out.replace(/\.mp4$/, `.${randomUUID()}.partial.mp4`);
-  run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-n', '-f', 'concat', '-safe', '0', '-i', list, '-map', '0:v:0', '-c', 'copy', '-movflags', '+faststart', partial]);
+  const frameCount=results.reduce((n,r)=>n+r.frames,0);
+  const lastPTS=Math.round((frameCount-1)*90000/opts.fps);
+  const tail=Math.round(opts.duration*90000)-lastPTS;
+  if(tail<=0 || tail>Math.ceil(90000/opts.fps)) throw new Error('Last-frame duration is outside one frame');
+  const timing=`setts=duration=if(gte(PTS\\,${lastPTS})\\,${tail}\\,DURATION)`;
+  run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-n', '-f', 'concat', '-safe', '0', '-i', list, '-map', '0:v:0', '-c', 'copy', '-bsf:v', timing, '-movie_timescale', '1000', '-movflags', '+faststart', partial]);
   // Preserve previous review versions rather than overwriting them.
   try { await rename(opts.out, opts.out.replace(/\.mp4$/, `.previous-${randomUUID()}.mp4`)); } catch (e) { if (e.code !== 'ENOENT') throw e; }
   await rename(partial, opts.out);
@@ -122,8 +127,8 @@ export async function cut(args = process.argv.slice(2)) {
   await mkdir(opts.cuts, { recursive: true }); await mkdir(dirname(opts.out), { recursive: true });
   const hashes = new Map();
   const hashFile = path => { if (!hashes.has(path)) hashes.set(path, fileDigest(path)); return hashes.get(path); };
-  const code = await Promise.all(['stage.html', 'wall.mjs', 'wall-field.mjs', 'chrome.mjs', 'timeline.mjs', 'cut.mjs'].map(name => hashFile(join(here, name))));
-  const shared = { format, code, logo: await hashFile(join(here, '../ui/public/icons/icon-512.png')) };
+  const code = await Promise.all(['stage.html', 'wall.mjs', 'wall-field.mjs', 'brand.mjs', 'motion.mjs', 'laptop.mjs', 'chrome.mjs', 'timeline.mjs', 'cut.mjs'].map(name => hashFile(join(here, name))));
+  const shared = { format, code, logo: await hashFile(join(here, '../ui/public/icons/icon-512.png')), shapes: await hashFile(join(here, '../ui/public/icon.svg')) };
   const results = new Array(plan.shots.length), inFlight = new Map();
   await pool(plan.shots, async (original, index) => {
     try {
@@ -146,13 +151,15 @@ export async function cut(args = process.argv.slice(2)) {
   const report = { ...format, results, failed: results.filter(r => r.error).length };
   await writeFile(`${opts.out}.json`, JSON.stringify(report, null, 2) + '\n');
   if (report.failed) throw new Error(`${report.failed} shot(s) failed; successful cuts retained. Film was not joined.`);
+  opts.duration=Math.round(plan.duration*1000)/1000;opts.fps=format.fps;
   await joinShots(results, opts);
   let cursor = 0;
   const times = results.map(r => {
-    const line = `${(cursor / format.fps).toFixed(3)}\t${r.id}\t${(r.frames / format.fps).toFixed(3)}`;
+    const remaining=opts.duration-cursor/format.fps;
+    const line = `${(cursor / format.fps).toFixed(3)}\t${r.id}\t${Math.min(r.frames/format.fps,remaining).toFixed(3)}`;
     cursor += r.frames; return line;
   });
-  await writeFile(opts.out.replace(/\.mp4$/, '.times.txt'), 'start_seconds\tshot_id\tduration_seconds\n' + times.join('\n') + `\n${(cursor / format.fps).toFixed(3)}\tEND\t0.000\n`);
+  await writeFile(opts.out.replace(/\.mp4$/, '.times.txt'), 'start_seconds\tshot_id\tduration_seconds\n' + times.join('\n') + `\n${opts.duration.toFixed(3)}\tEND\t0.000\n`);
   console.log(`JOINED ${results.length} shots: ${opts.out}`);
   return report;
 }
