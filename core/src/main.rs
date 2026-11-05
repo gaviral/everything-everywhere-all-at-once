@@ -121,6 +121,7 @@ pub struct Core {
     pub http: reqwest::Client,
     /// When the person last spoke or typed; background work waits for a pause.
     last_activity: std::sync::atomic::AtomicU64,
+    pub pictures: pictures::Runtime,
     /// Set when the person comes back to the window (e.g. opens their eyes).
     looked: std::sync::atomic::AtomicBool,
     /// Wakes the background passes early.
@@ -1555,6 +1556,7 @@ async fn main() -> anyhow::Result<()> {
             .timeout(std::time::Duration::from_secs(120))
             .build()?,
         last_activity: std::sync::atomic::AtomicU64::new(0),
+        pictures: Default::default(),
         looked: std::sync::atomic::AtomicBool::new(false),
         wake: tokio::sync::Notify::new(),
         imports: import::Imports::default(),
@@ -1923,6 +1925,28 @@ impl Seat {
     }
 }
 
+/// Streams may observe only a name already joined from this connection's address.
+fn owns_stream(core: &Core, name: &str, link: Link) -> bool {
+    if speaker_name(name, link.here()) != name { return false; }
+    let Some(room) = &core.room else {
+        return link.here() && core.hosts.lock().unwrap().contains(name);
+    };
+    let names = room.names.lock().unwrap();
+    if link.here() { names.host.contains(&name.to_lowercase()) }
+    else { names.guests.get(&name.to_lowercase()).is_some_and(|(ip, count)| *count > 0 && *ip == link.from.ip()) }
+}
+
+/// Recheck ownership before every delivered turn, so a departed guest's stream cannot hear a new holder.
+fn owned_turn_stream(core: Arc<Core>, name: String, link: Link, rx: mpsc::UnboundedReceiver<String>)
+    -> impl futures_util::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>
+{
+    futures_util::stream::unfold((rx, core, name), move |(mut rx, core, name)| async move {
+        let text = rx.recv().await?;
+        if !owns_stream(&core, &name, link) { return None; }
+        Some((Ok(axum::response::sse::Event::default().data(text)), (rx, core, name)))
+    })
+}
+
 impl Drop for Seat {
     fn drop(&mut self) {
         let (Some(room), Some(name)) = (&self.core.room, &self.guest) else { return };
@@ -2164,6 +2188,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
     let review = Arc::new(Mutex::new(annotate::PointReview::default()));
     let mut shorter: Option<tokio::task::JoinHandle<()>> = None;
 
+    let mut picture_subscription = pictures::Subscription::new(core.clone());
     let saved_answers = Arc::new(Mutex::new(explain::SavedSession::default()));
     let mut corrections_on = false;
     let mut agreement_on = false;
@@ -2361,6 +2386,7 @@ async fn session(socket: WebSocket, core: Arc<Core>, speaker: String, here: bool
                 Ok(ClientMsg::Sample { name }) => sample::fill(&core, &speaker, name.as_deref()),
                 Ok(ClientMsg::Focus { thread_id }) => core.focus(&speaker, &thread_id),
                 Ok(ClientMsg::Stay { thread_id }) => { stay::set(&core, &speaker, thread_id.as_deref()); }
+                Ok(ClientMsg::Pictures { on }) => picture_subscription.switch(on),
                 Ok(ClientMsg::SavedAnswers { on }) => saved_answers.lock().unwrap().switch(on && !ai && !remote),
                 Ok(ClientMsg::KeepAnswer { id, extra }) => {
                     if extra.is_empty() { explain::keep(&core, &speaker, &saved_answers, &id); }
@@ -2668,6 +2694,7 @@ impl Core {
                 HTTP.get_or_init(reqwest::Client::new).clone()
             },
             last_activity: Default::default(),
+            pictures: Default::default(),
             looked: Default::default(),
             wake: Default::default(),
             imports: Default::default(),
@@ -2711,6 +2738,38 @@ mod tests {
         let (journal, _) = crate::Journal::open(&path).unwrap();
         let (placer_queue, queue) = mpsc::unbounded_channel();
         (Arc::new(Core { placer_queue, ..Core::test(journal, world) }), queue, path)
+    }
+
+    #[tokio::test]
+    async fn audit_streams_require_the_joined_owner_and_pictures_require_opt_in() {
+        let (core, _, _) = test_core(Some("synthetic-room"));
+        let host = Link { from: "127.0.0.1:10001".parse().unwrap(), to: "127.0.0.1:4321".parse().unwrap(), tls: false };
+        let guest = Link { from: "192.0.2.10:10001".parse().unwrap(), ..host };
+        let other = Link { from: "192.0.2.11:10001".parse().unwrap(), ..host };
+        let _host = Seat::take(&core, "you", host).unwrap();
+        let guest_seat = Seat::take(&core, "Sam", guest).unwrap();
+        for (name, link, allowed) in [("you", guest, false), ("Sam", other, false), ("Unknown", guest, false), ("Sam", guest, true), ("you", host, true)] {
+            let flow = crate::flow::turns(axum::extract::State(core.clone()), axum::extract::ConnectInfo(link), axum::extract::Query(serde_json::from_value(serde_json::json!({"name":name})).unwrap())).await;
+            let workshop = crate::workshop::turns(axum::extract::State(core.clone()), axum::extract::ConnectInfo(link), axum::extract::Query(serde_json::from_value(serde_json::json!({"name":name})).unwrap())).await;
+            assert_eq!(flow.status().is_success(), allowed, "Flow: {name}");
+            assert_eq!(workshop.status().is_success(), allowed, "Workshop: {name}");
+        }
+        drop(guest_seat);
+        assert!(!super::owns_stream(&core, "Sam", guest));
+        let _new_holder = Seat::take(&core, "Sam", other).unwrap();
+        let (tx, rx) = mpsc::unbounded_channel();
+        let old_stream = super::owned_turn_stream(core.clone(), "Sam".into(), guest, rx);
+        futures_util::pin_mut!(old_stream);
+        tx.send("The new holder's private turn".into()).unwrap();
+        assert!(old_stream.next().await.is_none(), "an old stream cannot hear a new holder");
+        assert!(!core.pictures.enabled(), "keyed startup does not opt into pictures");
+        let mut a = crate::pictures::Subscription::new(core.clone());
+        let mut b = crate::pictures::Subscription::new(core.clone());
+        a.switch(true); a.switch(true); b.switch(true);
+        a.switch(false);
+        assert!(core.pictures.enabled(), "another window still has Pictures on");
+        drop(b);
+        assert!(!core.pictures.enabled(), "disconnect releases the remaining opt-in");
     }
 
     fn asks_agreement_fixture() -> (Arc<Core>, mpsc::UnboundedReceiver<Job>, std::path::PathBuf) {

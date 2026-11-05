@@ -1099,6 +1099,10 @@ export function useCore(speaker?: string) {
       }
     };
     const unwatchSaved = watchBuiltIns(savedPreference);
+    const picturesPreference = () => {
+      if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(JSON.stringify({ type: "pictures", on: builtInOn("pictures") }));
+    };
+    const unwatchPictures = watchBuiltIns(picturesPreference);
     const agreementPreference = () => {
       if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(JSON.stringify({ type: "agreement_switch", on: builtInOn("explicit-agreement") }));
       if (!builtInOn("explicit-agreement")) { agreementPending.current.clear(); setAgreementStatus({}); }
@@ -1133,6 +1137,7 @@ export function useCore(speaker?: string) {
         if (discussionOn.current) ws.send(JSON.stringify({ type: "discussion_feature", on: true }));
         savedWasOn = false;
         savedPreference();
+        picturesPreference();
         if (estimatesOn.current) ws.send(JSON.stringify({ type: "action_estimates", on: true }));
         resetApps();
         resetSteps();
@@ -1536,6 +1541,7 @@ export function useCore(speaker?: string) {
       connectReplyFormat(null);
       resetReplyFormat();
       unwatchSaved();
+      unwatchPictures();
       unwatchAgreement();
       agreementPending.current.clear();
       closed = true;

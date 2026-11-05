@@ -63,6 +63,26 @@ struct Attempt {
     retry_after: u64,
 }
 
+#[derive(Default)]
+pub struct Runtime { subscribers: std::sync::atomic::AtomicUsize }
+impl Runtime {
+    pub(crate) fn enabled(&self) -> bool { self.subscribers.load(std::sync::atomic::Ordering::SeqCst) > 0 }
+}
+
+/// A connection's switch is released on disconnect, including aborted sessions.
+pub struct Subscription { core: Arc<Core>, on: bool }
+impl Subscription {
+    pub fn new(core: Arc<Core>) -> Self { Self { core, on: false } }
+    pub fn switch(&mut self, on: bool) {
+        use std::sync::atomic::Ordering;
+        if on == self.on { return; }
+        if on { self.core.pictures.subscribers.fetch_add(1, Ordering::SeqCst); }
+        else { self.core.pictures.subscribers.fetch_sub(1, Ordering::SeqCst); }
+        self.on = on;
+    }
+}
+impl Drop for Subscription { fn drop(&mut self) { self.switch(false); } }
+
 pub async fn run(core: Arc<Core>, dir: PathBuf) {
     // `PICTURES=off` draws none, for a test that isn't about pictures or anyone who doesn't want them (pictures were
     // a third of the API spend in a night of tests); threads keep their letter tiles.
@@ -87,7 +107,7 @@ pub async fn run(core: Arc<Core>, dir: PathBuf) {
                         // A merge or another completed draw mustn't have its picture overwritten.
                         let world = core.snapshot();
                         let id = world.resolve(&id);
-                        if world.thread(&id).is_some_and(|t| t.picture.is_none()) {
+                        if core.pictures.enabled() && world.thread(&id).is_some_and(|t| t.picture.is_none()) {
                             core.commit(vec![Change::ThreadPicture { thread_id: id, path }]);
                         }
                     }
@@ -97,6 +117,14 @@ pub async fn run(core: Arc<Core>, dir: PathBuf) {
                     }
                 }
             }
+        }
+        if !core.pictures.enabled() {
+            drawing.clear();
+            for attempt in attempts.values_mut().filter(|a| a.in_flight) {
+                attempt.in_flight = false;
+                attempt.count = attempt.count.saturating_sub(1);
+            }
+            continue;
         }
         if core.key().is_err() {
             continue;
@@ -200,6 +228,7 @@ fn family(world: &World, thread: &Thread) -> &'static str {
 }
 
 async fn draw(core: &Core, dir: &Path, thread: &Thread, prompt: &str) -> anyhow::Result<String> {
+    anyhow::ensure!(core.pictures.enabled(), "Pictures is off");
     let body = serde_json::json!({
         "model": "muse-image-1.0",
         "prompt": prompt,
