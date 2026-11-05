@@ -21,3 +21,5 @@ All captures are 1920 × 1080, with labelled synthetic example content and the m
 | Light | [Before](look-restore-before-light.png) | [Restored](look-restore-light.png) |
 
 Validation: `npm run build` passed (existing large-chunk warning). `node scripts/look-restore-check.mjs --before` captured the baseline after correcting a nonexistent button selector to the T shortcut. `node scripts/look-restore-check.mjs` passed: visible example and chat, warm rendered colours, at least 4.5:1 text/accent contrast, Warm paper default, and all light Look options. Captures were visually inspected. `git diff --check` passed. The updated shell/guide suites were not run; only the focused check was run. No `preflight.sh` exists in this repository.
+
+New check runs write screenshots to a temporary directory and print its path. Set `LOOK_RESTORE_SHOTS` to choose an output directory; the retained comparison images above are not overwritten by default.

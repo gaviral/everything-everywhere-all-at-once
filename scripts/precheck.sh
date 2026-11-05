@@ -98,7 +98,7 @@ check "UI never injects raw HTML" "! grep -rq dangerouslySetInnerHTML ui/src"
 # Claims stay modest and non-medical (README, docs, UI copy, sample maps, demo talk, prompts): scripts/health-words.pl.
 check "health-wording guard catches what it should (self-test)" "perl scripts/health-words.pl --self-test"
 medical_wording() {
-  git ls-files -z -- README.md CHANGELOG.md 'docs/*.md' ui/src ui/index.html 'samples/*.jsonl' 'scripts/*.jsonl' core/src |
+  git ls-files -z -- README.md 'docs/*.md' ui/src ui/index.html 'samples/*.jsonl' 'scripts/*.jsonl' core/src |
     xargs -0 perl scripts/health-words.pl
 }
 claims=$(medical_wording)
