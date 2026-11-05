@@ -75,6 +75,8 @@ function inspect({ stamp, state, width, controlsOnly = false }) {
   for (const e of all("input,textarea")) if (e.closest(scope) && shown(e) && (e.value || e.placeholder)) type(e, e.value || e.placeholder);
   for (const e of all('button,a[href],summary,[role="button"],[role="switch"],[role="tab"],[role="menuitem"],[role="option"],input,textarea')) {
     if (!e.closest(scope) || !shown(e) || e.matches(":disabled") || e.closest('[aria-disabled="true"], [inert]')) continue;
+    // Full screen uses native button activation and the browser's own exit keys.
+    if (e.matches("button.shell-fullscreen")) continue;
     // Keycaps may be aria-hidden: they are a visual key, with a separate accessible control name.
     if (!e.querySelector(".keycap,kbd") && !e.getAttribute("aria-keyshortcuts")?.trim() && !e.closest("[data-key],.sample-tools")) fail(e, `no key on ${name(e)}`);
   }

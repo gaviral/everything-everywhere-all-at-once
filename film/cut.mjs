@@ -105,15 +105,16 @@ async function pool(items, work) {
     while (cursor < items.length) { const index = cursor++; await work(items[index], index); }
   }));
 }
-async function joinShots(results, opts) {
+export async function joinShots(results, opts) {
   const list = join(opts.cuts, `join-${randomUUID()}.ffconcat`);
-  await writeFile(list, 'ffconcat version 1.0\n' + results.map(r => `file '${r.file.replaceAll("'", "'\\''")}'`).join('\n') + '\n');
+  await writeFile(list, 'ffconcat version 1.0\n' + results.map(r => `file '${r.file.replaceAll("'", "'\\''")}'\nduration ${(r.frames / opts.fps).toFixed(12)}`).join('\n') + '\n');
   const partial = opts.out.replace(/\.mp4$/, `.${randomUUID()}.partial.mp4`);
   const frameCount=results.reduce((n,r)=>n+r.frames,0);
   const lastPTS=Math.round((frameCount-1)*90000/opts.fps);
   const tail=Math.round(opts.duration*90000)-lastPTS;
   if(tail<=0 || tail>Math.ceil(90000/opts.fps)) throw new Error('Last-frame duration is outside one frame');
-  const timing=`setts=pts=PTS:dts=DTS:duration=if(gte(PTS\\,${lastPTS})\\,${tail}\\,DURATION)`;
+  const targetTicks=Math.round(opts.duration*90000);
+  const timing=`setts=pts=PTS:dts=DTS:duration=if(gte(PTS\\,${targetTicks-Math.ceil(90000/opts.fps)})\\,${targetTicks}-PTS\\,DURATION)`;
   run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-n', '-f', 'concat', '-safe', '0', '-i', list, '-map', '0:v:0', '-c', 'copy', '-bsf:v', timing, '-movie_timescale', '1000', '-movflags', '+faststart', partial]);
   // Preserve previous review versions rather than overwriting them.
   try { await rename(opts.out, opts.out.replace(/\.mp4$/, `.previous-${randomUUID()}.mp4`)); } catch (e) { if (e.code !== 'ENOENT') throw e; }

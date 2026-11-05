@@ -69,6 +69,10 @@ async function checkSize(width, height) {
     await page('Input.insertText', { text: 'Keep the garden draft' });
     await click('[data-guide="catalog"]');
     assert.ok(await until(`!!document.querySelector('[data-row="topic-images"] [role="switch"]')`));
+    const attribution = '[data-row="quiet-solo-attribution"] [role="switch"]';
+    assert.equal(await evaluate(`document.querySelector('${attribution}').getAttribute('aria-checked')`), 'false');
+    await click(attribution);
+    assert.ok(await until(`!document.querySelector('.spine-point > .spine-text > .spine-speaker')`), 'quiet solo attribution hides repeated labels when enabled');
     const images = '[data-row="topic-images"] [role="switch"]';
     assert.equal(await evaluate(`document.querySelector('${images}').getAttribute('aria-checked')`), 'false');
     await click(images);

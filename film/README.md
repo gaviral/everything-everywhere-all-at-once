@@ -4,6 +4,10 @@ An offline, shot-driven film renderer. Requires Node 22+, Chrome, FFmpeg and
 FFprobe on PATH. Set `CHROME_PATH` if Chrome is outside its usual installation.
 No packages, network services, microphone, or model runtime are involved.
 
+The demo film's narration is a third-party synthetic voice (Deepgram Aura), used
+for the film only; the app itself calls Meta models only. Narration provenance
+and media-rights review remain separate from rendering checks.
+
 ```sh
 node film/cut.mjs /path/to/shots.json --preview --out /path/to/preview.mp4
 node film/cut.mjs /path/to/shots.json --final --out /path/to/final.mp4
@@ -60,6 +64,21 @@ Decision: Chrome DevTools runs over an inherited pipe, so rendering opens no
 listening ports. Scratch Chrome profiles remain in the system temporary
 directory; takes remain under the ignored `renders/` folder. No shared app
 files or dependencies change.
+
+## Live app clips
+
+[The live clip recorder](../scripts/film-capture.mjs) captures the app in an
+isolated local core and Chrome profile. Set `FILM_OUT` to an external media
+directory, plus `FILM_KEYCHAIN_SERVICE` and `FILM_KEYCHAIN_ACCOUNT` for the Meta
+key, then run `node scripts/film-capture.mjs`. These captures make live Meta
+calls. `FILM_URL` can select an already-running isolated local core.
+
+`FILM_CLIPS=ask,crew` selects individual clips and prepares their required
+thought or sketch. Crew captures check that the board keeps the supplied
+Saturday without inventing another weekday. `FILM_SPOKEN=1` uses supplied WAVs
+from `FILM_VOICE_DIR` through Chrome's file-backed audio device, without a
+physical microphone. Review the recorded checks and footage before using a
+clip in the film.
 
 ## Feature wall
 
