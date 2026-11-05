@@ -22,12 +22,12 @@ const threads = [thread("T1", "Garden plans"), thread("T2", "Weekend picnic"), t
 const empty = { threads: [], thoughts: [], active: null, active_by: {}, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: true, recaps: [], notes: {}, proposals: [] };
 const world = { ...empty, threads, thoughts: threads.map((t, i) => thought(`p${i}`, `A distinct point about ${t.title.toLowerCase()}`, t.id)), active: "T1", active_by: { you: "T1" } };
 const scenes = [
-  { name: "guest", world: empty, stamp: "GUEST", state: "Mic off", door: { room: false, member: true, hosted: true, sample: true } },
-  { name: "no-key", world: empty, stamp: null, state: "No AI key", notice: { type: "notice", message: "MODEL_API_KEY is not set: listening and placement are off." } },
-  { name: "map", world, stamp: null, state: "Mic off" },
-  { name: "countdown", world, stamp: null, state: "Mic off" },
-  { name: "sample", world, stamp: "SAMPLE", state: "Mic off", query: "&sample" },
-  { name: "demo", world, stamp: "DEMO", state: "Mic off", query: "&demo" },
+  { name: "guest", world: empty, stamp: "GUEST", state: "Start listening", door: { room: false, member: true, hosted: true, sample: true } },
+  { name: "no-key", world: empty, stamp: null, state: "Start listening, needs an AI key", notice: { type: "notice", message: "MODEL_API_KEY is not set: listening and placement are off." } },
+  { name: "map", world, stamp: null, state: "Start listening" },
+  { name: "countdown", world, stamp: null, state: "Start listening" },
+  { name: "sample", world, stamp: "SAMPLE", state: "Start listening", query: "&sample" },
+  { name: "demo", world, stamp: "DEMO", state: "Start listening", query: "&demo" },
 ];
 
 // Kept in the page: measure actual text and controls, not guesses from source files or class names.
@@ -75,6 +75,8 @@ function inspect({ stamp, state, width, controlsOnly = false }) {
   for (const e of all("input,textarea")) if (e.closest(scope) && shown(e) && (e.value || e.placeholder)) type(e, e.value || e.placeholder);
   for (const e of all('button,a[href],summary,[role="button"],[role="switch"],[role="tab"],[role="menuitem"],[role="option"],input,textarea')) {
     if (!e.closest(scope) || !shown(e) || e.matches(":disabled") || e.closest('[aria-disabled="true"], [inert]')) continue;
+    // Full screen uses native button activation and the browser's own exit keys.
+    if (e.matches("button.shell-fullscreen")) continue;
     // Keycaps may be aria-hidden: they are a visual key, with a separate accessible control name.
     if (!e.querySelector(".keycap,kbd") && !e.getAttribute("aria-keyshortcuts")?.trim() && !e.closest("[data-key],.sample-tools")) fail(e, `no key on ${name(e)}`);
   }
@@ -125,13 +127,14 @@ function inspect({ stamp, state, width, controlsOnly = false }) {
   if (status) {
     const r = status.getBoundingClientRect();
     const capture = document.querySelector('[data-map-capture="active"]');
-    const composer = capture?.querySelector('.shell-composer'), field = composer?.querySelector('textarea'), mic = composer?.querySelector('.mic');
-    if (!composer || !field || !mic) out.add('capture: missing input or microphone on the map');
+    const composer = capture?.querySelector('.shell-composer'), field = composer?.querySelector('textarea'), mic = document.querySelector('.mic-corner .mic');
+    if (!composer || !field || !mic) out.add('capture: missing input or corner microphone');
     else {
       const c = capture.getBoundingClientRect(), f = field.getBoundingClientRect(), m = mic.getBoundingClientRect();
       if (f.width < 160 || m.width < 36 || f.left < c.left || f.right > c.right + 1) out.add('capture: unusable input or microphone');
-      const stateText = normal(textNodes.filter(n => capture.contains(n)).map(n => n.textContent).join(' ')).toLowerCase();
-      if (!stateText.includes(state.toLowerCase())) out.add(`capture: expected state ${state}, got ${stateText}`);
+      if (composer.querySelector('.mic')) out.add('capture: microphone is inside composer');
+      if (/mic off|mic blocked|enter adds/i.test(composer.textContent + field.placeholder)) out.add('capture: status leaked into composer');
+      if (mic.getAttribute('aria-label') !== state) out.add(`microphone: expected ${state}`);
     }
     if (Math.abs(r.bottom - innerHeight) > 0.5) out.add(`status: bottom ${r.bottom}px, expected ${innerHeight}px`);
   }

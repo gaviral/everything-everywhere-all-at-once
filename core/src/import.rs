@@ -1844,6 +1844,14 @@ mod tests {
         let mut updates = f.core.updates.subscribe();
         f.core.commit(vec![Change::ThoughtAdded { thought: point }, Change::MessagesRead { at_ms: Vec::new(), keys: keys.clone() }]);
         assert!(matches!(updates.try_recv().unwrap().message, ServerMsg::Change { change: Change::ThoughtAdded { .. } }));
+        match updates.try_recv().unwrap().message {
+            ServerMsg::Change { change: Change::AgreementSource { thought_id, revision } } => {
+                assert_eq!(thought_id, "th-1");
+                assert_eq!(revision, f.core.snapshot().agreements[&thought_id].revision);
+                assert!(!revision.is_empty());
+            }
+            _ => panic!("expected broadcast of the imported thought's source revision"),
+        }
         let read = match updates.try_recv().unwrap().message {
             ServerMsg::Change { change: Change::MessagesRead { at_ms, keys } } => Change::MessagesRead { at_ms, keys },
             _ => panic!("expected broadcast of message hashes"),
@@ -1851,7 +1859,8 @@ mod tests {
         let record = json!({ "type": "messages_read", "keys": keys });
         assert_eq!(serde_json::to_value(read).unwrap(), record, "the broadcast contains only hashes, without message text or times");
         let lines = std::fs::read_to_string(&f.path).unwrap();
-        assert_eq!(serde_json::from_str::<Value>(lines.lines().last().unwrap()).unwrap(), record, "the journal also contains only hashes");
+        let recorded = crate::world::journal_record(lines.lines().last().unwrap().as_bytes(), true).unwrap();
+        assert_eq!(recorded.last().unwrap().1, record, "the journal's read record also contains only hashes");
         assert!(!lines.contains("thanks!"), "a message that gave no point must not gain journaled text");
         assert!(serde_json::to_value(f.core.snapshot()).unwrap().get("read_keys").is_none(), "hashes stay out of snapshots");
         assert_eq!(known(&f.core.snapshot()).keys, keys.iter().cloned().collect());

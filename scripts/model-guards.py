@@ -1,6 +1,7 @@
 """Zero-token guards on the app's model calls, run by precheck.sh (and so by every push).
-meta-only: the hackathon rule, from the organizers in writing: every model the project calls at runtime must be a
-  Meta model. Fails when the app's code names a non-Meta model SDK, a non-Meta model endpoint or a non-Meta model, or
+meta-only: this project's runtime policy: every model the project calls at runtime must be a Meta model.
+  The event requires meaningful Meta use; this guard enforces the project's stricter Meta-only choice.
+  Fails when the app's code names a non-Meta model SDK, a non-Meta model endpoint or a non-Meta model, or
   when the core or the UI talks to any outside host but Meta's API. Coding tools used while building are allowed and
   aren't checked here; names of other chat apps (an import reads ChatGPT and Claude exports) are words, not calls.
 counted: every model call counts toward the core's hourly cap (model.rs CALLS_PER_HOUR): only `call_model_noting`

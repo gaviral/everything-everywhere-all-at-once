@@ -5,13 +5,15 @@ terms, copyrights and notices. This inventory records the exact checked-in
 `ui/package-lock.json` and `core/Cargo.lock`; it does not relicense dependencies.
 
 Original source licence, copyright, AUTHORS and NOTICE files are preserved byte
-for byte under [dependency-licences](dependency-licences/). Each package record in
+for byte under [dependency-licences](dependency-licences/); Git line-ending conversion
+is disabled for that evidence. Each package record in
 [inventory.json](dependency-licences/inventory.json) includes its exact source,
 lock integrity/checksum, original metadata SPDX expression, selected licence,
 distribution category, evidence paths and SHA-256 hashes. Embedded copyright and
 licence comments are preserved verbatim in `embedded-source-notices.json`, with
 source file, line and full source hash. These supplementary extracts retain source
 notices; they do not replace the original source or establish an exhaustive legal audit.
+Inventory repository links use public HTTPS; retained package metadata is unmodified.
 
 For alternative licences, this record selects MIT when offered, otherwise the
 first stated alternative. Legacy Cargo `MIT/Apache-2.0` and `Apache-2.0 / MIT`
@@ -44,9 +46,11 @@ packaging must carry the applicable notices and required texts when that work oc
 
 ## Evidence and open sources
 
-Only local lock-matched cached archives were read, with SHA-512 npm integrity or
-Cargo SHA-256 checksum verification. No packages were installed or fetched. There
-are 314 third-party entries: 93 npm and 221 Cargo; the local app packages are excluded.
+The original records used local lock-matched cached archives. The 32 added npm
+records for QR-code support use exact archives fetched from the npm registry,
+verified against the lockfile integrity before retaining their original notices.
+No packages were installed. There are 346 third-party entries: 125 npm and 221
+Cargo; the local app packages are excluded.
 Of these, 46 have explicit evidence gaps: 43 npm platform archives are unavailable,
 `@rolldown/binding-darwin-arm64` has no standalone licence text, and the published
 `valuable` and `yasna` archives omit full licence texts. Their available metadata
@@ -75,8 +79,8 @@ this snapshot; changing a lock requires refreshing this inventory and its texts.
 `python3 -B scripts/dependency-licences-check-test.py` runs read-only regression
 checks, including omitted-notice cases for both the static and cached-source checks.
 
-- `ui/package-lock.json` SHA-256: `a8da8c538c028f7128dd63d4c70e7943d05eda0cb4aa56f2af7a2bfbb131bf59`
-- `core/Cargo.lock` SHA-256: `1a36e0a614e29dc3596285963c34d7948e04c820db8e2670e72a0f582803e9ba`
+- `ui/package-lock.json` SHA-256: `128729d9de1ade90ed2bc687b3c0e761ba4f3e065832006b66b6b18736e777d3`
+- `core/Cargo.lock` SHA-256: `dea32a133b145f81dac72138135ed02b969e5edab3f6257e0fcdf57ee4ff1767`
 
 ## Exact inventory
 
@@ -105,6 +109,8 @@ checks, including omitted-notice cases for both the static and cached-source che
 | `@types/d3-selection` | 3.0.12 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/@types__d3-selection@3.0.12/) |
 | `@types/d3-transition` | 3.0.9 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/@types__d3-transition@3.0.9/) |
 | `@types/d3-zoom` | 3.0.9 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/@types__d3-zoom@3.0.9/) |
+| `@types/node` | 26.6.6 | MIT | MIT | build-only (lock dev=true) | [texts/metadata](dependency-licences/npm/@types__node@26.6.6/) |
+| `@types/qrcode` | 1.5.6 | MIT | MIT | build-only (lock dev=true) | [texts/metadata](dependency-licences/npm/@types__qrcode@1.5.6/) |
 | `@types/react` | 19.3.0 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/@types__react@19.3.0/) |
 | `@types/react-dom` | 19.3.0 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/@types__react-dom@19.3.0/) |
 | `@typescript/typescript-aix-ppc64` | 7.0.2 | Apache-2.0 | Apache-2.0 | build-only (lock dev=true) | [missing source](dependency-licences/UNRESOLVED.md) |
@@ -130,7 +136,13 @@ checks, including omitted-notice cases for both the static and cached-source che
 | `@vitejs/plugin-react` | 6.1.2 | MIT | MIT | build-only (lock dev=true) | [texts/metadata](dependency-licences/npm/@vitejs__plugin-react@6.1.2/) |
 | `@xyflow/react` | 12.12.0 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/@xyflow__react@12.12.0/) |
 | `@xyflow/system` | 0.0.83 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/@xyflow__system@0.0.83/) |
+| `ansi-regex` | 5.0.1 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/ansi-regex@5.0.1/) |
+| `ansi-styles` | 4.3.0 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/ansi-styles@4.3.0/) |
+| `camelcase` | 5.3.1 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/camelcase@5.3.1/) |
 | `classcat` | 5.0.5 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/classcat@5.0.5/) |
+| `cliui` | 6.0.0 | ISC | ISC | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/cliui@6.0.0/) |
+| `color-convert` | 2.0.1 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/color-convert@2.0.1/) |
+| `color-name` | 1.1.4 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/color-name@1.1.4/) |
 | `csstype` | 3.2.3 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/csstype@3.2.3/) |
 | `d3-color` | 3.1.0 | ISC | ISC | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/d3-color@3.1.0/) |
 | `d3-dispatch` | 3.0.1 | ISC | ISC | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/d3-dispatch@3.0.1/) |
@@ -141,10 +153,16 @@ checks, including omitted-notice cases for both the static and cached-source che
 | `d3-timer` | 3.0.1 | ISC | ISC | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/d3-timer@3.0.1/) |
 | `d3-transition` | 3.0.1 | ISC | ISC | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/d3-transition@3.0.1/) |
 | `d3-zoom` | 3.0.0 | ISC | ISC | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/d3-zoom@3.0.0/) |
+| `decamelize` | 1.2.0 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/decamelize@1.2.0/) |
 | `detect-libc` | 2.1.2 | Apache-2.0 | Apache-2.0 | build-only (lock dev=true) | [texts/metadata](dependency-licences/npm/detect-libc@2.1.2/) |
+| `dijkstrajs` | 1.0.3 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/dijkstrajs@1.0.3/) |
+| `emoji-regex` | 8.0.0 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/emoji-regex@8.0.0/) |
 | `fdir` | 6.5.0 | MIT | MIT | build-only (lock dev=true) | [texts/metadata](dependency-licences/npm/fdir@6.5.0/) |
+| `find-up` | 4.1.0 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/find-up@4.1.0/) |
 | `framer-motion` | 14.9.0 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/framer-motion@14.9.0/) |
 | `fsevents` | 2.3.3 | MIT | MIT | build-only (lock dev=true) | [texts/metadata](dependency-licences/npm/fsevents@2.3.3/) |
+| `get-caller-file` | 2.0.5 | ISC | ISC | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/get-caller-file@2.0.5/) |
+| `is-fullwidth-code-point` | 3.0.0 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/is-fullwidth-code-point@3.0.0/) |
 | `lightningcss` | 1.33.0 | MPL-2.0 | MPL-2.0 | build-only (lock dev=true) | [texts/metadata](dependency-licences/npm/lightningcss@1.33.0/) |
 | `lightningcss-android-arm64` | 1.33.0 | MPL-2.0 | MPL-2.0 | build-only (lock dev=true) | [missing source](dependency-licences/UNRESOLVED.md) |
 | `lightningcss-darwin-arm64` | 1.33.0 | MPL-2.0 | MPL-2.0 | build-only (lock dev=true) | [texts/metadata](dependency-licences/npm/lightningcss-darwin-arm64@1.33.0/) |
@@ -157,23 +175,41 @@ checks, including omitted-notice cases for both the static and cached-source che
 | `lightningcss-linux-x64-musl` | 1.33.0 | MPL-2.0 | MPL-2.0 | build-only (lock dev=true) | [missing source](dependency-licences/UNRESOLVED.md) |
 | `lightningcss-win32-arm64-msvc` | 1.33.0 | MPL-2.0 | MPL-2.0 | build-only (lock dev=true) | [missing source](dependency-licences/UNRESOLVED.md) |
 | `lightningcss-win32-x64-msvc` | 1.33.0 | MPL-2.0 | MPL-2.0 | build-only (lock dev=true) | [missing source](dependency-licences/UNRESOLVED.md) |
+| `locate-path` | 5.0.0 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/locate-path@5.0.0/) |
 | `motion` | 14.9.0 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/motion@14.9.0/) |
 | `motion-dom` | 14.9.0 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/motion-dom@14.9.0/) |
 | `motion-utils` | 14.7.0 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/motion-utils@14.7.0/) |
 | `nanoid` | 3.3.20 | MIT | MIT | build-only (lock dev=true) | [texts/metadata](dependency-licences/npm/nanoid@3.3.20/) |
+| `p-limit` | 2.3.0 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/p-limit@2.3.0/) |
+| `p-locate` | 4.1.0 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/p-locate@4.1.0/) |
+| `p-try` | 2.2.0 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/p-try@2.2.0/) |
+| `path-exists` | 4.0.0 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/path-exists@4.0.0/) |
 | `picocolors` | 1.1.1 | ISC | ISC | build-only (lock dev=true) | [texts/metadata](dependency-licences/npm/picocolors@1.1.1/) |
 | `picomatch` | 4.0.7 | MIT | MIT | build-only (lock dev=true) | [texts/metadata](dependency-licences/npm/picomatch@4.0.7/) |
+| `pngjs` | 5.0.0 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/pngjs@5.0.0/) |
 | `postcss` | 8.5.32 | MIT | MIT | build-only (lock dev=true) | [texts/metadata](dependency-licences/npm/postcss@8.5.32/) |
+| `qrcode` | 1.5.4 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/qrcode@1.5.4/) |
 | `react` | 19.3.1 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/react@19.3.1/) |
 | `react-dom` | 19.3.1 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/react-dom@19.3.1/) |
+| `require-directory` | 2.1.1 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/require-directory@2.1.1/) |
+| `require-main-filename` | 2.0.0 | ISC | ISC | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/require-main-filename@2.0.0/) |
 | `rolldown` | 1.2.16 | MIT | MIT | build-only (lock dev=true) | [texts/metadata](dependency-licences/npm/rolldown@1.2.16/) |
 | `scheduler` | 0.28.0 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/scheduler@0.28.0/) |
+| `set-blocking` | 2.0.0 | ISC | ISC | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/set-blocking@2.0.0/) |
 | `source-map-js` | 1.2.2 | BSD-3-Clause | BSD-3-Clause | build-only (lock dev=true) | [texts/metadata](dependency-licences/npm/source-map-js@1.2.2/) |
+| `string-width` | 4.2.3 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/string-width@4.2.3/) |
+| `strip-ansi` | 6.0.1 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/strip-ansi@6.0.1/) |
 | `tinyglobby` | 0.2.17 | MIT | MIT | build-only (lock dev=true) | [texts/metadata](dependency-licences/npm/tinyglobby@0.2.17/) |
 | `tslib` | 2.9.1 | 0BSD | 0BSD | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/tslib@2.9.1/) |
 | `typescript` | 7.0.2 | Apache-2.0 | Apache-2.0 | build-only (lock dev=true) | [texts/metadata](dependency-licences/npm/typescript@7.0.2/) |
+| `undici-types` | 8.9.0 | MIT | MIT | build-only (lock dev=true) | [texts/metadata](dependency-licences/npm/undici-types@8.9.0/) |
 | `use-sync-external-store` | 1.7.0 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/use-sync-external-store@1.7.0/) |
 | `vite` | 8.3.5 | MIT | MIT | build-only (lock dev=true) | [texts/metadata](dependency-licences/npm/vite@8.3.5/) |
+| `which-module` | 2.0.1 | ISC | ISC | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/which-module@2.0.1/) |
+| `wrap-ansi` | 6.2.0 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/wrap-ansi@6.2.0/) |
+| `y18n` | 4.0.3 | ISC | ISC | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/y18n@4.0.3/) |
+| `yargs` | 15.4.1 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/yargs@15.4.1/) |
+| `yargs-parser` | 18.1.3 | ISC | ISC | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/yargs-parser@18.1.3/) |
 | `zustand` | 4.5.7 | MIT | MIT | UI runtime candidate (lock dev not true; exact bundle inclusion unverified) | [texts/metadata](dependency-licences/npm/zustand@4.5.7/) |
 | `aho-corasick` | 1.1.5 | Unlicense OR MIT | MIT | core dependency candidate (target/features and build-support inclusion unverified) | [texts/metadata](dependency-licences/cargo/aho-corasick@1.1.5/) |
 | `anyhow` | 1.0.104 | MIT OR Apache-2.0 | MIT | core dependency candidate (target/features and build-support inclusion unverified) | [texts/metadata](dependency-licences/cargo/anyhow@1.0.104/) |

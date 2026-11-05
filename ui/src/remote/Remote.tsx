@@ -1,3 +1,4 @@
+import { AppMark } from "../AppMark";
 // The Remote (`?remote`, main.tsx): a phone's page for the AI helpers' work, beside nothing else. The Work spine fills the
 // screen, and at its foot the question a helper holds for you, with a box to answer it and a Send that tells the helper
 // (`answer`, core/src/guide.rs). In a room it joins as any other window does, by its name (room.tsx), and shows what the
@@ -132,7 +133,7 @@ function Page({ status, simulated = false, ai, send }: PageProps) {
   const seen = useSeen();
   return <main className="remote" style={{ height: seen }}>
     <div className="remote-bar">
-      <span className="remote-pill"><span className="remote-wordmark">E2A2O</span><span className="remote-sep" aria-hidden="true" /><h1 className="remote-name">Remote</h1></span>
+      <span className="remote-pill"><AppMark className="remote-wordmark" /><span className="remote-sep" aria-hidden="true" /><h1 className="remote-name">Remote</h1></span>
       {status && <span className="remote-status" role="status">{status}</span>}
     </div>
     <section className="remote-spine" aria-label="Work spine">

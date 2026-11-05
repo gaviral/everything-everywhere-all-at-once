@@ -33,7 +33,7 @@ try {
   // first frame, and never because another window or an older session is listening.
   assert.match(app, /const status = statusLine\(\{ connected: core\.connected, listening: !!stopMic/, "the header is wired to it");
   assert.equal(others["empty map"], "Say what's on your mind.");
-  assert.equal(others.composer, "Or type a thought");
+  assert.equal(others.composer, "Type a thought");
   assert.equal(others["model line"], "Muse Voice Transcribe 1.0 · mic on", "the model line names who hears");
   assert.equal(lineFor(listen, 0, true).text, "hearing you");
   assert.equal(liveLine("", true), "Starting the microphone…", "starting the mic still answers the click");

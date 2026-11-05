@@ -1,5 +1,5 @@
 // The real built page, synthetic map, no model calls. Every film API call gets a screenshot.
-// Run after the UI build: node scripts/film-check.mjs (SHOTS overrides ui/dist/film-shots).
+// Normal builds verify film is off. To exercise film: build and run with VITE_E2A2O_FILM=1.
 import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -24,6 +24,12 @@ let browser;
 try {
   browser = await openPage(`http://127.0.0.1:${core.port}/?film`);
   const { page, evaluate, until } = browser;
+  if (process.env.VITE_E2A2O_FILM !== "1") {
+    assert.ok(await until("!!document.querySelector('.react-flow__node')"));
+    assert.equal(await evaluate("typeof window.e2a2oFilm"), "undefined", "normal builds cannot inject film words");
+    assert.equal(await evaluate("document.querySelector('.film-layer')"), null);
+    console.log("PASS film: normal build keeps the film bridge off, including with ?film.");
+  } else {
   await page("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 2, mobile: false });
   const shot = async (name) => {
     const { data } = await page("Page.captureScreenshot", { format: "png" });
@@ -207,6 +213,7 @@ try {
     await transcriptHint(false, query ? "recording-transcript-hint" : "normal-transcript-hint");
   }
   console.log("PASS film: virtual-clock stage/card/list, camera/hold/release, pointer/ripple, caption, clear, opt-in, live transcript hint isolation; 18 screenshots at device scale 2 saved");
+  }
 } finally {
   await browser?.close();
   core.close();

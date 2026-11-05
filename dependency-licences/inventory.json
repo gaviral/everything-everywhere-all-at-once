@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "locks": {
-    "ui/package-lock.json": "a8da8c538c028f7128dd63d4c70e7943d05eda0cb4aa56f2af7a2bfbb131bf59",
+    "ui/package-lock.json": "128729d9de1ade90ed2bc687b3c0e761ba4f3e065832006b66b6b18736e777d3",
     "core/Cargo.lock": "dea32a133b145f81dac72138135ed02b969e5edab3f6257e0fcdf57ee4ff1767"
   },
   "packages": [
@@ -521,6 +521,75 @@
     },
     {
       "ecosystem": "npm",
+      "lock_key": "node_modules/@types/node",
+      "name": "@types/node",
+      "version": "26.6.6",
+      "spdx": "MIT",
+      "selected_licence": "MIT",
+      "source": "https://registry.npmjs.org/@types/node/-/node-26.6.6.tgz",
+      "integrity": "sha512-MzQj+8Kx3XI40OmUAE6Qoh58ZMNstNNMwn2nfd3qWsfe7nDNSqJNzes4njhz6AHwrSHOffSLwXU6yb474Q4aog==",
+      "distribution": "build-only (lock dev=true)",
+      "unresolved": [],
+      "evidence": [
+        {
+          "path": "dependency-licences/npm/@types__node@26.6.6/LICENSE",
+          "source_file": "LICENSE",
+          "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+        },
+        {
+          "path": "dependency-licences/npm/@types__node@26.6.6/embedded-source-notices.json",
+          "source_file": null,
+          "sha256": "e7e99b2dccd215fe5038ff8606a48d17879a37bddc2fa2da0a1e2d6e8ab693f4"
+        },
+        {
+          "path": "dependency-licences/npm/@types__node@26.6.6/package.json",
+          "source_file": "package.json",
+          "sha256": "2520fc33dc754e75d61e6e49c174b439244537c3f2cff1897432806156a054fd"
+        }
+      ],
+      "archive_verified": true,
+      "archive_prefix": "node/",
+      "metadata_spdx": "MIT",
+      "repository": {
+        "type": "git",
+        "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git",
+        "directory": "types/node"
+      }
+    },
+    {
+      "ecosystem": "npm",
+      "lock_key": "node_modules/@types/qrcode",
+      "name": "@types/qrcode",
+      "version": "1.5.6",
+      "spdx": "MIT",
+      "selected_licence": "MIT",
+      "source": "https://registry.npmjs.org/@types/qrcode/-/qrcode-1.5.6.tgz",
+      "integrity": "sha512-te7NQcV2BOvdj2b1hCAHzAoMNuj65kNBMz0KBaxM6c3VGBOhU0dURQKOtH8CFNI/dsKkwlv32p26qYQTWoB5bw==",
+      "distribution": "build-only (lock dev=true)",
+      "unresolved": [],
+      "evidence": [
+        {
+          "path": "dependency-licences/npm/@types__qrcode@1.5.6/LICENSE",
+          "source_file": "LICENSE",
+          "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+        },
+        {
+          "path": "dependency-licences/npm/@types__qrcode@1.5.6/package.json",
+          "source_file": "package.json",
+          "sha256": "38799c32980971911961a03b1b0b35d7c6c67e073c7ad9ba8c610dc5db5ab5e8"
+        }
+      ],
+      "archive_verified": true,
+      "archive_prefix": "qrcode/",
+      "metadata_spdx": "MIT",
+      "repository": {
+        "type": "git",
+        "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git",
+        "directory": "types/qrcode"
+      }
+    },
+    {
+      "ecosystem": "npm",
       "lock_key": "node_modules/@types/react",
       "name": "@types/react",
       "version": "19.3.0",
@@ -1036,6 +1105,90 @@
     },
     {
       "ecosystem": "npm",
+      "lock_key": "node_modules/ansi-regex",
+      "name": "ansi-regex",
+      "version": "5.0.1",
+      "spdx": "MIT",
+      "selected_licence": "MIT",
+      "source": "https://registry.npmjs.org/ansi-regex/-/ansi-regex-5.0.1.tgz",
+      "integrity": "sha512-quJQXlTSUGL2LH9SUXo8VwsY4soanhgo6LNSm84E1LBcE8s3O0wpdiRzyR9z/ZZJMlMWv37qOOb9pdJlMUEKFQ==",
+      "distribution": "UI runtime candidate (lock dev not true; exact bundle inclusion unverified)",
+      "unresolved": [],
+      "evidence": [
+        {
+          "path": "dependency-licences/npm/ansi-regex@5.0.1/license",
+          "source_file": "license",
+          "sha256": "48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0"
+        },
+        {
+          "path": "dependency-licences/npm/ansi-regex@5.0.1/package.json",
+          "source_file": "package.json",
+          "sha256": "8b2dc166f2b74d5098bad38bdd3dd2f4d4775c626199872f5e36dbb48c40931d"
+        }
+      ],
+      "archive_verified": true,
+      "archive_prefix": "package/",
+      "metadata_spdx": "MIT",
+      "repository": "chalk/ansi-regex"
+    },
+    {
+      "ecosystem": "npm",
+      "lock_key": "node_modules/ansi-styles",
+      "name": "ansi-styles",
+      "version": "4.3.0",
+      "spdx": "MIT",
+      "selected_licence": "MIT",
+      "source": "https://registry.npmjs.org/ansi-styles/-/ansi-styles-4.3.0.tgz",
+      "integrity": "sha512-zbB9rCJAT1rbjiVDb2hqKFHNYLxgtk8NURxZ3IZwD3F6NtxbXZQCnnSi1Lkx+IDohdPlFp222wVALIheZJQSEg==",
+      "distribution": "UI runtime candidate (lock dev not true; exact bundle inclusion unverified)",
+      "unresolved": [],
+      "evidence": [
+        {
+          "path": "dependency-licences/npm/ansi-styles@4.3.0/license",
+          "source_file": "license",
+          "sha256": "48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0"
+        },
+        {
+          "path": "dependency-licences/npm/ansi-styles@4.3.0/package.json",
+          "source_file": "package.json",
+          "sha256": "d405f010681d53f77691015e98461f8484b2afe6a9edfdd2ddb27b1e8a8e883d"
+        }
+      ],
+      "archive_verified": true,
+      "archive_prefix": "package/",
+      "metadata_spdx": "MIT",
+      "repository": "chalk/ansi-styles"
+    },
+    {
+      "ecosystem": "npm",
+      "lock_key": "node_modules/camelcase",
+      "name": "camelcase",
+      "version": "5.3.1",
+      "spdx": "MIT",
+      "selected_licence": "MIT",
+      "source": "https://registry.npmjs.org/camelcase/-/camelcase-5.3.1.tgz",
+      "integrity": "sha512-L28STB170nwWS63UjtlEOE3dldQApaJXZkOI1uMFfzf3rRuPegHaHesyee+YxQ+W6SvRDQV6UrdOdRiR153wJg==",
+      "distribution": "UI runtime candidate (lock dev not true; exact bundle inclusion unverified)",
+      "unresolved": [],
+      "evidence": [
+        {
+          "path": "dependency-licences/npm/camelcase@5.3.1/license",
+          "source_file": "license",
+          "sha256": "48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0"
+        },
+        {
+          "path": "dependency-licences/npm/camelcase@5.3.1/package.json",
+          "source_file": "package.json",
+          "sha256": "b6d533c740d144de4da1493940b541978a77aae9d712dd0d609f60c58c83a73e"
+        }
+      ],
+      "archive_verified": true,
+      "archive_prefix": "package/",
+      "metadata_spdx": "MIT",
+      "repository": "sindresorhus/camelcase"
+    },
+    {
+      "ecosystem": "npm",
       "lock_key": "node_modules/classcat",
       "name": "classcat",
       "version": "5.0.5",
@@ -1061,6 +1214,101 @@
       "archive_prefix": "package/",
       "metadata_spdx": "MIT",
       "repository": "jorgebucaran/classcat"
+    },
+    {
+      "ecosystem": "npm",
+      "lock_key": "node_modules/cliui",
+      "name": "cliui",
+      "version": "6.0.0",
+      "spdx": "ISC",
+      "selected_licence": "ISC",
+      "source": "https://registry.npmjs.org/cliui/-/cliui-6.0.0.tgz",
+      "integrity": "sha512-t6wbgtoCXvAzst7QgXxJYqPt0usEfbgQdftEPbLL/cvv6HPE5VgvqCuAIDR0NgU52ds6rFwqrgakNLrHEjCbrQ==",
+      "distribution": "UI runtime candidate (lock dev not true; exact bundle inclusion unverified)",
+      "unresolved": [],
+      "evidence": [
+        {
+          "path": "dependency-licences/npm/cliui@6.0.0/LICENSE.txt",
+          "source_file": "LICENSE.txt",
+          "sha256": "2dc0465729366c3a7890dfa9e972a1ba7048a26c02116fb8b419a6a1ac110149"
+        },
+        {
+          "path": "dependency-licences/npm/cliui@6.0.0/package.json",
+          "source_file": "package.json",
+          "sha256": "aefd282b90d2d0a055f3b40bbd2010531ba7cbf902e76a314fe09fe777491814"
+        }
+      ],
+      "archive_verified": true,
+      "archive_prefix": "package/",
+      "metadata_spdx": "ISC",
+      "repository": {
+        "type": "git",
+        "url": "http://github.com/yargs/cliui.git"
+      }
+    },
+    {
+      "ecosystem": "npm",
+      "lock_key": "node_modules/color-convert",
+      "name": "color-convert",
+      "version": "2.0.1",
+      "spdx": "MIT",
+      "selected_licence": "MIT",
+      "source": "https://registry.npmjs.org/color-convert/-/color-convert-2.0.1.tgz",
+      "integrity": "sha512-RRECPsj7iu/xb5oKYcsFHSppFNnsj/52OVTRKb4zP5onXwVF3zVmmToNcOfGC+CRDpfK/U584fMg38ZHCaElKQ==",
+      "distribution": "UI runtime candidate (lock dev not true; exact bundle inclusion unverified)",
+      "unresolved": [],
+      "evidence": [
+        {
+          "path": "dependency-licences/npm/color-convert@2.0.1/LICENSE",
+          "source_file": "LICENSE",
+          "sha256": "693866fc419c6f61c8570438ec00659d156ec2b4d4a4d04091711f5f11a365d4"
+        },
+        {
+          "path": "dependency-licences/npm/color-convert@2.0.1/embedded-source-notices.json",
+          "source_file": null,
+          "sha256": "76d7f439992a0c728dcadf0a8e4a2d649096396fa6d94cf98a2b829455f9578c"
+        },
+        {
+          "path": "dependency-licences/npm/color-convert@2.0.1/package.json",
+          "source_file": "package.json",
+          "sha256": "9471d21744ca3137410448da6b3bd7b30ee91d42edce3b82ebcbf84faef74fb4"
+        }
+      ],
+      "archive_verified": true,
+      "archive_prefix": "package/",
+      "metadata_spdx": "MIT",
+      "repository": "Qix-/color-convert"
+    },
+    {
+      "ecosystem": "npm",
+      "lock_key": "node_modules/color-name",
+      "name": "color-name",
+      "version": "1.1.4",
+      "spdx": "MIT",
+      "selected_licence": "MIT",
+      "source": "https://registry.npmjs.org/color-name/-/color-name-1.1.4.tgz",
+      "integrity": "sha512-dOy+3AuW3a2wNbZHIuMZpTcgjGuLU/uBL/ubcZF9OXbDo8ff4O8yVp5Bf0efS8uEoYo5q4Fx7dY9OgQGXgAsQA==",
+      "distribution": "UI runtime candidate (lock dev not true; exact bundle inclusion unverified)",
+      "unresolved": [],
+      "evidence": [
+        {
+          "path": "dependency-licences/npm/color-name@1.1.4/LICENSE",
+          "source_file": "LICENSE",
+          "sha256": "c064f7a3e353bc1bc977f3c897941c75ef763f44f41677e0a15370ca0853d6e2"
+        },
+        {
+          "path": "dependency-licences/npm/color-name@1.1.4/package.json",
+          "source_file": "package.json",
+          "sha256": "4a557ea373907e4643badb89ff21b3f4b969d20631086d78eab2e03d05c2efa4"
+        }
+      ],
+      "archive_verified": true,
+      "archive_prefix": "package/",
+      "metadata_spdx": "MIT",
+      "repository": {
+        "type": "git",
+        "url": "https://github.com/colorjs/color-name.git"
+      }
     },
     {
       "ecosystem": "npm",
@@ -1416,6 +1664,34 @@
     },
     {
       "ecosystem": "npm",
+      "lock_key": "node_modules/decamelize",
+      "name": "decamelize",
+      "version": "1.2.0",
+      "spdx": "MIT",
+      "selected_licence": "MIT",
+      "source": "https://registry.npmjs.org/decamelize/-/decamelize-1.2.0.tgz",
+      "integrity": "sha512-z2S+W9X73hAUUki+N+9Za2lBlun89zigOyGrsax+KUQ6wKW4ZoWpEYBkGhQjwAjjDCkWxhY0VKEhk8wzY7F5cA==",
+      "distribution": "UI runtime candidate (lock dev not true; exact bundle inclusion unverified)",
+      "unresolved": [],
+      "evidence": [
+        {
+          "path": "dependency-licences/npm/decamelize@1.2.0/license",
+          "source_file": "license",
+          "sha256": "6fb9754611c20f6649f68805e8c990e83261f29316e29de9e6cedae607b8634c"
+        },
+        {
+          "path": "dependency-licences/npm/decamelize@1.2.0/package.json",
+          "source_file": "package.json",
+          "sha256": "fb07ecfb5937f8757b0721fdafa6febff75d3c159f6dc8ec0d6ad4e1d1be7d9c"
+        }
+      ],
+      "archive_verified": true,
+      "archive_prefix": "package/",
+      "metadata_spdx": "MIT",
+      "repository": "sindresorhus/decamelize"
+    },
+    {
+      "ecosystem": "npm",
       "lock_key": "node_modules/detect-libc",
       "name": "detect-libc",
       "version": "2.1.2",
@@ -1452,6 +1728,73 @@
     },
     {
       "ecosystem": "npm",
+      "lock_key": "node_modules/dijkstrajs",
+      "name": "dijkstrajs",
+      "version": "1.0.3",
+      "spdx": "MIT",
+      "selected_licence": "MIT",
+      "source": "https://registry.npmjs.org/dijkstrajs/-/dijkstrajs-1.0.3.tgz",
+      "integrity": "sha512-qiSlmBq9+BCdCA/L46dw8Uy93mloxsPSbwnm5yrKn2vMPiy8KyAskTF6zuV/j5BMsmOGZDPs7KjU+mjb670kfA==",
+      "distribution": "UI runtime candidate (lock dev not true; exact bundle inclusion unverified)",
+      "unresolved": [],
+      "evidence": [
+        {
+          "path": "dependency-licences/npm/dijkstrajs@1.0.3/LICENSE.md",
+          "source_file": "LICENSE.md",
+          "sha256": "c46324e45a005413535a6fb7a97e9eacd3cc6bf30335b7d5c10b8ee3af9e60c2"
+        },
+        {
+          "path": "dependency-licences/npm/dijkstrajs@1.0.3/embedded-source-notices.json",
+          "source_file": null,
+          "sha256": "7a1c05bd69ec09c9fce3e14392c49fe4282e2f6c961abb72cea9df21ed8943db"
+        },
+        {
+          "path": "dependency-licences/npm/dijkstrajs@1.0.3/package.json",
+          "source_file": "package.json",
+          "sha256": "b523e007019401be68405b83e846ef9da4682026e8be339ee4ee7888e90b865a"
+        }
+      ],
+      "archive_verified": true,
+      "archive_prefix": "package/",
+      "metadata_spdx": "MIT",
+      "repository": {
+        "type": "git",
+        "url": "git://github.com/tcort/dijkstrajs"
+      }
+    },
+    {
+      "ecosystem": "npm",
+      "lock_key": "node_modules/emoji-regex",
+      "name": "emoji-regex",
+      "version": "8.0.0",
+      "spdx": "MIT",
+      "selected_licence": "MIT",
+      "source": "https://registry.npmjs.org/emoji-regex/-/emoji-regex-8.0.0.tgz",
+      "integrity": "sha512-MSjYzcWNOA0ewAHpz0MxpYFvwg6yjy1NG3xteoqz644VCo/RPgnr1/GGt+ic3iJTzQ8Eu3TdM14SawnVUmGE6A==",
+      "distribution": "UI runtime candidate (lock dev not true; exact bundle inclusion unverified)",
+      "unresolved": [],
+      "evidence": [
+        {
+          "path": "dependency-licences/npm/emoji-regex@8.0.0/LICENSE-MIT.txt",
+          "source_file": "LICENSE-MIT.txt",
+          "sha256": "483acb265f182907d1caf6cff9c16c96f31325ed23792832cc5d8b12d5f88c8a"
+        },
+        {
+          "path": "dependency-licences/npm/emoji-regex@8.0.0/package.json",
+          "source_file": "package.json",
+          "sha256": "7bec29b9ca68f2c4becc60e866c2f9342ecdc89fab39841a818ccd9eda15c148"
+        }
+      ],
+      "archive_verified": true,
+      "archive_prefix": "package/",
+      "metadata_spdx": "MIT",
+      "repository": {
+        "type": "git",
+        "url": "https://github.com/mathiasbynens/emoji-regex.git"
+      }
+    },
+    {
+      "ecosystem": "npm",
       "lock_key": "node_modules/fdir",
       "name": "fdir",
       "version": "6.5.0",
@@ -1480,6 +1823,34 @@
         "type": "git",
         "url": "git+https://github.com/thecodrr/fdir.git"
       }
+    },
+    {
+      "ecosystem": "npm",
+      "lock_key": "node_modules/find-up",
+      "name": "find-up",
+      "version": "4.1.0",
+      "spdx": "MIT",
+      "selected_licence": "MIT",
+      "source": "https://registry.npmjs.org/find-up/-/find-up-4.1.0.tgz",
+      "integrity": "sha512-PpOwAdQ/YlXQ2vj8a3h8IipDuYRi3wceVQQGYWxNINccq40Anw7BlsEXCMbt1Zt+OLA6Fq9suIpIWD0OsnISlw==",
+      "distribution": "UI runtime candidate (lock dev not true; exact bundle inclusion unverified)",
+      "unresolved": [],
+      "evidence": [
+        {
+          "path": "dependency-licences/npm/find-up@4.1.0/license",
+          "source_file": "license",
+          "sha256": "48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0"
+        },
+        {
+          "path": "dependency-licences/npm/find-up@4.1.0/package.json",
+          "source_file": "package.json",
+          "sha256": "19b9626d190ae97ecbc47843ff5781c462b6acfca35a2652dccded7d046dce53"
+        }
+      ],
+      "archive_verified": true,
+      "archive_prefix": "package/",
+      "metadata_spdx": "MIT",
+      "repository": "sindresorhus/find-up"
     },
     {
       "ecosystem": "npm",
@@ -1544,6 +1915,65 @@
         "type": "git",
         "url": "https://github.com/fsevents/fsevents.git"
       }
+    },
+    {
+      "ecosystem": "npm",
+      "lock_key": "node_modules/get-caller-file",
+      "name": "get-caller-file",
+      "version": "2.0.5",
+      "spdx": "ISC",
+      "selected_licence": "ISC",
+      "source": "https://registry.npmjs.org/get-caller-file/-/get-caller-file-2.0.5.tgz",
+      "integrity": "sha512-DyFP3BM/3YHTQOCUL/w0OZHR0lpKeGrxotcHWcqNEdnltqFwXVfhEBQ94eIo34AfQpo0rGki4cyIiftY06h2Fg==",
+      "distribution": "UI runtime candidate (lock dev not true; exact bundle inclusion unverified)",
+      "unresolved": [],
+      "evidence": [
+        {
+          "path": "dependency-licences/npm/get-caller-file@2.0.5/LICENSE.md",
+          "source_file": "LICENSE.md",
+          "sha256": "902dbb4154679fb2b8d7c33878183f45b268d01eae5e5033dddaa8852d45f213"
+        },
+        {
+          "path": "dependency-licences/npm/get-caller-file@2.0.5/package.json",
+          "source_file": "package.json",
+          "sha256": "680a080d2885c05bc51dde429c80784bfb248ca3ef3685438079c5015721e2ae"
+        }
+      ],
+      "archive_verified": true,
+      "archive_prefix": "package/",
+      "metadata_spdx": "ISC",
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/stefanpenner/get-caller-file.git"
+      }
+    },
+    {
+      "ecosystem": "npm",
+      "lock_key": "node_modules/is-fullwidth-code-point",
+      "name": "is-fullwidth-code-point",
+      "version": "3.0.0",
+      "spdx": "MIT",
+      "selected_licence": "MIT",
+      "source": "https://registry.npmjs.org/is-fullwidth-code-point/-/is-fullwidth-code-point-3.0.0.tgz",
+      "integrity": "sha512-zymm5+u+sCsSWyD9qNaejV3DFvhCKclKdizYaJUuHA83RLjb7nSuGnddCHGv0hk+KY7BMAlsWeK4Ueg6EV6XQg==",
+      "distribution": "UI runtime candidate (lock dev not true; exact bundle inclusion unverified)",
+      "unresolved": [],
+      "evidence": [
+        {
+          "path": "dependency-licences/npm/is-fullwidth-code-point@3.0.0/license",
+          "source_file": "license",
+          "sha256": "48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0"
+        },
+        {
+          "path": "dependency-licences/npm/is-fullwidth-code-point@3.0.0/package.json",
+          "source_file": "package.json",
+          "sha256": "5b48496ca129073ed44a677b777ea3b91366c8bc228bc75fe858749a78ac1a32"
+        }
+      ],
+      "archive_verified": true,
+      "archive_prefix": "package/",
+      "metadata_spdx": "MIT",
+      "repository": "sindresorhus/is-fullwidth-code-point"
     },
     {
       "ecosystem": "npm",
@@ -1769,6 +2199,34 @@
     },
     {
       "ecosystem": "npm",
+      "lock_key": "node_modules/locate-path",
+      "name": "locate-path",
+      "version": "5.0.0",
+      "spdx": "MIT",
+      "selected_licence": "MIT",
+      "source": "https://registry.npmjs.org/locate-path/-/locate-path-5.0.0.tgz",
+      "integrity": "sha512-t7hw9pI+WvuwNJXwk5zVHpyhIqzg2qTlklJOf0mVxGSbe3Fp2VieZcduNYjaLDoy6p9uGpQEGWG87WpMKlNq8g==",
+      "distribution": "UI runtime candidate (lock dev not true; exact bundle inclusion unverified)",
+      "unresolved": [],
+      "evidence": [
+        {
+          "path": "dependency-licences/npm/locate-path@5.0.0/license",
+          "source_file": "license",
+          "sha256": "48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0"
+        },
+        {
+          "path": "dependency-licences/npm/locate-path@5.0.0/package.json",
+          "source_file": "package.json",
+          "sha256": "6fb0681c3501741d68594c69a0baae9f558f2d426c136946f2c7780a8c5e27bd"
+        }
+      ],
+      "archive_verified": true,
+      "archive_prefix": "package/",
+      "metadata_spdx": "MIT",
+      "repository": "sindresorhus/locate-path"
+    },
+    {
+      "ecosystem": "npm",
       "lock_key": "node_modules/motion",
       "name": "motion",
       "version": "14.9.0",
@@ -1881,6 +2339,118 @@
     },
     {
       "ecosystem": "npm",
+      "lock_key": "node_modules/p-limit",
+      "name": "p-limit",
+      "version": "2.3.0",
+      "spdx": "MIT",
+      "selected_licence": "MIT",
+      "source": "https://registry.npmjs.org/p-limit/-/p-limit-2.3.0.tgz",
+      "integrity": "sha512-//88mFWSJx8lxCzwdAABTJL2MyWB12+eIY7MDL2SqLmAkeKU9qxRvWuSyTjm3FUmpBEMuFfckAIqEaVGUDxb6w==",
+      "distribution": "UI runtime candidate (lock dev not true; exact bundle inclusion unverified)",
+      "unresolved": [],
+      "evidence": [
+        {
+          "path": "dependency-licences/npm/p-limit@2.3.0/license",
+          "source_file": "license",
+          "sha256": "48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0"
+        },
+        {
+          "path": "dependency-licences/npm/p-limit@2.3.0/package.json",
+          "source_file": "package.json",
+          "sha256": "d4529e88d06488042103f25322b0b60d90dfc5de0ed61c3b7c7d27f2ac3fe1bb"
+        }
+      ],
+      "archive_verified": true,
+      "archive_prefix": "package/",
+      "metadata_spdx": "MIT",
+      "repository": "sindresorhus/p-limit"
+    },
+    {
+      "ecosystem": "npm",
+      "lock_key": "node_modules/p-locate",
+      "name": "p-locate",
+      "version": "4.1.0",
+      "spdx": "MIT",
+      "selected_licence": "MIT",
+      "source": "https://registry.npmjs.org/p-locate/-/p-locate-4.1.0.tgz",
+      "integrity": "sha512-R79ZZ/0wAxKGu3oYMlz8jy/kbhsNrS7SKZ7PxEHBgJ5+F2mtFW2fK2cOtBh1cHYkQsbzFV7I+EoRKe6Yt0oK7A==",
+      "distribution": "UI runtime candidate (lock dev not true; exact bundle inclusion unverified)",
+      "unresolved": [],
+      "evidence": [
+        {
+          "path": "dependency-licences/npm/p-locate@4.1.0/license",
+          "source_file": "license",
+          "sha256": "48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0"
+        },
+        {
+          "path": "dependency-licences/npm/p-locate@4.1.0/package.json",
+          "source_file": "package.json",
+          "sha256": "26d44c5d05942d6b315ecde2f3dcf78972cfb3b4c81c932ac2573d3eea5f5e94"
+        }
+      ],
+      "archive_verified": true,
+      "archive_prefix": "package/",
+      "metadata_spdx": "MIT",
+      "repository": "sindresorhus/p-locate"
+    },
+    {
+      "ecosystem": "npm",
+      "lock_key": "node_modules/p-try",
+      "name": "p-try",
+      "version": "2.2.0",
+      "spdx": "MIT",
+      "selected_licence": "MIT",
+      "source": "https://registry.npmjs.org/p-try/-/p-try-2.2.0.tgz",
+      "integrity": "sha512-R4nPAVTAU0B9D35/Gk3uJf/7XYbQcyohSKdvAxIRSNghFl4e71hVoGnBNQz9cWaXxO2I10KTC+3jMdvvoKw6dQ==",
+      "distribution": "UI runtime candidate (lock dev not true; exact bundle inclusion unverified)",
+      "unresolved": [],
+      "evidence": [
+        {
+          "path": "dependency-licences/npm/p-try@2.2.0/license",
+          "source_file": "license",
+          "sha256": "48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0"
+        },
+        {
+          "path": "dependency-licences/npm/p-try@2.2.0/package.json",
+          "source_file": "package.json",
+          "sha256": "ff793c821f36985cde9f9d9ff6297e6c1304f8e597aa2d48dc53eda83c11e54c"
+        }
+      ],
+      "archive_verified": true,
+      "archive_prefix": "package/",
+      "metadata_spdx": "MIT",
+      "repository": "sindresorhus/p-try"
+    },
+    {
+      "ecosystem": "npm",
+      "lock_key": "node_modules/path-exists",
+      "name": "path-exists",
+      "version": "4.0.0",
+      "spdx": "MIT",
+      "selected_licence": "MIT",
+      "source": "https://registry.npmjs.org/path-exists/-/path-exists-4.0.0.tgz",
+      "integrity": "sha512-ak9Qy5Q7jYb2Wwcey5Fpvg2KoAc/ZIhLSLOSBmRmygPsGwkVVt0fZa0qrtMz+m6tJTAHfZQ8FnmB4MG4LWy7/w==",
+      "distribution": "UI runtime candidate (lock dev not true; exact bundle inclusion unverified)",
+      "unresolved": [],
+      "evidence": [
+        {
+          "path": "dependency-licences/npm/path-exists@4.0.0/license",
+          "source_file": "license",
+          "sha256": "48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0"
+        },
+        {
+          "path": "dependency-licences/npm/path-exists@4.0.0/package.json",
+          "source_file": "package.json",
+          "sha256": "5e258d1a0d185ae469fec34de2af18913421b94181ef61238efcfe0b00d1b2c3"
+        }
+      ],
+      "archive_verified": true,
+      "archive_prefix": "package/",
+      "metadata_spdx": "MIT",
+      "repository": "sindresorhus/path-exists"
+    },
+    {
+      "ecosystem": "npm",
       "lock_key": "node_modules/picocolors",
       "name": "picocolors",
       "version": "1.1.1",
@@ -1937,6 +2507,42 @@
     },
     {
       "ecosystem": "npm",
+      "lock_key": "node_modules/pngjs",
+      "name": "pngjs",
+      "version": "5.0.0",
+      "spdx": "MIT",
+      "selected_licence": "MIT",
+      "source": "https://registry.npmjs.org/pngjs/-/pngjs-5.0.0.tgz",
+      "integrity": "sha512-40QW5YalBNfQo5yRYmiw7Yz6TKKVr3h6970B2YE+3fQpsWcrbj1PzJgxeJ19DRQjhMbKPIuMY8rFaXc8moolVw==",
+      "distribution": "UI runtime candidate (lock dev not true; exact bundle inclusion unverified)",
+      "unresolved": [],
+      "evidence": [
+        {
+          "path": "dependency-licences/npm/pngjs@5.0.0/LICENSE",
+          "source_file": "LICENSE",
+          "sha256": "176b07a18c0bb3836aaeb61088fd0bf11a38f66e6f15e3fbda85faa225250d6e"
+        },
+        {
+          "path": "dependency-licences/npm/pngjs@5.0.0/embedded-source-notices.json",
+          "source_file": null,
+          "sha256": "e6d58c93b596553a65e9a0c05004df8979a852ce292d836e81769563247b38aa"
+        },
+        {
+          "path": "dependency-licences/npm/pngjs@5.0.0/package.json",
+          "source_file": "package.json",
+          "sha256": "1f3fbe71a51c03470a83044efb2f7dfcca4877f22f1d54f9d952081cb28fbedf"
+        }
+      ],
+      "archive_verified": true,
+      "archive_prefix": "package/",
+      "metadata_spdx": "MIT",
+      "repository": {
+        "type": "git",
+        "url": "git://github.com/lukeapage/pngjs.git"
+      }
+    },
+    {
+      "ecosystem": "npm",
       "lock_key": "node_modules/postcss",
       "name": "postcss",
       "version": "8.5.32",
@@ -1962,6 +2568,42 @@
       "archive_prefix": "package/",
       "metadata_spdx": "MIT",
       "repository": "postcss/postcss"
+    },
+    {
+      "ecosystem": "npm",
+      "lock_key": "node_modules/qrcode",
+      "name": "qrcode",
+      "version": "1.5.4",
+      "spdx": "MIT",
+      "selected_licence": "MIT",
+      "source": "https://registry.npmjs.org/qrcode/-/qrcode-1.5.4.tgz",
+      "integrity": "sha512-1ca71Zgiu6ORjHqFBDpnSMTR2ReToX4l1Au1VFLyVeBTFavzQnv5JxMFr3ukHVKpSrSA2MCk0lNJSykjUfz7Zg==",
+      "distribution": "UI runtime candidate (lock dev not true; exact bundle inclusion unverified)",
+      "unresolved": [],
+      "evidence": [
+        {
+          "path": "dependency-licences/npm/qrcode@1.5.4/embedded-source-notices.json",
+          "source_file": null,
+          "sha256": "90f1d8d220a6937ed1aee15cf4cd5a40f0f5e83e80db9f9ba0587a9fcf02b32c"
+        },
+        {
+          "path": "dependency-licences/npm/qrcode@1.5.4/license",
+          "source_file": "license",
+          "sha256": "8df47c6ad9ac2c41eb9b2a72def9908959da0ede8dadd56c7b249c1bdb0c5ce6"
+        },
+        {
+          "path": "dependency-licences/npm/qrcode@1.5.4/package.json",
+          "source_file": "package.json",
+          "sha256": "cbe26d7282c802f4ab9c1f790c5d8450d2b5c82e8bb5f67e3a5c2641ea347d1d"
+        }
+      ],
+      "archive_verified": true,
+      "archive_prefix": "package/",
+      "metadata_spdx": "MIT",
+      "repository": {
+        "type": "git",
+        "url": "git://github.com/soldair/node-qrcode.git"
+      }
     },
     {
       "ecosystem": "npm",
@@ -2035,6 +2677,68 @@
         "type": "git",
         "url": "https://github.com/react/react.git",
         "directory": "packages/react-dom"
+      }
+    },
+    {
+      "ecosystem": "npm",
+      "lock_key": "node_modules/require-directory",
+      "name": "require-directory",
+      "version": "2.1.1",
+      "spdx": "MIT",
+      "selected_licence": "MIT",
+      "source": "https://registry.npmjs.org/require-directory/-/require-directory-2.1.1.tgz",
+      "integrity": "sha512-fGxEI7+wsG9xrvdjsrlmL22OMTTiHRwAMroiEeMgq8gzoLC/PQr7RsRDSTLUg/bZAZtF+TVIkHc6/4RIKrui+Q==",
+      "distribution": "UI runtime candidate (lock dev not true; exact bundle inclusion unverified)",
+      "unresolved": [],
+      "evidence": [
+        {
+          "path": "dependency-licences/npm/require-directory@2.1.1/LICENSE",
+          "source_file": "LICENSE",
+          "sha256": "a92e52eb1fa7cd746e3827bf01d3a3589bbc8e1e51348b1da042aad165525ad1"
+        },
+        {
+          "path": "dependency-licences/npm/require-directory@2.1.1/package.json",
+          "source_file": "package.json",
+          "sha256": "5690bdddd6eb4abd795fa5319df7552279508df9d562d571e3132ddff3045a71"
+        }
+      ],
+      "archive_verified": true,
+      "archive_prefix": "package/",
+      "metadata_spdx": "MIT",
+      "repository": {
+        "type": "git",
+        "url": "git://github.com/troygoode/node-require-directory.git"
+      }
+    },
+    {
+      "ecosystem": "npm",
+      "lock_key": "node_modules/require-main-filename",
+      "name": "require-main-filename",
+      "version": "2.0.0",
+      "spdx": "ISC",
+      "selected_licence": "ISC",
+      "source": "https://registry.npmjs.org/require-main-filename/-/require-main-filename-2.0.0.tgz",
+      "integrity": "sha512-NKN5kMDylKuldxYLSUfrbo5Tuzh4hd+2E8NPPX02mZtn1VuREQToYe/ZdlJy+J3uCpfaiGF05e7B8W0iXbQHmg==",
+      "distribution": "UI runtime candidate (lock dev not true; exact bundle inclusion unverified)",
+      "unresolved": [],
+      "evidence": [
+        {
+          "path": "dependency-licences/npm/require-main-filename@2.0.0/LICENSE.txt",
+          "source_file": "LICENSE.txt",
+          "sha256": "365496ca1f56da40b23c9815fc40fa9005847b2f8f8fd1c1a4929ef25ec8cd1d"
+        },
+        {
+          "path": "dependency-licences/npm/require-main-filename@2.0.0/package.json",
+          "source_file": "package.json",
+          "sha256": "cc3853357a59a82c9a0e5cebbe52221eccc4a52bced4557300b69bbec17fa41b"
+        }
+      ],
+      "archive_verified": true,
+      "archive_prefix": "package/",
+      "metadata_spdx": "ISC",
+      "repository": {
+        "type": "git",
+        "url": "https://github.com/yargs/require-main-filename.git"
       }
     },
     {
@@ -2113,6 +2817,37 @@
     },
     {
       "ecosystem": "npm",
+      "lock_key": "node_modules/set-blocking",
+      "name": "set-blocking",
+      "version": "2.0.0",
+      "spdx": "ISC",
+      "selected_licence": "ISC",
+      "source": "https://registry.npmjs.org/set-blocking/-/set-blocking-2.0.0.tgz",
+      "integrity": "sha512-KiKBS8AnWGEyLzofFfmvKwpdPzqiy16LvQfK3yv/fVH7Bj13/wl3JSR1J+rfgRE9q7xUJK4qvgS8raSOeLUehw==",
+      "distribution": "UI runtime candidate (lock dev not true; exact bundle inclusion unverified)",
+      "unresolved": [],
+      "evidence": [
+        {
+          "path": "dependency-licences/npm/set-blocking@2.0.0/LICENSE.txt",
+          "source_file": "LICENSE.txt",
+          "sha256": "365496ca1f56da40b23c9815fc40fa9005847b2f8f8fd1c1a4929ef25ec8cd1d"
+        },
+        {
+          "path": "dependency-licences/npm/set-blocking@2.0.0/package.json",
+          "source_file": "package.json",
+          "sha256": "e0c598215c66f2c35edbc3cb2a3433d45f9d4b726524c095c93e7376d87a3bce"
+        }
+      ],
+      "archive_verified": true,
+      "archive_prefix": "package/",
+      "metadata_spdx": "ISC",
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/yargs/set-blocking.git"
+      }
+    },
+    {
+      "ecosystem": "npm",
       "lock_key": "node_modules/source-map-js",
       "name": "source-map-js",
       "version": "1.2.2",
@@ -2143,6 +2878,62 @@
       "archive_prefix": "package/",
       "metadata_spdx": "BSD-3-Clause",
       "repository": "7rulnik/source-map-js"
+    },
+    {
+      "ecosystem": "npm",
+      "lock_key": "node_modules/string-width",
+      "name": "string-width",
+      "version": "4.2.3",
+      "spdx": "MIT",
+      "selected_licence": "MIT",
+      "source": "https://registry.npmjs.org/string-width/-/string-width-4.2.3.tgz",
+      "integrity": "sha512-wKyQRQpjJ0sIp62ErSZdGsjMJWsap5oRNihHhu6G7JVO/9jIB6UyevL+tXuOqrng8j/cxKTWyWUwvSTriiZz/g==",
+      "distribution": "UI runtime candidate (lock dev not true; exact bundle inclusion unverified)",
+      "unresolved": [],
+      "evidence": [
+        {
+          "path": "dependency-licences/npm/string-width@4.2.3/license",
+          "source_file": "license",
+          "sha256": "48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0"
+        },
+        {
+          "path": "dependency-licences/npm/string-width@4.2.3/package.json",
+          "source_file": "package.json",
+          "sha256": "6457a02418f004fe5d3fbbb19c7cbcc1450a8b887ff9a471dc6985ac83a48d36"
+        }
+      ],
+      "archive_verified": true,
+      "archive_prefix": "package/",
+      "metadata_spdx": "MIT",
+      "repository": "sindresorhus/string-width"
+    },
+    {
+      "ecosystem": "npm",
+      "lock_key": "node_modules/strip-ansi",
+      "name": "strip-ansi",
+      "version": "6.0.1",
+      "spdx": "MIT",
+      "selected_licence": "MIT",
+      "source": "https://registry.npmjs.org/strip-ansi/-/strip-ansi-6.0.1.tgz",
+      "integrity": "sha512-Y38VPSHcqkFrCpFnQ9vuSXmquuv5oXOKpGeT6aGrr3o3Gc9AlVa6JBfUSOCnbxGGZF+/0ooI7KrPuUSztUdU5A==",
+      "distribution": "UI runtime candidate (lock dev not true; exact bundle inclusion unverified)",
+      "unresolved": [],
+      "evidence": [
+        {
+          "path": "dependency-licences/npm/strip-ansi@6.0.1/license",
+          "source_file": "license",
+          "sha256": "48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0"
+        },
+        {
+          "path": "dependency-licences/npm/strip-ansi@6.0.1/package.json",
+          "source_file": "package.json",
+          "sha256": "0130850b9da0584f54cc20d3dab6365c807e9436ac78e016d5009efa99bd0530"
+        }
+      ],
+      "archive_verified": true,
+      "archive_prefix": "package/",
+      "metadata_spdx": "MIT",
+      "repository": "chalk/strip-ansi"
     },
     {
       "ecosystem": "npm",
@@ -2259,6 +3050,42 @@
     },
     {
       "ecosystem": "npm",
+      "lock_key": "node_modules/undici-types",
+      "name": "undici-types",
+      "version": "8.9.0",
+      "spdx": "MIT",
+      "selected_licence": "MIT",
+      "source": "https://registry.npmjs.org/undici-types/-/undici-types-8.9.0.tgz",
+      "integrity": "sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg==",
+      "distribution": "build-only (lock dev=true)",
+      "unresolved": [],
+      "evidence": [
+        {
+          "path": "dependency-licences/npm/undici-types@8.9.0/LICENSE",
+          "source_file": "LICENSE",
+          "sha256": "a6db8096b2707bc0102d256917d4d33f298ba36d8c3f25de067a2b5bb379db27"
+        },
+        {
+          "path": "dependency-licences/npm/undici-types@8.9.0/embedded-source-notices.json",
+          "source_file": null,
+          "sha256": "e558d9ad25a3e7bb1647dd19887ac0b568f77ccc9715246618775d5a3a2285d6"
+        },
+        {
+          "path": "dependency-licences/npm/undici-types@8.9.0/package.json",
+          "source_file": "package.json",
+          "sha256": "7f3c1a0498b1b7f74402f76d2958bf5a35fc89403036188dc5f8ede1b4e0638b"
+        }
+      ],
+      "archive_verified": true,
+      "archive_prefix": "package/",
+      "metadata_spdx": "MIT",
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/nodejs/undici.git"
+      }
+    },
+    {
+      "ecosystem": "npm",
       "lock_key": "node_modules/use-sync-external-store",
       "name": "use-sync-external-store",
       "version": "1.7.0",
@@ -2329,6 +3156,163 @@
         "type": "git",
         "url": "git+https://github.com/vitejs/vite.git",
         "directory": "packages/vite"
+      }
+    },
+    {
+      "ecosystem": "npm",
+      "lock_key": "node_modules/which-module",
+      "name": "which-module",
+      "version": "2.0.1",
+      "spdx": "ISC",
+      "selected_licence": "ISC",
+      "source": "https://registry.npmjs.org/which-module/-/which-module-2.0.1.tgz",
+      "integrity": "sha512-iBdZ57RDvnOR9AGBhML2vFZf7h8vmBjhoaZqODJBFWHVtKkDmKuHai3cx5PgVMrX5YDNp27AofYbAwctSS+vhQ==",
+      "distribution": "UI runtime candidate (lock dev not true; exact bundle inclusion unverified)",
+      "unresolved": [],
+      "evidence": [
+        {
+          "path": "dependency-licences/npm/which-module@2.0.1/LICENSE",
+          "source_file": "LICENSE",
+          "sha256": "852bf81203aa93aa89afc9f881ebb035322dc7334aaceff435c557634c94a815"
+        },
+        {
+          "path": "dependency-licences/npm/which-module@2.0.1/package.json",
+          "source_file": "package.json",
+          "sha256": "02f6f6833d09c32100317a390892888ae44da4f712b2271d4b308bcace09a99f"
+        }
+      ],
+      "archive_verified": true,
+      "archive_prefix": "package/",
+      "metadata_spdx": "ISC",
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/nexdrew/which-module.git"
+      }
+    },
+    {
+      "ecosystem": "npm",
+      "lock_key": "node_modules/wrap-ansi",
+      "name": "wrap-ansi",
+      "version": "6.2.0",
+      "spdx": "MIT",
+      "selected_licence": "MIT",
+      "source": "https://registry.npmjs.org/wrap-ansi/-/wrap-ansi-6.2.0.tgz",
+      "integrity": "sha512-r6lPcBGxZXlIcymEu7InxDMhdW0KDxpLgoFLcguasxCaJ/SOIZwINatK9KY/tf+ZrlywOKU0UDj3ATXUBfxJXA==",
+      "distribution": "UI runtime candidate (lock dev not true; exact bundle inclusion unverified)",
+      "unresolved": [],
+      "evidence": [
+        {
+          "path": "dependency-licences/npm/wrap-ansi@6.2.0/license",
+          "source_file": "license",
+          "sha256": "48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0"
+        },
+        {
+          "path": "dependency-licences/npm/wrap-ansi@6.2.0/package.json",
+          "source_file": "package.json",
+          "sha256": "ee3d1495da354ea19d3900e3f28a4e93cc202966623fee4ad6fe54346b385075"
+        }
+      ],
+      "archive_verified": true,
+      "archive_prefix": "package/",
+      "metadata_spdx": "MIT",
+      "repository": "chalk/wrap-ansi"
+    },
+    {
+      "ecosystem": "npm",
+      "lock_key": "node_modules/y18n",
+      "name": "y18n",
+      "version": "4.0.3",
+      "spdx": "ISC",
+      "selected_licence": "ISC",
+      "source": "https://registry.npmjs.org/y18n/-/y18n-4.0.3.tgz",
+      "integrity": "sha512-JKhqTOwSrqNA1NY5lSztJ1GrBiUodLMmIZuLiDaMRJ+itFd+ABVE8XBjOvIWL+rSqNDC74LCSFmlb/U4UZ4hJQ==",
+      "distribution": "UI runtime candidate (lock dev not true; exact bundle inclusion unverified)",
+      "unresolved": [],
+      "evidence": [
+        {
+          "path": "dependency-licences/npm/y18n@4.0.3/LICENSE",
+          "source_file": "LICENSE",
+          "sha256": "2034cce3b6fafcddd642c4175e01d3ddfc332a53b9f20fdc46b1466dc89ac469"
+        },
+        {
+          "path": "dependency-licences/npm/y18n@4.0.3/package.json",
+          "source_file": "package.json",
+          "sha256": "5995de811ffa1b8a8e9ed9bd0444f60058dba9ce1ccbe12f2d5e12c31a975d9c"
+        }
+      ],
+      "archive_verified": true,
+      "archive_prefix": "package/",
+      "metadata_spdx": "ISC",
+      "repository": {
+        "type": "git",
+        "url": "https://github.com/yargs/y18n.git"
+      }
+    },
+    {
+      "ecosystem": "npm",
+      "lock_key": "node_modules/yargs",
+      "name": "yargs",
+      "version": "15.4.1",
+      "spdx": "MIT",
+      "selected_licence": "MIT",
+      "source": "https://registry.npmjs.org/yargs/-/yargs-15.4.1.tgz",
+      "integrity": "sha512-aePbxDmcYW++PaqBsJ+HYUFwCdv4LVvdnhBy78E57PIor8/OVvhMrADFFEDh8DHDFRv/O9i3lPhsENjO7QX0+A==",
+      "distribution": "UI runtime candidate (lock dev not true; exact bundle inclusion unverified)",
+      "unresolved": [],
+      "evidence": [
+        {
+          "path": "dependency-licences/npm/yargs@15.4.1/LICENSE",
+          "source_file": "LICENSE",
+          "sha256": "2f1a503bfab84b3ba7393627308b3274501e459e3b5185bbb56bbf16cb1602d4"
+        },
+        {
+          "path": "dependency-licences/npm/yargs@15.4.1/embedded-source-notices.json",
+          "source_file": null,
+          "sha256": "e2d670d94d497a708d78cc20cab032b47b38341f5fb0feb9f1453d83c48f3a9a"
+        },
+        {
+          "path": "dependency-licences/npm/yargs@15.4.1/package.json",
+          "source_file": "package.json",
+          "sha256": "be417ad995e4f608d6f5243ad90b28f3f2604c73abb30d72382ae13358a74949"
+        }
+      ],
+      "archive_verified": true,
+      "archive_prefix": "package/",
+      "metadata_spdx": "MIT",
+      "repository": {
+        "type": "git",
+        "url": "https://github.com/yargs/yargs.git"
+      }
+    },
+    {
+      "ecosystem": "npm",
+      "lock_key": "node_modules/yargs-parser",
+      "name": "yargs-parser",
+      "version": "18.1.3",
+      "spdx": "ISC",
+      "selected_licence": "ISC",
+      "source": "https://registry.npmjs.org/yargs-parser/-/yargs-parser-18.1.3.tgz",
+      "integrity": "sha512-o50j0JeToy/4K6OZcaQmW6lyXXKhq7csREXcDwk2omFPJEwUNOVtJKvmDr9EI1fAJZUyZcRF7kxGBWmRXudrCQ==",
+      "distribution": "UI runtime candidate (lock dev not true; exact bundle inclusion unverified)",
+      "unresolved": [],
+      "evidence": [
+        {
+          "path": "dependency-licences/npm/yargs-parser@18.1.3/LICENSE.txt",
+          "source_file": "LICENSE.txt",
+          "sha256": "365496ca1f56da40b23c9815fc40fa9005847b2f8f8fd1c1a4929ef25ec8cd1d"
+        },
+        {
+          "path": "dependency-licences/npm/yargs-parser@18.1.3/package.json",
+          "source_file": "package.json",
+          "sha256": "2de71e9a1ff3e5bce791f5e3de66e1ad86f4f143d8c3ce4fbaad7a615e5c5e70"
+        }
+      ],
+      "archive_verified": true,
+      "archive_prefix": "package/",
+      "metadata_spdx": "ISC",
+      "repository": {
+        "type": "git",
+        "url": "https://github.com/yargs/yargs-parser.git"
       }
     },
     {

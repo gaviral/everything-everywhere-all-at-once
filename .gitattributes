@@ -1,3 +1,5 @@
-# Every text file checks out with LF line endings, Windows included (Git for Windows' default would give CRLF,
+# Application text checks out with LF line endings, Windows included (Git for Windows' default would give CRLF,
 # and run.sh would die on its first line). Binary files are detected and left alone.
 * text=auto eol=lf
+# Upstream licence evidence is hash-pinned and must retain its original bytes.
+dependency-licences/** -text whitespace=cr-at-eol

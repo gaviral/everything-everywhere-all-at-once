@@ -24,7 +24,7 @@ export const NAMES = {
   inspectHere: "Inspect here",
   openOriginal: "Open original",
   tabs: { plugins: "Plugins", talk: "Talk", history: "History", catalog: "Features", settings: "Settings" },
-  composer: { idle: "Type a thought · Enter adds it", firstTap: "Tap to talk", firstType: "or type a thought", call: "Type to the call" },
+  composer: { idle: "Type a thought", firstTap: "Tap to talk", firstType: "or type a thought", call: "Type to the call" },
   held: { label: "Held for a pause", asks: "asks when you stop", answer: "Answer", later: "Later" },
   history: {
     empty: "Nothing yet. What the AI does and every notice show here, newest first, each with what takes it back.",

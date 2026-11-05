@@ -20,7 +20,7 @@ const COMPOSE: &str = "Compose a small app from registered blocks only. First ch
 // headless Chrome's fake mic (2026-11-01): its auto gain lifts normal speech to about 0.075 from either of two input
 // levels, a raised voice (6 dB more, ANSI S3.5) reads about 0.1, and a shout (20 dB more) 0.15 to 0.3, the lower
 // kept as a provisional value only. Real recording-mic calibration is PENDING. The opt-in `?level` receipt
-// tool and docs/volume-calibration.md describe the required evidence; synthetic fixtures do not calibrate it.
+// tool and docs/bricks.md describe the required evidence; synthetic fixtures do not calibrate it.
 const NORMAL_VOICE: f64 = 0.075;
 const RAISED_VOICE: f64 = 0.1;
 const SHOUT: f64 = 0.15;

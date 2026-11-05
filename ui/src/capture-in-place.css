@@ -4,10 +4,7 @@
 html.shell2 .map-capture .shell-composer { display: flex; flex-wrap: wrap; width: 100%; min-width: 0; padding: 0; height: auto; border: 0; border-radius: 0; background: transparent; box-shadow: none; gap: 8px; }
 html.shell2 .map-capture .shell-composer textarea { order: -1; flex: 0 0 100%; width: 100%; min-width: 0; height: 72px !important; max-height: 240px !important; min-height: 72px; resize: none; overflow-y: auto; font-size: 18px; line-height: 1.5 !important; padding: 0; background: transparent; border: 0; border-radius: 0; }
 .map-capture:focus-within { border-left-color: var(--blue, #547cba); }
-html.shell2 .map-capture .shell-composer-label, html.shell2 .map-capture .shell-composer > kbd { display: none; }
-.map-capture-mic { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
 .map-capture .mic { flex: 0 0 auto; }
-html.shell2 .map-capture .shell-composer .map-capture-hint { margin-left: auto; align-self: center; font-size: 11px; color: var(--muted); }
 .map-capture-words, .map-capture-live p { margin: 0 0 18px; font-size: 18px; line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; max-height: 240px; overflow-y: auto; }
 .map-capture-live p > i { display: inline-block; height: 1em; border-right: 2px solid var(--blue, #547cba); margin-left: 4px; vertical-align: -2px; }
 .map-capture-state { font-size: 11px; line-height: 1.6; color: var(--muted); }

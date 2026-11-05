@@ -183,7 +183,7 @@ The card says “Saved” only after the core confirms the record. These records
 
 Run `node scripts/panels-questions-check.mjs` after building the core and UI.
 
-- `flow-canvas` (panel, off, demo-safe): **Flow** runs a thought through serial text boxes with Muse Spark, streams each box with measured times, exposes editable prompts and exact inputs, compares two versions side by side and saves graphs for reopening or link sharing. `?flow` opens it on an empty map. It listens to the existing speaker turn flow and uses the existing microphone action. See [Flow](flow.md) for the runtime and live smoke check.
+- `flow-canvas` (panel, off, demo-safe): **Flow** runs a thought through serial text boxes with Muse Spark, streams each box with measured times, exposes editable prompts and exact inputs, compares two versions side by side and saves graphs for reopening or link sharing. `?flow` opens it on an empty map. It listens to the existing speaker turn flow and uses the existing microphone action. See [the Flow runtime](../core/src/flow.rs) and [live smoke check](../scripts/flow-happy-live.mjs).
 
 ## Plugins (off by default)
 
@@ -236,7 +236,7 @@ Live notes show the source thought's verbatim `text`, topic and speaker. A sourc
 The **Unsent scratch draft** is separate from accepted speech. **Add to topic** is pending: the existing typed `addThought(text): boolean` action provides neither an explicit topic target nor a correlated server acknowledgement, so the card never sends or clears the draft. No new contract, connection, server capability, protocol event, model call or Notes/Files adapter is added. Existing journals and clients are unchanged. The host supplies its confirmed connection identity; another tab changing the last-map cache cannot select this tab’s layout.
 
 Run `npm --prefix ui run build`, `node scripts/bricks-check.mjs sticky-notes` and `node scripts/asks-sticky-notes-check.mjs`. Page checks require Chrome and `PRECHECK_PAGES=1` when the environment disables them. The last command mounts the real app against a synthetic WebSocket fixture and writes temporary desktop/390px screenshots; it does not prove live-service operation or human acceptance.
-- `flow-canvas` (panel, off, demo-safe): **Flow** builds a serial text pipeline with Muse Spark, streams each box with measured times, exposes editable prompts and exact inputs, compares two versions side by side and saves graphs for reopening or link sharing. `?flow` opens it on an empty map. It listens to the existing speaker turn flow and uses the existing microphone action. See [Flow](flow.md) for the runtime and live smoke check.
+- `flow-canvas` (panel, off, demo-safe): **Flow** builds a serial text pipeline with Muse Spark, streams each box with measured times, exposes editable prompts and exact inputs, compares two versions side by side and saves graphs for reopening or link sharing. `?flow` opens it on an empty map. It listens to the existing speaker turn flow and uses the existing microphone action. See [the Flow runtime](../core/src/flow.rs) and [live smoke check](../scripts/flow-happy-live.mjs).
 
 ## Opening moment
 
@@ -259,3 +259,7 @@ After two seconds without pointer, key, touch or text activity, the camera contr
 The empty map keeps its input; a populated map keeps focused input and live capture visible. Flow keeps its input before it has boxes, focused editing stays visible, and its source text, results and questions remain on screen. This part changes only presentation and never starts capture or a model request.
 
 Build the UI, then run `node scripts/quiet-screen-check.mjs`. This focused browser check uses synthetic map and Flow data, preserves its temporary Chrome profile, and covers empty/full maps, Flow, keyboard focus, typing, composition, touch, stable geometry and an empty phone with reduced motion.
+
+## Volume calibration
+
+The Level feature's recording-mic calibration collects numeric loudness readings only after the user starts capture. Record the build, input device and browser, then collect repeated quiet, normal, raised and loud samples. Export the receipt for review; this does not change runtime thresholds. The current thresholds remain provisional until real recording-mic evidence is reviewed. Synthetic checks do not establish acoustic reliability.

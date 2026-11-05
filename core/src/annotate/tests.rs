@@ -111,7 +111,7 @@ async fn a_note_starts_a_tangent_tied_to_its_words_for_every_window_and_a_restar
         assert_eq!(m["to"], Value::Null, "to every window");
         m["message"]["change"]["type"].as_str().unwrap().to_string()
     }).collect();
-    assert_eq!(sent, ["thread_added", "anchored", "thought_added", "thought_placed", "thread_touched"]);
+    assert_eq!(sent, ["thread_added", "anchored", "thought_added", "agreement_source", "thought_placed", "agreement_source", "thread_touched"]);
     // A restart opens it, and a window's snapshot carries the anchor.
     assert_eq!(serde_json::to_value(&f.replayed().anchors).unwrap(), serde_json::to_value(&world.anchors).unwrap());
     let snapshot = serde_json::to_value(ServerMsg::Snapshot { world: f.core.snapshot() }).unwrap();

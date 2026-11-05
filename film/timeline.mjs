@@ -36,7 +36,8 @@ export function timeline(config) {
   if (!Array.isArray(config.shots) || !config.shots.length) throw new Error('shots must be a nonempty array');
   let cursor = 0;
   const shots = config.shots.map((shot, index) => {
-    if (!['title', 'pulse', 'feature', 'brand', 'laptop', 'plane', 'planes', 'wall', 'card', 'list', 'end'].includes(shot.kind)) throw new Error(`Unknown shot kind: ${shot.kind}`);
+    if (!['title', 'titlemorph', 'pulse', 'feature', 'brand', 'laptop', 'plane', 'planes', 'wall', 'card', 'list', 'end'].includes(shot.kind)) throw new Error(`Unknown shot kind: ${shot.kind}`);
+    if (shot.kind === 'titlemorph' && shot.variant !== undefined && !['short', 'long'].includes(shot.variant)) throw new Error('titlemorph variant must be short or long');
     let duration = positive(shot.seconds, `shot ${index + 1} seconds`);
     if (shot.kind === 'title' || shot.kind === 'pulse') words(shot.words, 'title words');
     if (shot.kind === 'card' || shot.kind === 'feature') words(shot.word, 'card word');
@@ -48,7 +49,10 @@ export function timeline(config) {
     }
     if (shot.kind === 'wall') {
       if (!Array.isArray(shot.tiles) || !shot.tiles.length) throw new Error('wall needs real image or clip tiles');
-      if (shot.layout==='field') {
+      if (shot.layout==='title') {
+        if(shot.tiles.filter(t=>t.light).length<9||shot.tiles.filter(t=>!t.light).length<9)throw Error('Title wall needs nine light and nine dark frames');
+        if(!shot.opening?.image||shot.opening.crop?.length!==3)throw Error('Title wall needs its opening frame and crop');
+      } else if (shot.layout==='field') {
         if(shot.tiles.length<144||(shot.tiles.length-144)%3||shot.tiles.length>576) throw Error('Field needs complete four-square clusters in its rectangle');
         if(!shot.opening?.image||!Array.isArray(shot.opening.crop)||shot.opening.crop.length!==3) throw Error('Field needs its original opening frame and square crop');
       } else if (!shot.tiles[0].clip) throw new Error('wall starts on a clip');

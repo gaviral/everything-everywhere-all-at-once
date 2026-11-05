@@ -59,8 +59,8 @@ async fn run_with_keywords(url: &str, core: Arc<Core>, speaker: String, mut audi
     sink.send(Message::Text(handshake_with_keywords(&key, &keywords).to_string().into())).await?;
     let first = match tokio::time::timeout(QUIET_MAX, stream.next()).await {
         Ok(Some(Ok(Message::Text(t)))) => serde_json::from_str::<Value>(t.as_str())?,
-        Ok(other) => {
-            tracing::warn!("voice handshake answered {other:?}");
+        Ok(_) => {
+            tracing::warn!("voice handshake did not return a session");
             return Err(anyhow!("{}", refused(&Value::Null)));
         }
         Err(_) => return Err(anyhow!("Voice Transcribe didn't answer")),
@@ -71,8 +71,8 @@ async fn run_with_keywords(url: &str, core: Arc<Core>, speaker: String, mut audi
         if let Some(status) = first["errorType"].as_str().and_then(crate::model::status_of) {
             core.check(status)?;
         }
-        tracing::warn!("voice handshake refused: {first}");
-        return Err(anyhow!("{}", refused(&first)));
+        tracing::warn!("voice handshake refused");
+        return Err(anyhow!("{}", crate::secrets::text(&refused(&first), core.key.as_deref())));
     }
     core.send_to(&speaker, ServerMsg::Status { listening: true, note: "Listening".into() });
     // Their mic is on for the call's windows until this stream ends, which ends their turn too (call.rs).
@@ -297,6 +297,7 @@ impl Primer {
 /// One event from the service; true when it was a spoken "stop listening", which ends the stream.
 fn handle(core: &Arc<Core>, speaker: &str, primer: &mut Primer, text: &str, window: Option<u64>) -> bool {
     let Ok(mut event) = serde_json::from_str::<Value>(text) else { return false };
+    crate::secrets::value(&mut event, core.key.as_deref());
     // The primer's words ("Uh", or nothing) and its turn: never shown or kept. Mostly that is everything up to
     // PRIMER_MS; but its turn can end late (seen at 3.1–3.8 s) and then its end, or the first line joined to it
     // ("Uh, okay rent…"), comes after, so its turn is followed by id and its words come off the front.
@@ -332,7 +333,7 @@ fn handle(core: &Arc<Core>, speaker: &str, primer: &mut Primer, text: &str, wind
     // Turn boundaries with their audio position, to see how long endpointing takes (scripts/voice.mjs):
     // RUST_LOG=info,e2a2o_core::asr=debug. Drafts are left out, one per word.
     if event["type"] != "transcript" {
-        tracing::debug!("voice event: {text}");
+        tracing::debug!("voice event: {event}");
     }
     match event["type"].as_str() {
         Some("speechStart") => {
@@ -383,7 +384,7 @@ fn handle(core: &Arc<Core>, speaker: &str, primer: &mut Primer, text: &str, wind
             if let Some(status) = event["errorType"].as_str().and_then(crate::model::status_of) {
                 let _ = core.check(status);
             }
-            let message = event["message"].as_str().unwrap_or("unknown error").to_string();
+            let message = crate::secrets::text(event["message"].as_str().unwrap_or("unknown error"), core.key.as_deref());
             core.send_to(speaker, ServerMsg::Error { message: format!("Voice Transcribe: {message}") });
         }
         _ => {}

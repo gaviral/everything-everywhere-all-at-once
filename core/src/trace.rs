@@ -73,6 +73,7 @@ impl Trace {
         if line.get("at").is_none() {
             line["at"] = json!(crate::now_ms());
         }
+        crate::secrets::value(&mut line, std::env::var("MODEL_API_KEY").ok().as_deref());
         let mut text = line.to_string();
         text.push('\n');
         if let Err(e) = file.lock().unwrap().write_all(text.as_bytes()) {

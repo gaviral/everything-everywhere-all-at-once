@@ -1,4 +1,4 @@
-/* The model line (ModelLine.tsx): one quiet line inside the composer, in its type and colors, so both themes follow
+/* The model line (ModelLine.tsx): one quiet line below the classic composer, in its type and colors, so both themes follow
    the tokens. 12px at 1440 × 900 is ≈ 16 px on a 1080p video (×1.33), the size of the header's session count. */
 .model-line {
   flex: none;

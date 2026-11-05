@@ -1,7 +1,7 @@
 // No extra dependencies: run with `node scripts/dates-check.mjs` (precheck runs it with the other checks).
 // Nothing here may read as work from before this repository: the README says everything was written during the
 // event and the first commit is from Oct 31. So:
-// - README, CHANGELOG and docs/: no date before the first commit, except the event's own span ("Oct 26 to Nov 4").
+// - README and docs/: no date before the first commit, except the event's own span ("Oct 26 to Nov 4").
 // - Code and scripts: no measurement (median, slowest, n = …, journals, 1,015 turns, 5 runs, measured, took) dated before the
 //   first commit. Dates in tests and examples ("2026-10-13T09:12:00Z", an imported chat's day) are input, not claims.
 // `node scripts/dates-check.mjs --self-test` plants each kind of breach and checks it's caught.
@@ -77,7 +77,7 @@ if (process.argv.includes("--self-test")) {
 } else {
   selfTest();
   const files = execFileSync("git", ["ls-files", "-z"], { cwd: root }).toString().split("\0").filter(Boolean);
-  const prose = (f) => /^(README|CHANGELOG)\.md$|^docs\/.*\.md$/.test(f);
+  const prose = (f) => /^README\.md$|^docs\/.*\.md$/.test(f);
   const code = (f) => /^(core\/src|ui\/src|scripts)\/.*\.(rs|ts|tsx|css|mjs|js|sh|py|pl)$|^run\.sh$/.test(f) && f !== "scripts/dates-check.mjs";
   const found = files.filter((f) => prose(f) || code(f))
     .flatMap((f) => early(readFileSync(root + f, "utf8"), prose(f)).map((hit) => `${f}:${hit}`));

@@ -6,6 +6,11 @@ services:
     init: true
     environment:
       MODEL_API_KEY: ${MODEL_API_KEY:-}
+      E2A2O_HOSTED: "1"
+      E2A2O_DEV_TOOLS: "0"
+      E2A2O_CODE_CANVAS: "0"
+      E2A2O_TRACE: "0"
+      HELPERS_RUN: "off"
     ports:
       - "127.0.0.1:8080:8080"
     volumes:

@@ -1,0 +1,8 @@
+[
+  {
+    "source_file": "dijkstra.js",
+    "line": 3,
+    "text": "/******************************************************************************\n * Created 2008-08-19.\n *\n * Dijkstra path-finding functions. Adapted from the Dijkstar Python project.\n *\n * Copyright (C) 2008\n *   Wyatt Baldwin <self@wyattbaldwin.com>\n *   All rights reserved\n *\n * Licensed under the MIT license.\n *\n *   http://www.opensource.org/licenses/mit-license.php\n *\n * THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\n * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\n * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\n * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\n * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\n * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN\n * THE SOFTWARE.\n *****************************************************************************/",
+    "source_sha256": "7f5721e77332370a71314f1536b8c552f4f9dbd99bbc6c5aa10df3253eacfd5c"
+  }
+]

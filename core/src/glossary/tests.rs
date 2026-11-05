@@ -33,7 +33,7 @@ fn glossary_save_is_durable_scoped_and_optimistic() {
 #[test]
 fn glossary_literal_limits_and_storage_failures() {
     assert!(validate(&[term("Wayfinder"), term("  wAYfinder ")]).is_err());
-    assert!(validate(&[term("Wide lens"), term("qorval  lens")]).is_err());
+    assert!(validate(&[term("Wide lens"), term("wide  lens")]).is_err());
     assert!(validate(&[term("界".repeat(40).as_str())]).is_ok());
     assert!(validate(&[term("界".repeat(41).as_str())]).is_err());
     assert!(validate(&[term("bad\nname")]).is_err());

@@ -168,7 +168,7 @@ try {
   // Wired: the socket feeds it, the composer shows it, the Recap's wait reads it.
   const src = (f) => readFileSync(new URL(`../ui/src/${f}`, import.meta.url), "utf8");
   assert.match(src("core.ts"), /if \(receiveStep\(msg\)\) return;/);
-  assert.match(src("App.tsx"), /<form className="composer"[\s\S]*<ModelLine [\s\S]*<MicButton/);
+  // The rendered composer and corner placement are covered by mic-corner-check.mjs.
   assert.match(src("Recap.tsx"), /runningModel\(useSteps\(\)\.state, "recap", "recap draft"\)/);
   // And the core tells every model call from the one place they all pass (core/src/model.rs).
   const model = readFileSync(new URL("../core/src/model.rs", import.meta.url), "utf8");

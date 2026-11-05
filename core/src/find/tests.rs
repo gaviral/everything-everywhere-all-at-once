@@ -90,7 +90,7 @@ fn the_question_is_the_first_sentence_and_the_words_after_it_are_kept() {
         ("Where did I talk about v2.1. It ships Friday.", ask("v2 1", "v2.1", "It ships Friday.", false)),
         ("Where did I talk about step 2. It was hard.", ask("step 2", "step 2", "It was hard.", false)),
         // The topic as it was said, for "I couldn't find …".
-        ("Where did I talk about Collaborator's party?", ask("danas party", "Collaborator's party", "", false)),
+        ("Where did I talk about Collaborator's party?", ask("collaborators party", "Collaborator's party", "", false)),
         // "Take me back to …" with nothing pointing at the map may be a saying.
         ("Take me back to Paris.", ask("paris", "Paris", "", true)),
         ("Take me back to Paris. It was lovely.", ask("paris", "Paris", "It was lovely.", true)),

@@ -1,3 +1,4 @@
+import { AppMark } from "../AppMark";
 // The shell's regions (docs/bricks.md "Slots"), each marked with its data-slot name so a feature, the guide or a check
 // finds it wherever the layout puts it:
 //  - top left: the wordmark, the map's name and its one stamp; top right: Find, Catalog, the people in a call
@@ -30,7 +31,7 @@ const cls = (...names: (string | false | null | undefined)[]) => names.filter(Bo
 export function TopLeft({ mapName, mode, wordmark, sampleTools }: { mapName: string; mode: Mode | null; wordmark: boolean; sampleTools?: SampleToolsProps }) {
   return <div className="shell-corner shell-tl" data-slot="top-left">
     <div className="shell-pill shell-identity">
-      {wordmark && <><span className="shell-wordmark">{NAMES.wordmark}</span><span className="shell-sep" aria-hidden="true" /></>}
+      <AppMark className="shell-wordmark" size={wordmark ? 28 : 24} /><span className="shell-sep" aria-hidden="true" />
       <span className="shell-mapname">{mapName}</span>
       {sampleTools ? <><Stamp mode={mode === "sample" ? null : mode} /><SampleTools {...sampleTools} /></> : <Stamp mode={mode} />}
     </div>
@@ -152,36 +153,10 @@ export function micWords(s: StatusState): { dot: "on" | "off" | "wait" | "warn";
   }
 }
 
-const DOTS = { on: "shell-dot shell-dot-on", off: "shell-dot shell-dot-off", wait: "shell-dot shell-dot-wait", warn: "shell-dot shell-dot-warn" } as const;
-
-/** What follows the state, when there's one thing to know: what a state that needs something needs, how to start on a
- *  first open. */
-function micHint(s: StatusState): string {
-  if (s.typingOnly) return "";
-  const help = NAMES.stateHelp;
-  if (s.mic === "nokey") return s.hosted ? help.nokeyHosted : help.nokey;
-  if (s.mic === "refused") return s.hosted ? help.refusedHosted : help.refused;
-  if (s.mic === "resting") return help.resting;
-  if (s.mic === "blocked") return help.blocked;
-  if (s.first && (s.mic === "off" || s.mic === "paused")) return `Nothing is heard until you tap the mic or press ${mod("D")}.`;
-  return "";
-}
-
-/** The bottom bar: a status line above the input row. Live words (Tiny transcript, lane L3) occupy the middle of
- *  the status line, between the state and what waits (shell.css). */
+/** Sending progress and history stay beside the typed input. */
 export const StatusLine = memo(function StatusLine({ state, openHistory, children }: { state: StatusState; openHistory: () => void; children?: ReactNode }) {
-  const mic = micWords(state);
-  const hint = micHint(state);
   const waiting = state.stalled ? state.stalled : state.waiting ? `${state.waiting} waiting` : "";
-  // Said once per change of state, never per tick of its clock or per word heard.
-  const said = mic.text.replace(/ \d+:\d\d$/, "");
   return <div className="shell-status" data-slot="status" data-guide="status">
-    <span className="sr-only" role="status">{said}</span>
-    <span className="shell-status-state">
-      <i className={DOTS[mic.dot]} aria-hidden="true" />
-      <span className="shell-status-word">{mic.text}</span>
-      {hint && <><span className="shell-status-sep" aria-hidden="true" /><span className="shell-status-hint">{hint}</span></>}
-    </span>
     <button type="button" className="shell-status-right" onClick={openHistory} aria-keyshortcuts="Y" title="What happened: History (Y)">
       {!waiting && !state.queued && !state.saved && "History"}
       {[

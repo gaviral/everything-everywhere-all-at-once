@@ -296,11 +296,6 @@
       "provenance": "Handwritten synthetic scenario for demonstrations and regression checks.",
       "sha256": "502053e5469e785f8f5fe1ee9fec507527d473d8fad23026942b164c8b7cafa7"
     },
-    "scripts/burst-talk.jsonl": {
-      "kind": "synthetic",
-      "provenance": "Handwritten synthetic scenario for demonstrations and regression checks.",
-      "sha256": "a9046d763fd5fd5693c10db306d6d3e8c4bd89c4e066ca0cfac230fc744e346d"
-    },
     "scripts/chunk-cases.jsonl": {
       "kind": "synthetic",
       "provenance": "Handwritten synthetic scenario for demonstrations and regression checks.",
@@ -316,35 +311,15 @@
       "provenance": "Handwritten synthetic scenario for demonstrations and regression checks.",
       "sha256": "53cb8232f9da1866075adf110456f36b27f5bed9df1e68e222da095c16cc3a4e"
     },
-    "scripts/demo-talk-v4.jsonl": {
-      "kind": "synthetic",
-      "provenance": "Handwritten synthetic scenario for demonstrations and regression checks.",
-      "sha256": "9e779d77ae541385fa846458b4deeba1cef0fedbb80e2f9ec698e82682d923ee"
-    },
     "scripts/demo-talk.jsonl": {
       "kind": "synthetic",
       "provenance": "Handwritten synthetic scenario for demonstrations and regression checks.",
       "sha256": "5816bd79445afbf1de04b45ae0e0fdf6881dd013f1e515ab977a2f0b2770a64c"
     },
-    "scripts/montage-talk.jsonl": {
-      "kind": "synthetic",
-      "provenance": "Handwritten synthetic scenario for demonstrations and regression checks.",
-      "sha256": "dc9d26a1776b48d76556e7ffe46bcaeefe90256d037e31b4442aebf62e470383"
-    },
-    "scripts/room-talk.jsonl": {
-      "kind": "synthetic",
-      "provenance": "Handwritten synthetic scenario for demonstrations and regression checks.",
-      "sha256": "dcff221fcfe9887570b7fa812d4e2b60fd90b0395053cc0900386b1ffa4eb4f0"
-    },
     "scripts/routing-cases.jsonl": {
       "kind": "synthetic",
       "provenance": "Handwritten synthetic scenario for demonstrations and regression checks.",
       "sha256": "f2d59862a67e0cc9329311a5476716a65ea2682a105bb003d533067131731d0c"
-    },
-    "scripts/rules-talk.jsonl": {
-      "kind": "synthetic",
-      "provenance": "Handwritten synthetic scenario for demonstrations and regression checks.",
-      "sha256": "c5af18672ce51a9286267e82c91517f9e9047a63ea93bef558b0278f83267156"
     },
     "scripts/story-talk.jsonl": {
       "kind": "synthetic",
@@ -355,16 +330,6 @@
       "kind": "synthetic",
       "provenance": "Authored synthetic chat export with a fictional travel scenario.",
       "sha256": "5b8eecffbe56dfd101bd42cf66915c3c40c433517511a08d0a9c2c7619649b22"
-    },
-    "docs/compaction-check.md": {
-      "kind": "synthetic",
-      "provenance": "Synthetic workshop scenario summary for regression checks.",
-      "sha256": "7dcee5afb04b76a835dc4998a9e8776b5b2b7a9cbf87c06dc3839e2feebe960b"
-    },
-    "docs/trace.md": {
-      "kind": "synthetic",
-      "provenance": "Historical model output from scripted synthetic input. Does not validate the current release or film.",
-      "sha256": "40c5c087428b4c075b4bd87541ee48371db70b3ac08b978b09ab1f696821de07"
     }
   }
 }

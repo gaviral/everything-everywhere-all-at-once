@@ -7,6 +7,8 @@ One Rust process, the core, holds the map and talks to Meta's models; one web pa
 ```
 Browser, one page per window (ui/src)
   App.tsx        map and shared state/actions; the shell by default, the classic header/bottom bar with `?shell=1` (below)
+  AppMark.tsx    shared app icon with light and dark variants and an accessible E2A2O name
+  appearance.ts keeps the manifest and Apple touch icon in sync with the browser's light or dark appearance
   MapCards.tsx   Cards rendering: memoized topics, points, action rows, pictures and shared speech fixes; state stays in App
   RecoveryPanel.tsx  unfinished speech, other-map words and explicit online sends; consumes the core hook’s typed recovery state
   core.ts        the WebSocket; applies each Change to its own copy of the world (mirrors world.rs)
@@ -118,6 +120,7 @@ Browser, one page per window (ui/src)
 Core, one process (core/src: axum, tokio)
   storage.rs     validates and resolves platform map-directory locations without consulting environment files or services
   main.rs        Core state, the gate, one session per window, voice commands, "where was I?"; /room gives a member the code and invite link to share (invite())
+  surface.rs     HTTP routes, request path and body limits, and loopback-only tool admission; hosted mode keeps local tools closed
   data_lock.rs   startup takes a nonblocking exclusive OS lock on .core.lock before opening the journal; main keeps the handle while serving, and the sidecar stays after exit
   world.rs       World, Change, the journal
   protocol.rs    ServerMsg, ClientMsg
@@ -161,6 +164,7 @@ Core, one process (core/src: axum, tokio)
   helper_result.rs bounded read-only proposed results and redacted diffs, tied to server-owned helper identity
   clock.rs       local wall-clock time from the system's date, so timers keep their hour
   model.rs       a refused or busy key (a fallback for a Contributor-mode default stays, unused); the hourly call cap
+  secrets.rs     removes the model credential from provider responses, errors and traces, including split streaming deltas
   usage.rs       reads USAGE_FILE at startup and every 60 seconds, pushes usage messages and replays the latest on joining, with model.rs's own rolling-hour call count; never journaled
   import.rs      past AI chats into topics
   apple.rs       AppleScript into Reminders and Calendar; off a Mac, or hosted (E2A2O_HOSTED=1), the window's calendar file instead
@@ -308,6 +312,24 @@ All go from the core to `api.meta.ai/v1`. Every chat call except Explain asks fo
 - Routing cases against the real model (`scripts/routing-cases.jsonl`, or `ROUTING_CASES`; `ROUTING_RUNS` runs each): `cd core && cargo test --release -- --ignored routing_cases --nocapture` with `MODEL_API_KEY` set. A case is a small map, the card selected, the turn said before, someone else's turn in between, the words and where they may land, and what the new title or the point must (or mustn't) hold and whether one round of calls must do (no answer cut off at its room); or a talk, turns said in a row on one map, each with the move it should make ("new", "same", "same+new" for a turn cut in two), so a miss that leads to the next one shows; or a journal up to a thought, for a real miss kept outside the repo. Each run prints how long it took and the run ends with the median; with `TALK_OUT` set, each talk run's topics go to that file, for a script that scores a whole talk. `node scripts/where.mjs data/<map>` prints each thought's topic, with the model's answer when a trace exists. <!-- names-ok: "room" is the ordinary word here (headroom for a model answer), not a shared map -->
 - `node scripts/points-check.mjs`: the one check in a real browser (headless Chrome; set `CHROME` if it lives elsewhere, and precheck warns when there is none): the built UI with a stand-in core plays a point landing in a new tangent, then Show and Hide on the card above it, and fails when a point of a card that moves is drawn outside its card on any frame, during the move or after, or any point is outside its card once they settle (the opened card's own points may slide outside it for a moment as it opens, by design).
 - `node scripts/start-check.mjs`: run.sh's pre-build check (`scripts/start.mjs`) reads the key and `PORT` as the core will (environment first, then `.env` as dotenvy reads it) and probes every address the mode binds (a shared map's LAN address too), so a missing key or a busy port stops the run before the build.
-- `node scripts/readme-check.mjs`: the README's first screen (the pitch, a screenshot that exists, each Meta model the core calls named with its job, links into docs/trace.md, which shows a real call by each), the words it may hold, this parts list against the source files, and `scripts/trace-summary.mjs` on a small trace.
+- `node scripts/readme-check.mjs`: the README's first screen, labelled sample and demo, each Meta model named with its job and implementation link, bounded claims, and this parts list against the source files. `node scripts/links-check.mjs` checks local documentation links and section anchors against tracked files.
 - `node scripts/firstframe-check.mjs`: the video's first and last frames: "Listening" said once (the header), the models line in the end card's words, Pictures view tiles that start from the map's decoded pictures with no letter under them, and Recap decisions capitalized after their ✓.
 - `scripts/precheck.sh`: static checks, the tests, and live probes of a running core. It runs `scripts/model-guards.py`: only Meta's models and API in the app's code (`meta-only`), and every model call counted by the hourly cap (`counted`: only `call_model_noting`, which `call_model` wraps, and `ask_model` send the key, and both spend first). The merge gate runs the tests, the UI build and precheck on a scratch merge before main moves.
+
+Additional offline checks run separately: [correction controls](../scripts/correction.mjs), [email dry runs](../scripts/email-dry-run.mjs), [offline test runner](../scripts/offline-driver-test.py), [playground readiness](../scripts/playground-ready-test.mjs), and [publication guard](../scripts/publication-guard-test.py).
+
+Explicit opt-in checks cover live [Flow](../scripts/flow-happy-live.mjs), [capture-to-send](../scripts/film-chain-live.mjs), and [synthetic speech](../scripts/voice-live.mjs). They need an isolated local setup and live Meta access; they are separate from offline documentation checks.
+
+## Prototype scope
+
+The implementation was built for the Meta x Cerebral Valley hackathon. The idea and design preceded the event; no application code did. New work includes the board, speech and sketch paths, questions attached to words, Crew's part workflow, reuse, recovery and source inspection. Author: gaviral. The project's [MIT licence](../LICENSE) covers its own code; dependencies retain their licences and notices in [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).
+
+The first route is the labelled local keyless SAMPLE fixture. The hosted preview returned HTTP 401 at the last recorded link check; a fresh logged-out guest flow and a served-build match remain pending. Work spine and Remote can show simulated helper work; those demonstrations do not establish real bookings, payments or external helper execution.
+
+Crew uses real model calls and Git operations to generate board parts from a fixed set of blocks. Its structural checks do not establish arbitrary program correctness. In a film-enabled build, `?crewfault` deliberately damages a part to demonstrate repair.
+
+Live placement, sketch reading, image generation and Crew need a working Meta key and network access. Models can misread words, sketches or intent. Speech is configured for English. Reply playback accepts only browser/OS voices reporting `localService === true`; without one, replies remain text. That browser flag does not prove network isolation. Optional connectors and tunnels have separate network behavior and setup; review proposed external actions before approving them. Argument resolver and Volume watcher start off until switched on in Apps. The journal grows without compaction.
+
+Historical typed-input measurements do not validate this merged build or human microphone performance. Human microphone and interruption behavior, including loud-voice calibration, still need validation. The selected build, current live Meta demonstration, final film/link, media rights and owner approvals remain separate checks. Sample pictures are public generated fixtures; private journals, prompts, answers and owner words do not belong in the submission.
+
+`node scripts/readme-check.mjs`, `node scripts/links-check.mjs`, `node scripts/dates-check.mjs` and `python3 scripts/model-guards.py meta-only` check documentation and model-integration scope without service credentials. Their success does not establish a full build, browser flow, release clearance or validation of all historical merges. See the [film guide](../film/README.md) for narration provenance and rendering checks.
