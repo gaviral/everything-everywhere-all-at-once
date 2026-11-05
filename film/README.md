@@ -60,6 +60,21 @@ listening ports. Scratch Chrome profiles remain in the system temporary
 directory; takes remain under the ignored `renders/` folder. No shared app
 files or dependencies change.
 
+## Live app clips
+
+[The live clip recorder](../scripts/film-capture.mjs) captures the app in an
+isolated local core and Chrome profile. Set `FILM_OUT` to an external media
+directory, plus `FILM_KEYCHAIN_SERVICE` and `FILM_KEYCHAIN_ACCOUNT` for the Meta
+key, then run `node scripts/film-capture.mjs`. These captures make live Meta
+calls. `FILM_URL` can select an already-running isolated local core.
+
+`FILM_CLIPS=ask,crew` selects individual clips and prepares their required
+thought or sketch. Crew captures check that the board keeps the supplied
+Saturday without inventing another weekday. `FILM_SPOKEN=1` uses supplied WAVs
+from `FILM_VOICE_DIR` through Chrome's file-backed audio device, without a
+physical microphone. Review the recorded checks and footage before using a
+clip in the film.
+
 ## Feature wall
 
 Capture from an isolated core with a fresh sample map. Set `FILM_URL` to that
@@ -110,7 +125,10 @@ retains the original finished Repair Night frame, then crops naturally into
 the first square during a single smooth pull-back. The field holds for one
 second and lifts to white, retaining “Recorded demonstrations”. All movement
 and video seeking are evaluated at frame time. A fixed-resolution software
-canvas keeps image resampling independent of earlier camera frames.
+canvas with fixed bilinear sampling keeps image resampling independent of earlier camera frames.
+Stills are decoded and frozen at native resolution before zooming; field frames
+export directly from that canvas. Checks compare decoded pixels, including a
+second fresh renderer, rather than PNG compression bytes.
 `wall-field-check.mjs` checks
 complete square coverage and writes eight actual review frames; review those
 at film size before accepting a take.

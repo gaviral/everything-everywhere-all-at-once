@@ -280,7 +280,7 @@ const thoughts = [
   ...titles.slice(1).map((title, i) => thought(`t${i + 2}`, `${title} needs a look this week`, `T${i + 2}`)),
   thought("seed", "Start the tomato seedlings indoors in March", "T2b"),
 ];
-// Claude joined as an AI participant: its name ✦ and purple, its arrow purple.
+// Claude joined as an AI participant: its name has ✦ and the AI accent; its arrow shares the accent.
 const world = { threads, thoughts, active: "T1", active_by: { you: "T1" }, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: true, recaps: [], notes: {}, proposals: [], ai: ["Claude"] };
 const core = await standInCore(() => [{ type: "snapshot", world }]);
 const guide = (kind, target, text, by = "Claude") => core.send({ type: "guide", kind, target, text, by, at_ms: Date.now() });
@@ -402,7 +402,7 @@ try {
   await sleep(250);
   assert.match(await words(), /^✦ Claude Do you see the arrow\?/);
   assert.equal(await atStage(), true, "bottom center, above the dock");
-  assert.equal(await evaluate(`getComputedStyle(document.querySelector(".guide-caption .guide-by")).color`), await colorOf("var(--ai)"), "an AI's name in purple");
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector(".guide-caption .guide-by")).color`), await colorOf("var(--ai)"), "an AI's name uses its accent");
   await shot("0-caption");
   assert.ok(await until(`!document.querySelector(".guide-caption")`, captionMs(line) + 1500), "then it goes");
   const first = await evaluate(`window.__captions.map((c) => ({ text: c.text, ms: c.gone - c.at }))[0]`);
@@ -450,7 +450,7 @@ try {
   assert.ok((await seen(far)).whole, "whole between the header and the dock");
   await lands(far, "a far thread");
   assert.ok(await ringed(far), "the thread ringed");
-  assert.equal(await evaluate(`getComputedStyle(document.querySelector(".guide-arrow-line")).stroke`), await colorOf("var(--ai)"), "an AI's arrow is purple");
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector(".guide-arrow-line")).stroke`), await colorOf("var(--ai)"), "an AI's arrow uses its accent");
   await shot("3-point-thread");
   step("following");
   // It follows the part: the page scrolls (up: the far card is at the page's end), then the window narrows and the
@@ -681,7 +681,7 @@ try {
   await lands("thread:T1", "a question's evidence");
   const ink = await evaluate(`(() => { const b = getComputedStyle(document.querySelector(".guide-btn.guide-primary")), p = document.createElement("i"); document.body.append(p);
     const color = (v) => { p.style.color = v; return getComputedStyle(p).color; }; const out = [b.backgroundColor, color("var(--ink)"), color("var(--ai)")]; p.remove(); return out; })()`);
-  assert.ok(ink[0] === ink[1] && ink[0] !== ink[2], `Go ahead is ink, not the AI's purple (${ink})`);
+  assert.ok(ink[0] === ink[1] && ink[0] !== ink[2], `Go ahead uses the primary ink (${ink})`);
   await shot("9-asked");
   // Go ahead (↵ from the page): its buttons go, it stays with its arrow its reading time.
   await evaluate(`document.activeElement?.blur()`);
@@ -794,7 +794,8 @@ try {
   await page.close();
   page = null;
 
-  // The shell owns the space between its notice and composer, even while the caption is in the top layer.
+  // The shell reserves caption space below its notice, even in the top layer. A docked composer follows it;
+  // the canvas input has its own position and must stay clear of the caption.
   for (const [width, height] of [[1440, 900], [390, 844]]) {
     step(`shell captions at ${width}`);
     page = await openPage(`http://127.0.0.1:${core.port}/?shell=2`, { width, height });
@@ -817,7 +818,9 @@ try {
         assert.equal(await evaluate(`document.querySelectorAll('.guide-caption').length`), 1, "exactly one caption on the page");
         assert.ok(slot.bottom > slot.top && Math.abs((slot.bottom - slot.top) - (cap.bottom - cap.top)) <= 1, "the slot reserves the rendered caption height");
         assert.ok(inside(cap, width, height), `the shell caption stays inside the viewport (${JSON.stringify(cap)})`);
-        assert.ok(!overlap(cap, composer) && !overlap(cap, notice) && notice.bottom <= cap.top && cap.bottom <= composer.top, "between notice and composer without overlap");
+        assert.ok(!overlap(cap, composer) && !overlap(cap, notice) && notice.bottom <= cap.top, "below the notice and clear of the composer");
+        if (await evaluate(`!!document.querySelector('[data-guide="composer"]')?.closest('.dock')`))
+          assert.ok(cap.bottom <= composer.top, "a docked composer follows the caption");
         assert.ok(Math.abs(cap.top - slot.top) <= 1 && Math.abs(cap.bottom - slot.bottom) <= 1, "the visible caption follows its reserved box");
         assert.ok(await evaluate(`(() => { const line = document.querySelector('.guide-line'); return line.getBoundingClientRect().height <= 2 * parseFloat(getComputedStyle(line.parentElement).lineHeight) + 1; })()`), "sentence pages fit two lines at the slot's width");
         if (await layer() === "aimed") await lands("search", "the shell caption's arrow");
