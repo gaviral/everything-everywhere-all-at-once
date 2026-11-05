@@ -8,14 +8,15 @@ const NS = 'http://www.w3.org/2000/svg';
 const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 const SIZE = 248;
 const PIXEL = SIZE / 32;
+const TITLE_WIDTH = 1280;
 const TAGLINE = 'Think out loud. Build what you mean.';
 const clocks = {
   short: { seconds: 5.2, words: [.08, .34, .60], fall: 1.30, gather: [1.57, 2.08], fold: [2.12, 2.42],
-    morph: [2.62, 2.91], drop: [2.91, 3.23], bounce: [3.23, 3.56], shell: [3.45, 3.84],
-    ribbon: [3.70, 4.04], glass: [4.02, 4.26], name: [4.01, 4.38] },
+    morph: [2.94, 3.23], drop: [3.23, 3.55], bounce: [3.55, 3.88], shell: [3.77, 4.16],
+    ribbon: [4.02, 4.36], glass: [4.34, 4.58], name: [4.33, 4.70] },
   long: { seconds: 8, words: [.18, .65, 1.12], fall: 2.18, gather: [2.47, 3.10], fold: [3.22, 3.56],
-    morph: [3.88, 4.22], drop: [4.22, 4.61], bounce: [4.61, 5.02], shell: [4.91, 5.39],
-    ribbon: [5.21, 5.67], glass: [5.62, 5.94], name: [5.65, 6.16], tagline: [6.31, 6.69] },
+    morph: [4.08, 4.42], drop: [4.42, 4.81], bounce: [4.81, 5.22], shell: [5.11, 5.59],
+    ribbon: [5.41, 5.87], glass: [5.82, 6.14], name: [5.85, 6.36], tagline: [6.51, 6.89] },
 };
 
 function element(tag, className, parent, text = '') {
@@ -46,24 +47,47 @@ function installStyle() {
     .tm-shadow { position:absolute;width:112px;height:18px;border-radius:50%;background:#000;filter:blur(9px);transform-origin:center; }
   `;
 }
+function wordLayout(context, text, fontSize) {
+  let cursor = 0;
+  const letters = [...text].flatMap((char, index) => {
+    if (char === ' ') { cursor += fontSize * .34; return []; }
+    if (index > 0 && text[index - 1] !== ' ') cursor -= fontSize * .04;
+    const width = context.measureText(char).width, x = cursor + width / 2;
+    cursor += width;
+    return [{ char, index, x }];
+  });
+  return { width: cursor, letters };
+}
+function fitInitials(context, fontSize, poses, glyphs) {
+  const ratio = fontSize / 120;
+  const bounds = poses.map(([x, , scale], i) => {
+    const ink = context.measureText(glyphs[i]);
+    return [x * ratio - ink.actualBoundingBoxLeft * scale, x * ratio + ink.actualBoundingBoxRight * scale];
+  });
+  const left = Math.min(...bounds.map(b => b[0])), right = Math.max(...bounds.map(b => b[1]));
+  const factor = TITLE_WIDTH / (right - left), centre = (left + right) / 2;
+  return poses.map(([x, y, scale]) => ({ x: 960 + (x * ratio - centre) * factor, y: 540 + y * ratio * factor, scale: scale * factor }));
+}
 function makeLetters(parent) {
   const layer = bitmap(parent, 'tm-letters'), context = layer.context;
   context.font = `650 120px ${FONT}`; context.textAlign = 'center';
   const rows = ['EVERYTHING', 'EVERYWHERE', 'ALL AT ONCE'];
   const selected = [[0], [0], [0, 4, 7]];
+  const fontSize = 120 * TITLE_WIDTH / Math.max(...rows.map(text => wordLayout(context, text, 120).width));
+  context.font = `650 ${fontSize}px ${FONT}`;
+  const gathered = fitInitials(context, fontSize, [[-272, 0, 1], [-136, 0, 1], [0, 0, 1], [136, 0, 1], [272, 0, 1]], 'EEAAO');
+  const folded = fitInitials(context, fontSize, [[-213, 0, 1], [-146, -47, .43], [3, 0, 1], [70, -47, .43], [220, 0, 1]], 'E2A2O');
   let initial = 0;
   const letters = rows.flatMap((text, row) => {
-    const spacing = -4.8;
-    const width = context.measureText(text).width + spacing * (text.length - 1);
-    return [...text].flatMap((char, index) => {
-      if (char === ' ') return [];
+    const { width, letters } = wordLayout(context, text, fontSize);
+    return letters.map(({ char, index, x }) => {
       const isInitial = selected[row].includes(index);
-      const x = 960 - width / 2 + context.measureText(text.slice(0, index)).width + spacing * index + context.measureText(char).width / 2;
       const metrics = context.measureText(char);
-      return [{ row, index, char, x, y: 370 + row * 145, baseline: (metrics.actualBoundingBoxAscent - metrics.actualBoundingBoxDescent) / 2, initial: isInitial ? initial++ : -1 }];
+      return { row, index, char, x: 960 - width / 2 + x, y: 315 + row * 225, height: metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent,
+        baseline: (metrics.actualBoundingBoxAscent - metrics.actualBoundingBoxDescent) / 2, initial: isInitial ? initial++ : -1 };
     });
   });
-  return { ...layer, letters };
+  return { ...layer, letters, gathered, folded };
 }
 function makeGradient(defs, id, stops, attributes) {
   const gradient = svgElement('radialGradient', { id, ...attributes });
@@ -109,8 +133,6 @@ function drawLetters(layer, t, clock, colour) {
   const gather = settle(phase(t, ...clock.gather));
   const fold = smooth(phase(t, ...clock.fold));
   const morph = smooth(phase(t, ...clock.morph));
-  const positions = [688, 824, 960, 1096, 1232];
-  const folded = [[747, 540, 1], [814, 493, .43], [963, 540, 1], [1030, 493, .43], [1180, 540, 1]];
   for (const letter of layer.letters) {
     const entry = settle(phase(t, clock.words[letter.row], clock.words[letter.row] + .29));
     let x = letter.x, y = letter.y + (1 - entry) * 26, scale = 1, angle = 0;
@@ -124,12 +146,12 @@ function drawLetters(layer, t, clock, colour) {
       angle = (letter.index % 2 ? 1 : -1) * falling * 23;
       opacity *= 1 - phase(falling, .38, .65);
     } else {
-      const i = letter.initial, target = folded[i];
-      x = mix(x, mix(positions[i], target[0], fold), gather);
-      y = mix(y, mix(540, target[1], fold), gather);
-      scale = mix(1, target[2], fold);
+      const i = letter.initial, from = layer.gathered[i], target = layer.folded[i];
+      x = mix(x, mix(from.x, target.x, fold), gather);
+      y = mix(y, mix(from.y, target.y, fold), gather);
+      scale = mix(1, mix(from.scale, target.scale, fold), gather);
       if (i === 1 || i === 3) digit = phase(t, clock.fold[0] + .06, clock.fold[1] - .02);
-      if (i === 4) { x = mix(x, 960 + 5 * PIXEL, morph); y = mix(y, 312, morph); scale *= mix(1, .54, morph); }
+      if (i === 4) { x = mix(x, 960 + 5 * PIXEL, morph); y = mix(y, 312, morph); scale = mix(scale, 8 * PIXEL * .85 / letter.height, morph); }
       opacity *= 1 - (i === 4 ? phase(morph, .20, .88) : phase(morph, 0, .62));
     }
     paint.save(); paint.translate(x, y); paint.rotate(angle * Math.PI / 180); paint.scale(scale, scale);
@@ -149,7 +171,7 @@ function beadY(t, clock) {
   if (t < clock.drop[1]) return mix(312, 540, drop * drop);
   return 540 - 66 * 4 * bounce * (1 - bounce);
 }
-function drawIcon(icon, shadow, t, clock, destination) {
+function drawIcon(icon, shadow, t, clock, destination, originX) {
   const shift = settle(phase(t, ...clock.name));
   const cx = mix(960, destination, shift);
   icon.root.style.transform = `translate(${cx - SIZE / 2}px,${540 - SIZE / 2}px)`;
@@ -163,7 +185,7 @@ function drawIcon(icon, shadow, t, clock, destination) {
   icon.ribbon.style.strokeDashoffset = String(icon.length * (1 - draw));
   const morph = smooth(phase(t, ...clock.morph));
   const y = t < clock.morph[1] ? mix(540, 312, morph) : beadY(t, clock);
-  const x = mix(1180, 960 + 5 * PIXEL, morph) - (960 + 5 * PIXEL);
+  const x = mix(originX, 960 + 5 * PIXEL, morph) - (960 + 5 * PIXEL);
   const beadScale = mix(.85, .77, smooth(phase(t, clock.bounce[0], clock.glass[1])));
   icon.beadPose.setAttribute('transform', `translate(${x / PIXEL} ${(y - 540) / PIXEL}) translate(21 16) scale(${beadScale}) translate(-21 -16)`);
   icon.beadPose.style.opacity = String(smooth(phase(morph, .35, .95)));
@@ -221,7 +243,7 @@ export async function createTitleMorph(shot, parent) {
     draw(local) {
       const t = clamp(local / shot.duration) * clock.seconds;
       drawLetters(letters, t, clock, root.style.color);
-      drawIcon(icon, shadow, t, clock, destination);
+      drawIcon(icon, shadow, t, clock, destination, letters.folded[4].x);
       drawName(name, tagline, t, clock, nameX);
     },
   };

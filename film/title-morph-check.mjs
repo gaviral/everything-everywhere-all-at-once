@@ -19,20 +19,53 @@ const visible = () => stage.evaluate(`(() => {
     glass: alpha(document.querySelector('.tm-glass')), vector: alpha(document.querySelector('.tm-icon svg')),
     credits: [...document.querySelectorAll('.end-credits,.caption,.label')].filter(n => !n.hidden && n.textContent).length};
 })()`);
+const letterInk = () => stage.evaluate(`(() => {
+  const canvas = document.querySelector('.tm-letters'), data = canvas.getContext('2d').getImageData(0, 0, 1920, 1080).data;
+  const lines = []; let line = null;
+  for (let y = 0; y < 1080; y++) {
+    let left = 1920, right = -1;
+    for (let x = 0; x < 1920; x++) if (data[(y * 1920 + x) * 4 + 3] > 127) { left = Math.min(left, x); right = x; }
+    if (right < 0) { if (line) { lines.push(line); line = null; } continue; }
+    line ??= { top: y, bottom: y, left: 1920, right: -1 };
+    line.bottom = y; line.left = Math.min(line.left, left); line.right = Math.max(line.right, right);
+  }
+  if (line) lines.push(line);
+  for (const line of lines) {
+    line.width = line.right - line.left + 1; line.centre = (line.left + line.right) / 2; line.gaps = [];
+    let gap = 0;
+    for (let x = line.left; x <= line.right; x++) {
+      let ink = false;
+      for (let y = line.top; y <= line.bottom; y++) if (data[(y * 1920 + x) * 4 + 3] > 127) { ink = true; break; }
+      if (!ink) gap++; else if (gap) { line.gaps.push(gap); gap = 0; }
+    }
+  }
+  return lines;
+})()`);
+function assertLargeCentred(lines) {
+  assert.ok(lines.every(line => line.width > 1100 && line.width < 1320), 'The painted type fills about two thirds of the frame');
+  assert.ok(lines.every(line => Math.abs(line.centre - 960) < 12), 'The painted type is centred');
+}
 const variants = [
-  { variant: 'short', seconds: 5.2, full: 1.15, initials: 2.09, folded: 2.5, impact: 3.23, seated: 3.56, hold: 4.5, colour: 'rgb(0, 0, 0)' },
-  { variant: 'long', seconds: 8, full: 1.8, initials: 3.13, folded: 3.7, impact: 4.61, seated: 5.02, hold: 6.8, colour: 'rgb(255, 255, 255)' },
+  { variant: 'short', seconds: 5.2, full: 1.15, initials: 2.09, folded: 73 / 30, foldedEnd: 88 / 30, impact: 3.55, seated: 3.88, hold: 4.8, colour: 'rgb(0, 0, 0)' },
+  { variant: 'long', seconds: 8, full: 1.8, initials: 3.13, folded: 107 / 30, foldedEnd: 122 / 30, impact: 4.81, seated: 5.22, hold: 7, colour: 'rgb(255, 255, 255)' },
 ];
 try {
   for (const [index, spec] of variants.entries()) {
     const shot = { ...timeline({ shots: [{ kind: 'titlemorph', variant: spec.variant, seconds: spec.seconds }] }).shots[0], index };
     await stage.frame(shot, spec.full);
     assert.equal((await visible()).letters, 'EVERYTHINGEVERYWHEREALLATONCE', 'The complete film title is readable');
+    const rows = await letterInk();
+    assert.equal(rows.length, 3); assertLargeCentred(rows);
+    assert.equal(rows[2].gaps.filter(gap => gap >= 45).length, 2, 'ALL AT ONCE has two visible word spaces');
     await stage.frame(shot, spec.initials);
     assert.equal((await visible()).letters, 'EEAAO', 'Only the five initials remain');
+    assertLargeCentred(await letterInk());
     await stage.frame(shot, spec.folded);
     assert.equal((await visible()).letters, 'E2A2O', 'The duplicate initials have become small twos');
+    assertLargeCentred(await letterInk());
     const folded = await stage.screenshot();
+    await stage.frame(shot, spec.foldedEnd);
+    assert.deepEqual(await stage.screenshot(), folded, 'E² A² O holds completely still for half a second');
     const beadPositions = [];
     for (const time of [spec.impact, (spec.impact + spec.seated) / 2, spec.seated]) {
       await stage.frame(shot, time);
