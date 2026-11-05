@@ -1,0 +1,9 @@
+{
+  "id": "canvas-buddy",
+  "name": "Canvas buddy",
+  "does": "A gold bead finds one loose end on your map. Answer beside the thought.",
+  "kind": "panel",
+  "defaultOn": false,
+  "demoSafe": true,
+  "flag": "canvas-buddy"
+}
