@@ -96,6 +96,18 @@ For **Crew**, start locally with `./run.sh demo` and your Meta key configured. E
 
 Stop with Ctrl+C. Restart after changing the key. `./run.sh` opens your regular map; see [storage](docs/storage.md).
 
+## Made with it
+
+Five ideas people posted on Hacker News, each typed once into Crew, all five at once. Crew builds boards, so each is the closest version a board can hold. Every run below was real: Muse Spark built the parts on their own Git branches and merged them to main in 25 to 36 seconds.
+
+| The idea | Crew's board |
+| --- | --- |
+| [A planner for what needs my attention](https://news.ycombinator.com/item?id=46350457) | [Daily planner](docs/examples/daily-planner.png) |
+| [A tool that proposes which tests should block](https://news.ycombinator.com/item?id=46354793) | [Test triage](docs/examples/blocking-tests.png) |
+| [Prototype a CI job with CI's environment](https://news.ycombinator.com/item?id=46400062) | [Local CI prototype](docs/examples/ci-from-laptop.png) |
+| [A cyclists' city map, edited like a wiki](https://news.ycombinator.com/item?id=45509339) | [City routes](docs/examples/cycling-routes.png) |
+| [Up-to-date facts on alternative phones](https://news.ycombinator.com/item?id=45501038) | [Phone comparison](docs/examples/alternative-phones.png) |
+
 ## How it's built
 
 A React and TypeScript board connects to a Rust core. The core holds the key and calls Meta models through [model.rs](core/src/model.rs), and streams speech from [asr.rs](core/src/asr.rs). Features are composed from named parts, with separate rendering error boundaries. Crew keeps generated board specifications in their own Git repositories.
