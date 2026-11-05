@@ -295,7 +295,7 @@ assert.match(sampleRun.stdout, /sample map \(no key or mic\): http:\/\/localhost
 assert.match(sampleRun.stdout, /Building UI\.\.\.\nUI build complete\.\n[\s\S]*Starting bundled core\.\.\./);
 const customSample = bundle.run(["sample"], { PORT: String(sparePort) });
 assert.equal(customSample.status, 0, customSample.stderr);
-assert.ok(customSample.stdout.includes(`sample map (no key or mic): http://localhost:${sparePort}/?sample\n`));
+assert.ok(customSample.stdout.includes(`sample map (no key or mic): http://localhost:${sparePort}/?sample&bricks=crew,draw,clarify\n`));
 assert.equal(JSON.parse(customSample.stdout.trim().split("\n").at(-1)).port, String(sparePort));
 assert.equal(sampled.data, bundle.env.E2A2O_DATA);
 assert.equal(sampled.sample, "fixture sample\n");
