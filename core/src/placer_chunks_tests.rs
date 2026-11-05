@@ -148,10 +148,10 @@ fn an_assumption_is_noted_only_when_it_moved_the_thought() {
 /// A turn cut in two: the rest can't carry on its own first part, and a split's first part keeps its note.
 #[test]
 fn the_rest_of_a_split_turn_never_joins_its_own_first_part() {
-    let said = turn("The dentist moved my cleaning to Thursday and also I should send Sam the slides", 10);
+    let said = turn("The dentist moved my cleaning to Thursday and also I should send Colleague the slides", 10);
     let world = World { threads: vec![thread("T1", "Dentist")], thoughts: vec![said.clone()], ..World::default() };
     let reply = answer(serde_json::json!({"action": "continue", "thread_id": "T1", "point": "Cleaning moved to Thursday",
-        "split": "also I should send Sam the slides", "why": "names the dentist"}));
+        "split": "also I should send Colleague the slides", "why": "names the dentist"}));
     let (changes, rest) = settle(&world, &said, reply, 900, false, true);
     assert_eq!(noted(&changes).map(|n| n.why.as_str()), Some("names the dentist"));
     let mut after = world.clone();
@@ -159,7 +159,7 @@ fn the_rest_of_a_split_turn_never_joins_its_own_first_part() {
         after.apply(c);
     }
     let rest = after.thoughts.iter().find(|t| Some(&t.id) == rest.as_ref()).unwrap().clone();
-    let joined = decide(&after, &rest, answer(serde_json::json!({"action": "new", "title": "Slides for Sam", "joins": "before"})), 900, false, true);
+    let joined = decide(&after, &rest, answer(serde_json::json!({"action": "new", "title": "Slides for Colleague", "joins": "before"})), 900, false, true);
     assert!(noted(&joined).is_none() && joined.iter().any(|c| matches!(c, Change::ThreadAdded { .. })), "{joined:?}");
 }
 
@@ -173,15 +173,15 @@ fn the_trace_line_carries_the_note() {
 }
 
 /// A decision cut in two by a pause is one: the part carrying it on is marked even though its own words name no
-/// decision ("Priya on Wednesday night"), so the map shows the joined point as decided and Recap gets it once. A cut
+/// decision ("Partner on Wednesday night"), so the map shows the joined point as decided and Recap gets it once. A cut
 /// "Okay, decided:" is never set aside as filler, or the rest would have nothing to carry on.
 #[test]
 fn a_decision_cut_by_a_pause_is_marked_on_the_part_that_carries_it_on() {
     let mut world = World { threads: vec![thread("T1", "Stats midterm"), thread("T2", "Bike brakes")], ..World::default() };
     world.thoughts = vec![Thought { decided: true, ..said("a", "Decided: I'll study with", "T1", 20, false) }];
     world.apply(&Change::ActiveChanged { thread_id: "T1".into(), speaker: "you".into() });
-    let rest = turn("Priya on Wednesday night.", 23);
-    let joined = decide(&world, &rest, answer(serde_json::json!({"action": "new", "title": "Study with Priya", "point": "Study with Priya on Wednesday night", "joins": "before"})), 900, false, true);
+    let rest = turn("Partner on Wednesday night.", 23);
+    let joined = decide(&world, &rest, answer(serde_json::json!({"action": "new", "title": "Study with Partner", "point": "Study with Partner on Wednesday night", "joins": "before"})), 900, false, true);
     let decided = |changes: &[Change]| changes.iter().find_map(|c| match c { Change::ThoughtPlaced { decided, .. } => Some(*decided), _ => None });
     assert_eq!((landed(&joined), decided(&joined)), (Some("T1"), Some(true)), "{joined:?}");
     // Not joined, its own words decide nothing.
@@ -226,7 +226,7 @@ fn a_correction_or_an_unlink_reads_the_mark_again() {
     let mut world = World { threads: vec![thread("T1", "Stats midterm")], ..World::default() };
     world.thoughts = vec![
         Thought { unclear: "Divided".into(), guess: "Decided".into(), ..said("h", "Divided: I'll study with", "T1", 20, false) },
-        said("c", "Priya on Wednesday night.", "T1", 23, true),
+        said("c", "Partner on Wednesday night.", "T1", 23, true),
     ];
     world.apply(&Change::ThoughtNoted { thought_id: "c".into(), note: Note { continues: "h".into(), ..Note::default() } });
     let fixed = crate::decided::remarked(&world, vec![Change::ThoughtCorrected { thought_id: "h".into(), accept: true, with: String::new() }]);

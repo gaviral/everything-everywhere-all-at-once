@@ -220,7 +220,7 @@ fn a_kept_skip_says_why() {
 /// ("never skip … any other answer"), and the map says which rule kept it. After a statement it's filler as ever.
 #[test]
 fn a_short_answer_to_a_question_is_never_set_aside() {
-    let question = Thought { speaker: "Sam".into(), ..said("q", "Should we go with the blue or the red?", Some("T1"), 5_000, true) };
+    let question = Thought { speaker: "Colleague".into(), ..said("q", "Should we go with the blue or the red?", Some("T1"), 5_000, true) };
     let blue = said("n", "The blue.", None, 6_000, true);
     let mut world = map(vec![question, blue.clone()]);
     let skip = || answer(json!({"action": "skip", "thread_id": "T1", "point": "The blue"}));

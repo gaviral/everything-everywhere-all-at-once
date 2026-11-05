@@ -25,7 +25,7 @@ if (why) { console.log(`SKIP phone-check: ${why}`); process.exit(3); }
 const now = Date.now();
 const thread = (id, title) => ({ id, title, parent_id: null, status: "open", last_point: "", touched_ms: now, tags: [], picture: null, dropped_by: "" });
 const thought = (id, text, thread_id) => ({ id, speaker: "you", text, point: text, thread_id, placed: true, unclear: "", guess: "", heard: "", fixed: "", complete: true, at_ms: now, place_ms: 3000, decided: false });
-const titles = ["Rent Due Friday", "Garden Plans", "Trip to Lisbon", "Pottery Class", "Mia's Birthday", "Car Service", "Reading List", "Gym Routine"];
+const titles = ["Rent Due Friday", "Garden Plans", "Trip to Lisbon", "Pottery Class", "Recipient's Birthday", "Car Service", "Reading List", "Gym Routine"];
 const words = ["Submit the rent form online before Friday noon", "Plant the tomatoes this weekend", "Book the flights for May", "Ask about the glaze firing",
   "Order the cake from the bakery", "Winter tyres before November", "Finish the second chapter", "Three mornings a week"];
 const world = {
@@ -34,7 +34,7 @@ const world = {
   active: "T1", active_by: { you: "T1" }, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: true, recaps: [], notes: {}, proposals: [],
 };
 const KEY_NOTICE = { type: "notice", message: "MODEL_API_KEY is not set: listening and placement are off." };
-const SEND_CARD = { type: "send_card", id: 1, to: "Mia", text: "Hi Mia, could you confirm what to bring on Saturday?", state: "counting", in_ms: 600000, live: false, message: "" };
+const SEND_CARD = { type: "send_card", id: 1, to: "Recipient", text: "Hi Recipient, could you confirm what to bring on Saturday?", state: "counting", in_ms: 600000, live: false, message: "" };
 const MAP_CHANGE = { type: "change", change: { type: "thread_retitled", thread_id: "T2", was: "Garden Plans", title: "Garden Plan" } };
 
 const failures = [];
@@ -169,7 +169,7 @@ try {
   await evaluate(HELPERS);
   for (const field of await evaluate(`[...document.querySelectorAll(".join-field input")].map((f) => [f.placeholder || f.name, parseFloat(getComputedStyle(f).fontSize)])`))
     if (field[1] < 16) failures.push(`join page: the ${field[0] || "name"} field is ${field[1]} px: iOS zooms in on it`);
-  await evaluate(`sessionStorage.setItem("e2a2o.joined", "Sam"); location.reload()`).catch(() => {});
+  await evaluate(`sessionStorage.setItem("e2a2o.joined", "Colleague"); location.reload()`).catch(() => {});
   await sleep(300);
   assert(await until(`!!document.querySelector("#thread-T1") && !!document.querySelector(".session-count")`, 10000), "the map loads in a room, with this session's count");
   await evaluate(HELPERS);
@@ -315,7 +315,7 @@ try {
   assert(await until('!document.querySelector(".notice")'), "read the notice before the message-size scenes");
 
   // A long message counting down: its words scroll in the card and its Stop shows, on top, wherever the page is.
-  core.send({ ...SEND_CARD, id: 2, text: "Hi Mia, could you confirm what to bring on Saturday? ".repeat(12) });
+  core.send({ ...SEND_CARD, id: 2, text: "Hi Recipient, could you confirm what to bring on Saturday? ".repeat(12) });
   assert(await until(`document.querySelector(".send-card-text")?.textContent.length > 300`, 5000), "the long message shows");
   for (const [w, h] of [[320, 568], [390, 844], [844, 390]]) {
     await size(w, h);
@@ -383,7 +383,7 @@ if (shots) {
   const laptop = await openPage(`http://127.0.0.1:${desk.port}/?cards`, { width: 1440, height: 900 });
   try {
     await laptop.until(`document.readyState === "complete"`, 10000);
-    await laptop.evaluate(`sessionStorage.setItem("e2a2o.joined", "Sam"); location.reload()`).catch(() => {});
+    await laptop.evaluate(`sessionStorage.setItem("e2a2o.joined", "Colleague"); location.reload()`).catch(() => {});
     await sleep(300);
     await laptop.until(`!!document.querySelector("#thread-T1")`, 10000);
     for (const value of ["light", "dark"]) {

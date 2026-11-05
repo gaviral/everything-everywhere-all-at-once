@@ -92,7 +92,7 @@ fn picnic() -> World {
         threads: vec![thread("T1", "Picnic at the lake", 1), thread("T2", "Bills", 2), weather],
         thoughts: vec![
             decided,
-            thought("a", "T1", "picnic at the lake with Mia & Sam", now - 300_000),
+            thought("a", "T1", "picnic at the lake with Recipient & Colleague", now - 300_000),
             trailing,
             pending,
             thought("d", "T2", "The electric bill is due Friday", now - 250_000),
@@ -160,7 +160,7 @@ fn the_note_is_the_threads_points_in_order_with_decisions_and_unfinished_marked(
                 NoteSection {
                     title: String::new(),
                     points: vec![
-                        point("Picnic at the lake with Mia & Sam", false, false),
+                        point("Picnic at the lake with Recipient & Colleague", false, false),
                         point("Saturday at noon", true, false),
                         point("And we still need someone to bring the", false, true),
                     ],
@@ -172,17 +172,17 @@ fn the_note_is_the_threads_points_in_order_with_decisions_and_unfinished_marked(
     );
     assert_eq!(
         note.html(),
-        "<div><h1>Picnic at the lake</h1></div><ul><li>Picnic at the lake with Mia &amp; Sam</li><li><b>Decided:</b> Saturday at noon</li>\
+        "<div><h1>Picnic at the lake</h1></div><ul><li>Picnic at the lake with Recipient &amp; Colleague</li><li><b>Decided:</b> Saturday at noon</li>\
 <li>And we still need someone to bring the <i>(unfinished)</i></li></ul><div><h2>Weather</h2></div><ul><li>Check the &lt;rain&gt; forecast</li></ul>",
         "words said are escaped: they read as text, never as markup"
     );
     // In a room, each point says who said it.
     let mut room = picnic();
-    room.thoughts[1].speaker = "Ana".into();
+    room.thoughts[1].speaker = "Speaker".into();
     let note = super::note(&room, "T1", crate::now_ms()).unwrap();
-    assert_eq!(note.sections[0].points[0].who, "Ana");
+    assert_eq!(note.sections[0].points[0].who, "Speaker");
     assert_eq!(note.sections[0].points[1].who, "you");
-    assert!(note.html().contains("<li>Ana: Picnic"));
+    assert!(note.html().contains("<li>Speaker: Picnic"));
 }
 
 #[tokio::test]

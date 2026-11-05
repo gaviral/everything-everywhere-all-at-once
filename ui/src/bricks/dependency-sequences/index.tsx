@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { DependencySequences } from "../../intake1417/dependency-sequences";
-import { syntheticSnapshot } from "../../intake1417/dependency-sequences/fixtures";
+import { DependencySequences } from "../../features/dependency-sequences";
+import { syntheticSnapshot } from "../../features/dependency-sequences/fixtures";
 function createExampleSequence() {
   let complete = false; const listeners = new Set<() => void>();
   return { adapter: { readSnapshot: async () => syntheticSnapshot(complete), subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; } }, advance() { complete = !complete; listeners.forEach(listener => listener()); } };

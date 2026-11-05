@@ -12,7 +12,7 @@ export type HeldQuestion = {
   ai?: boolean;
   /** The words that catch the eye, bold: "Which Saturday?" */
   main: string;
-  /** The rest of it, plain: "Lena leaves on the 14th." */
+  /** The rest of it, plain: "Guest leaves on the 14th." */
   rest?: string;
   /** Answer ↵: what answering does (the Friend asks it now). Without one, the composer takes focus with the stack. */
   answer?: () => void;

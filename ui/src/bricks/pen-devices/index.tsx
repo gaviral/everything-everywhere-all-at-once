@@ -1,7 +1,7 @@
 import { useState, useSyncExternalStore } from "react";
-import { InputSurface } from "../../intake1411/pen-devices/InputSurface";
-import { StrokeMarks } from "../../intake1411/pen-devices/DrawingSurface";
-import { PreviewAdapter } from "../../intake1411/pen-devices/preview-adapter";
+import { InputSurface } from "../../features/pen-devices/InputSurface";
+import { StrokeMarks } from "../../features/pen-devices/DrawingSurface";
+import { PreviewAdapter } from "../../features/pen-devices/preview-adapter";
 function Destination({ adapter }: { adapter: PreviewAdapter }) {
   const snapshot = useSyncExternalStore(adapter.subscribe, adapter.getSnapshot);
   return <div className="pen-devices-example-grid">{snapshot.sessions.map(session => <section key={session.id}><h2>{session.name}</h2><p>{snapshot.received.filter(stroke => stroke.sessionId === session.id).length} strokes received</p><div className="pen-devices" aria-label={`${session.name} received marks`}><StrokeMarks strokes={snapshot.received.filter(stroke => stroke.sessionId === session.id)} /></div></section>)}</div>;

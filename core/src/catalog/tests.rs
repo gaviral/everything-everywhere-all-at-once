@@ -173,9 +173,9 @@ async fn ordinary_talk_with_the_new_words_stays_a_thought() {
         "The topic of the meeting is hiring", "Let's change the topic", "Back to the topic", "Go back to the topic", "Find a new topic for the essay",
         "Go to another topic", "Go to the other topic", "Next topic is the budget", "That topic came up in the call", "Move on to the next topic",
         "Add a topic to the agenda", "Put the topic on the agenda", "Show me the topic list", "I want to save this topic for later",
-        "Save this topic as a note for Dana", "Find the topic we talked about yesterday", "Take me to the next topic", "Let's focus on the topic",
+        "Save this topic as a note for Collaborator", "Find the topic we talked about yesterday", "Take me to the next topic", "Let's focus on the topic",
         "Expand the topic", "Show all the topics we covered", "Expand every topic we covered", "Delete this topic", "I went on a tangent",
-        "That was a tangent", "Show me pictures of the trip", "Send the pictures to Dana", "Pictures of the garden", "I need to buy cards",
+        "That was a tangent", "Show me pictures of the trip", "Send the pictures to Collaborator", "Pictures of the garden", "I need to buy cards",
         "Open cards", "Show me the cards on the table", "Business cards", "The pictures were great", "Pay the cards off", "These cards are old",
     ] {
         let f = Fixture::new(garden());
@@ -330,7 +330,7 @@ async fn export_my_map_asks_the_window_for_the_file_and_changes_nothing() {
     let before = serde_json::to_string(&f.core.snapshot()).unwrap();
     assert_eq!(f.say("Export my map").await, ["view export"]);
     assert_eq!(serde_json::to_string(&f.core.snapshot()).unwrap(), before);
-    assert_eq!(f.say("Export the photos to Dana").await, ["added Export the photos to Dana"]);
+    assert_eq!(f.say("Export the photos to Collaborator").await, ["added Export the photos to Collaborator"]);
 }
 
 #[tokio::test]
@@ -779,7 +779,7 @@ async fn the_undo_key_takes_back_the_last_turn_as_undo_that_does() {
 #[tokio::test]
 async fn a_sent_message_inside_a_redo_is_never_said_to_be_undone() {
     const SPENT: &str = "notice Can't undo that here: the message isn't counting down any more";
-    let remembered = |f: &Fixture, undo: Undo| remember(&f.core, "you", "No, I meant text Sam that I'm late", Was::Request { act: Act::Message, undo: Some(undo) });
+    let remembered = |f: &Fixture, undo: Undo| remember(&f.core, "you", "No, I meant text Colleague that I'm late", Was::Request { act: Act::Message, undo: Some(undo) });
     // Nothing counts down: the message went.
     let f = Fixture::new(garden());
     let id = remembered(&f, Undo::Each(vec![Undo::Unsend { id: 7 }]));
@@ -803,12 +803,12 @@ async fn a_sent_message_inside_a_redo_is_never_said_to_be_undone() {
 fn undo_of_the_only_thought_on_your_thread_puts_you_back_on_it() {
     let now = now_ms();
     let call = || thought("c", "T3", "Call Mom on Sunday", now);
-    // Delete by hand: T1 keeps the garden, T3 holds one thought, and you and Sam are on T3.
+    // Delete by hand: T1 keeps the garden, T3 holds one thought, and you and Colleague are on T3.
     let mut world = garden();
     world.threads.push(thread("T3", "Mom", 3));
     world.thoughts.push(call());
     world.active = Some("T3".into());
-    world.active_by = HashMap::from([("you".into(), "T3".into()), ("Sam".into(), "T3".into()), ("Lena".into(), "T2".into())]);
+    world.active_by = HashMap::from([("you".into(), "T3".into()), ("Colleague".into(), "T3".into()), ("Guest".into(), "T2".into())]);
     let f = Fixture::new(world);
     let undo = take_off(&f.core, &["c".to_string()]).unwrap();
     assert!(f.core.snapshot().thread("T3").is_none() && f.core.snapshot().active.is_none());
@@ -816,7 +816,7 @@ fn undo_of_the_only_thought_on_your_thread_puts_you_back_on_it() {
     let after = f.core.snapshot();
     assert!(after.thread("T3").is_some());
     assert_eq!(after.active.as_deref(), Some("T3"));
-    assert_eq!(after.active_by, HashMap::from([("you".into(), "T3".into()), ("Sam".into(), "T3".into()), ("Lena".into(), "T2".into())]));
+    assert_eq!(after.active_by, HashMap::from([("you".into(), "T3".into()), ("Colleague".into(), "T3".into()), ("Guest".into(), "T2".into())]));
 
     // "Scratch that" on the first words: nowhere to merge into, so T3 leaves; undo puts you back on it.
     let f = Fixture::new(World {
@@ -837,12 +837,12 @@ fn undo_of_the_only_thought_on_your_thread_puts_you_back_on_it() {
     world.threads.push(thread("T3", "Mom", 3));
     world.thoughts.push(call());
     world.active = Some("T3".into());
-    world.active_by = HashMap::from([("you".into(), "T3".into()), ("Sam".into(), "T3".into())]);
+    world.active_by = HashMap::from([("you".into(), "T3".into()), ("Colleague".into(), "T3".into())]);
     let f = Fixture::new(world);
     let undo = take_off(&f.core, &["c".to_string()]).unwrap();
-    f.core.commit(vec![Change::ActiveChanged { thread_id: "T1".into(), speaker: "Sam".into() }]);
+    f.core.commit(vec![Change::ActiveChanged { thread_id: "T1".into(), speaker: "Colleague".into() }]);
     run_undo(&f.core, "you", &undo);
     let after = f.core.snapshot();
     assert_eq!(after.active.as_deref(), Some("T1"), "the talk moved on to T1");
-    assert_eq!(after.active_by, HashMap::from([("you".into(), "T3".into()), ("Sam".into(), "T1".into())]));
+    assert_eq!(after.active_by, HashMap::from([("you".into(), "T3".into()), ("Colleague".into(), "T1".into())]));
 }

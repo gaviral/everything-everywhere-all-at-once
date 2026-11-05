@@ -153,15 +153,15 @@ mod tests {
         let (png,width,height)=sanitize(&image()).unwrap();
         let mut session=Session{on:true,upload:None,proposal:Some(Proposal{id:extract_id.clone(),target:"schedule".into(),title:"Schedule".into(),png,width,height,points:points.clone()})};
         let chosen=vec![points[0].clone()];
-        session.on=false;assert!(keep_at(&core,"Sam",&session,&keep_id,&extract_id,chosen.clone(),&root).is_err());session.on=true;
-        let receipt=keep_at(&core,"Sam",&session,&keep_id,&extract_id,chosen.clone(),&root).unwrap();
-        assert_eq!(receipt,keep_at(&core,"Sam",&session,&keep_id,&extract_id,chosen.clone(),&root).unwrap());
-        assert_eq!(core.snapshot().thoughts.len(),1);assert_eq!(core.snapshot().thoughts[0].speaker,"Image evidence · Sam");
-        assert!(keep_at(&core,"Lee",&session,&keep_id,&extract_id,chosen.clone(),&root).is_err());
+        session.on=false;assert!(keep_at(&core,"Colleague",&session,&keep_id,&extract_id,chosen.clone(),&root).is_err());session.on=true;
+        let receipt=keep_at(&core,"Colleague",&session,&keep_id,&extract_id,chosen.clone(),&root).unwrap();
+        assert_eq!(receipt,keep_at(&core,"Colleague",&session,&keep_id,&extract_id,chosen.clone(),&root).unwrap());
+        assert_eq!(core.snapshot().thoughts.len(),1);assert_eq!(core.snapshot().thoughts[0].speaker,"Image evidence · Colleague");
+        assert!(keep_at(&core,"Reviewer",&session,&keep_id,&extract_id,chosen.clone(),&root).is_err());
         assert!(root.join("evidence").join(format!("{keep_id}.webp")).is_file());
         let (_,replay)=crate::world::Journal::open(&path).unwrap();assert_eq!(replay.evidence_kept,core.snapshot().evidence_kept);assert_eq!(replay.thoughts.len(),1);
-        assert!(undo(&core,"Lee",true,&keep_id).is_err());undo(&core,"Sam",true,&keep_id).unwrap();undo(&core,"Sam",true,&keep_id).unwrap();assert!(core.snapshot().thoughts.is_empty());assert!(core.snapshot().evidence_kept[0].removed);assert!(root.join("evidence").join(format!("{keep_id}.webp")).exists());
+        assert!(undo(&core,"Reviewer",true,&keep_id).is_err());undo(&core,"Colleague",true,&keep_id).unwrap();undo(&core,"Colleague",true,&keep_id).unwrap();assert!(core.snapshot().thoughts.is_empty());assert!(core.snapshot().evidence_kept[0].removed);assert!(root.join("evidence").join(format!("{keep_id}.webp")).exists());
         core.commit(vec![Change::ThreadRemoved{thread_id:"schedule".into()}]);
-        assert!(keep_at(&core,"Sam",&session,&uuid::Uuid::new_v4().to_string(),&extract_id,chosen,&root).is_err());
+        assert!(keep_at(&core,"Colleague",&session,&uuid::Uuid::new_v4().to_string(),&extract_id,chosen,&root).is_err());
     }
 }

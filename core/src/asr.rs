@@ -237,7 +237,7 @@ pub(crate) fn handshake_with_keywords(key: &str, terms: &[String]) -> Value {
         "emitAudioProgress": true,
         "languageBias": ["English"],
         // Product names, and the spoken commands most often misheard alone: "Palace." came back as "Palis",
-        // "Palice" or "Alice" for 5 of 6 synthesized voices without it, 0 of 6 with it (2026-11-01).
+        // unrelated spellings for 5 of 6 synthesized voices without it, 0 of 6 with it (2026-11-01).
         "keywords": ["E2A2O", "Muse", "Spark", "Meta", "Wonder", "Glimmer", "Llama", "Muse Image", "Palace", "Recap"]
     });
     let keywords = message["keywords"].as_array_mut().unwrap();
@@ -426,7 +426,7 @@ mod tests {
         let sender: messages::Sender = Arc::new(|_, _| Box::pin(async { panic!("ASR test must not send") }));
         let core = Arc::new(Core {
             messages: messages::Runtime::with(Settings { preset: Preset::Full,
-                email_contacts: messages::contacts("Mia=mia@example.com"), ..Settings::default() }, sender),
+                email_contacts: messages::contacts("Recipient=recipient@example.com"), ..Settings::default() }, sender),
             trace: crate::trace::Trace::to(&dir), ..Core::test(journal, World::default())
         });
         let _window = messages::window(&core, "you");
@@ -436,7 +436,7 @@ mod tests {
         handle(&core, "you", &mut primer, &event(1, "speechStart", ""), None);
         handle(&core, "you", &mut primer, &event(1, "speechEnd", ""), None);
         tokio::time::advance(std::time::Duration::from_millis(75)).await;
-        handle(&core, "you", &mut primer, &event(1, "speechComplete", "email Mia that the cut is ready"), None);
+        handle(&core, "you", &mut primer, &event(1, "speechComplete", "email Recipient that the cut is ready"), None);
         assert!(matches!(messages::card_for(&core, "you"), Some(ServerMsg::SendCard {
             channel: Channel::Email, state: SendState::Counting, subject, .. }) if subject == "the cut is ready"));
         let trace = std::fs::read_to_string(dir.join("trace.jsonl")).unwrap();
@@ -480,7 +480,7 @@ mod tests {
     }
 
     /// "Palace." and "Recap." said alone act only if the transcriber hears them: without its keywords they came back
-    /// as "Palis" or "Alice" (the handshake's comment).
+    /// as unrelated words (the handshake's comment).
     #[test]
     fn the_transcriber_is_told_to_expect_palace_and_recap() {
         let sent = handshake("k");
@@ -564,7 +564,7 @@ mod tests {
         let path = std::env::temp_dir().join(format!("e2a2o-asr-{}.jsonl", uuid::Uuid::new_v4()));
         let (journal, _) = Journal::open(&path).unwrap();
         let core = Arc::new(Core::test(journal, World::default()));
-        let (_you, _maya) = (crate::call::join(&core, "you", false), crate::call::join(&core, "Maya", false));
+        let (_you, _designer) = (crate::call::join(&core, "you", false), crate::call::join(&core, "Designer", false));
         let mut updates = core.updates.subscribe();
         let mut state = Primer::default();
         for (at, words) in [(PRIMER_MS + 600, "Okay"), (PRIMER_MS + 900, "Okay, rent"), (PRIMER_MS + 1_200, "Okay, rent is due")] {

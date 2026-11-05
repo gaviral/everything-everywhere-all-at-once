@@ -21,7 +21,7 @@ try {
     recaps: [], apps: [], apps_seeded: false, merged: {}, proposals: [],
     threads: [thread("T1"), thread("T2"), thread("T3", "T2"), thread("T4")],
     thoughts: [thought("a", "T1"), thought("b", "T2"), thought("c", "T2"), thought("d", "T3")],
-    active: "T2", active_by: { Sam: "T2" },
+    active: "T2", active_by: { Colleague: "T2" },
     suggestions: [{ id: "sg", thread_id: "T2", text: "idea", status: "new" }],
     actions: [{ id: "ac", thread_id: "T2", kind: "reminder", title: "task", when: "", status: "new", done_ms: null }],
   };
@@ -31,7 +31,7 @@ try {
   // A merge, then its undo (the core sends what the merge moved): the map is as it was, order included.
   const merged = apply(world, { type: "thread_merged", from: "T2", into: "T1" });
   assert.ok(!merged.threads.some((t) => t.id === "T2"));
-  const unmerge = { thread: thread("T2"), into: "T1", at: 1, thoughts: ["b", "c"], branches: ["T3"], suggestions: ["sg"], actions: ["ac"], proposals: [], active: true, active_by: ["Sam"] };
+  const unmerge = { thread: thread("T2"), into: "T1", at: 1, thoughts: ["b", "c"], branches: ["T3"], suggestions: ["sg"], actions: ["ac"], proposals: [], active: true, active_by: ["Colleague"] };
   const back = apply(merged, { type: "thread_unmerged", unmerge });
   assert.equal(shape(back), shape(world), "everything the merge moved comes back");
   // Said on the merged thread since: it stays; applied again: nothing more.

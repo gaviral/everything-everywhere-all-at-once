@@ -11,16 +11,16 @@ const thought = (id, speaker, text, offset, thread_id = "T1") => ({ id, speaker,
 const own = thought("mine", "you", "Keep the blue sample.", 0);
 let world;
 const reset = (margin = false) => {
-  world = { threads: [thread("T1")], thoughts: [own, thought("reply", "Sam", "Try it by the window.", 1)], active: "T1", active_by: { you: "T1" }, stay_here: null, anchors: {}, notes: {}, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: true, recaps: [], proposals: [], ai: [] };
+  world = { threads: [thread("T1")], thoughts: [own, thought("reply", "Colleague", "Try it by the window.", 1)], active: "T1", active_by: { you: "T1" }, stay_here: null, anchors: {}, notes: {}, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: true, recaps: [], proposals: [], ai: [] };
   if (margin) {
     world.threads.push(thread("N1", "T1"));
     world.anchors.N1 = { thought_id: "reply", quote: "by the window" };
-    world.thoughts.push(thought("note", "Sam", "Daylight will help.", 2, "N1"));
+    world.thoughts.push(thought("note", "Colleague", "Daylight will help.", 2, "N1"));
   }
 };
 reset();
 let calling = false;
-const people = ["you", "Sam"].map((name) => ({ name, ai: false, joined_ms: at - 1000, here: true, left_ms: null, mic: false, speaking: false, read: null }));
+const people = ["you", "Colleague"].map((name) => ({ name, ai: false, joined_ms: at - 1000, here: true, left_ms: null, mic: false, speaking: false, read: null }));
 const call = () => ({ type: "call", started_ms: at - 1000, level: "speak", level_by: "", people });
 const core = await standInCore(() => [...(calling ? [call()] : []), { type: "snapshot", world }], {
   onMessage: (message) => {
@@ -72,7 +72,7 @@ try {
   assert.ok(await until(`!!document.querySelector('.spine-point[data-thought="reply"].read-progress-mark')`, 10000), "line survives reload");
 
   const add = (id) => {
-    const next = thought(id, "Sam", "Look in daylight.", world.thoughts.length + 1);
+    const next = thought(id, "Colleague", "Look in daylight.", world.thoughts.length + 1);
     world.thoughts.push(next);
     core.send({ type: "change", change: { type: "thought_added", thought: next } });
   };
@@ -119,7 +119,7 @@ try {
     await view.close(); pages.pop();
   }
   reset();
-  world.thoughts = [thought("aside", "Sam", "A separate reply.", 1)];
+  world.thoughts = [thought("aside", "Colleague", "A separate reply.", 1)];
   world.active = null;
   world.active_by = {};
   const aside = await open();

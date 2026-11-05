@@ -6,7 +6,7 @@ import manifest from './brick.json';
 
 const memory = new Map<string, unknown>();
 const state: PluginState = { scope: 'check', get: <T,>(key: string) => memory.get(key) as T | undefined, set: (key, value) => { memory.set(key, value); } };
-const thought = (id: string, text: string, at_ms: number): Thought => ({ id, text, at_ms, speaker: 'Alex', thread_id: 'opening', placed: true, point: text, unclear: '', complete: true, place_ms: at_ms });
+const thought = (id: string, text: string, at_ms: number): Thought => ({ id, text, at_ms, speaker: 'Visitor', thread_id: 'opening', placed: true, point: text, unclear: '', complete: true, place_ms: at_ms });
 const original = thought('original', 'Keep the original opening while two helpers explore.', 1);
 const answer: Job = { id: 'answer', by: 'Helper', status: 'done', demo: false, at_ms: 2, helper_kind: 'thinking', result: 'Lead with the original thought; keep the explorations beside it.', title: 'Opening recommendation' };
 const coding: Job = { id: 'code', by: 'Helper', status: 'done', demo: false, at_ms: 3, helper_kind: 'coding', result_id: 'check-proposal', title: 'Return button proposal', result: 'Proposed a return button.' };
@@ -26,7 +26,7 @@ function Preview() {
     ...(late ? [{ ...answer, id: 'late', title: 'Late independent result', at_ms: 8 }] : [])];
   const thoughts = condition === 'empty' ? [] : condition === 'missing' ? [] : [condition === 'changed' ? { ...original, text: 'Changed source' } : original,
     ...(late ? [thought('newer', 'A newer thought must not replace the held one.', 6)] : [])];
-  const map = { visitKey: condition === 'other-visit' ? 'second' : 'first', mapIdentity: 'check-map', me: 'Alex', connected: condition !== 'offline', thoughts,
+  const map = { visitKey: condition === 'other-visit' ? 'second' : 'first', mapIdentity: 'check-map', me: 'Visitor', connected: condition !== 'offline', thoughts,
     threads: [{ id: 'opening' }], jobs } as unknown as BrickProps['map'];
   const actions = {
     openThought: (source: ThoughtSource) => { count(n => n + 1); const live = thoughts.find(t => t.id === source.id); if (!live || live.text !== source.text) return false; setJump(source.id); mount(false); return true; },

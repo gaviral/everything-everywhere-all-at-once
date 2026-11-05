@@ -1,4 +1,4 @@
-import { resolvePart } from '../../msg1351/part-dimensions/PartReference';
+import { resolvePart } from '../../features/part-dimensions/PartReference';
 import type { Explanation, Lens, PartTree, TreeRow } from './tree';
 import { nameOf } from './tree';
 

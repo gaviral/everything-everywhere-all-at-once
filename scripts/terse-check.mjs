@@ -4,7 +4,7 @@ import { uiServer } from './ui-server.mjs';
 import { ready, standInCore, openPage, sleep } from './headless.mjs';
 const at = Date.UTC(2026,10,3,12);
 const threads = ['Launch plan','Budget choices','Release checks'].map((title,i) => ({id:`t${i}`,title,parent_id:i===2?'t0':null,status:'open',last_point:'',touched_ms:at,tags:[],picture:null,dropped_by:''}));
-const thoughts = Array.from({length:20},(_,i) => ({id:`p${i}`,speaker:i%2?'Sam':'Helper',text:`We should review milestone ${i} before Friday so everyone can prepare their own materials. Keep all supporting details available when someone asks.`,point:'Review milestone',thread_id:`t${i%3}`,placed:true,complete:true,unclear:'',at_ms:at+i*1000,place_ms:0}));
+const thoughts = Array.from({length:20},(_,i) => ({id:`p${i}`,speaker:i%2?'Colleague':'Helper',text:`We should review milestone ${i} before Friday so everyone can prepare their own materials. Keep all supporting details available when someone asks.`,point:'Review milestone',thread_id:`t${i%3}`,placed:true,complete:true,unclear:'',at_ms:at+i*1000,place_ms:0}));
 const server = await uiServer();
 try {
   const {fallback,words,cacheKey,groupsOf} = await server.ssrLoadModule('/src/bricks/spine/terse-text.ts');

@@ -1634,15 +1634,15 @@ mod tests {
 
     #[test]
     fn imported_days_are_real_and_still_ahead() {
-        let topics = topics(&[idea("Ana", "Follow up", 10)]);
+        let topics = topics(&[idea("Speaker", "Follow up", 10)]);
         let merged: Merged = serde_json::from_value(json!({
-            "threads": [{"key": "ana", "title": "Ana", "parent": "", "existing": "", "topics": [1]}],
+            "threads": [{"key": "speaker", "title": "Speaker", "parent": "", "existing": "", "topics": [1]}],
             "questions": [],
             "actions": [
-                {"thread": "ana", "kind": "reminder", "title": "Follow up with Ana", "when": "2026-11-02"},
-                {"thread": "ana", "kind": "reminder", "title": "Send the deck", "when": "2026-10-30"},
-                {"thread": "ana", "kind": "event", "title": "Launch", "when": "2026-13-45"},
-                {"thread": "ana", "kind": "reminder", "title": "Book the room", "when": ""}
+                {"thread": "speaker", "kind": "reminder", "title": "Follow up with Speaker", "when": "2026-11-02"},
+                {"thread": "speaker", "kind": "reminder", "title": "Send the deck", "when": "2026-10-30"},
+                {"thread": "speaker", "kind": "event", "title": "Launch", "when": "2026-13-45"},
+                {"thread": "speaker", "kind": "reminder", "title": "Book the room", "when": ""}
             ]
         })).unwrap();
         let tasks = &plan(merged, &topics, &World::default(), "2026-11-05")[0].actions;
@@ -1650,18 +1650,18 @@ mod tests {
         // Past days are skipped, as the prompt asks; an impossible one is no day, so no event.
         assert_eq!(got, [("Launch", "reminder", ""), ("Book the room", "reminder", "")]);
         // Without grouping: a past day, a decision and a done task never land; the two soonest upcoming do.
-        let dated = |point: &str, kind: &str, open: bool, when: &str, at_ms| Idea { kind: kind.into(), open, when: when.into(), ..idea("Ana", point, at_ms) };
+        let dated = |point: &str, kind: &str, open: bool, when: &str, at_ms| Idea { kind: kind.into(), open, when: when.into(), ..idea("Speaker", point, at_ms) };
         let ideas = vec![
-            dated("Follow up with Ana on Monday", "task", true, "2026-11-02", 10),
+            dated("Follow up with Speaker on Monday", "task", true, "2026-11-02", 10),
             dated("Decided on the venue", "decision", false, "2026-11-20", 20),
             dated("Sent the invites", "task", false, "2026-11-09", 30),
-            dated("Dinner with Ana", "plan", true, "2026-11-30", 40),
-            dated("Ana's launch", "plan", true, "2026-11-12", 50),
-            dated("Ana's party", "plan", true, "2026-11-25", 60),
+            dated("Dinner with Speaker", "plan", true, "2026-11-30", 40),
+            dated("Speaker's launch", "plan", true, "2026-11-12", 50),
+            dated("Speaker's party", "plan", true, "2026-11-25", 60),
         ];
         let groups = by_topic(&super::topics(&ideas), &ideas, "2026-11-05");
         let got: Vec<&str> = groups[0].actions.iter().map(|t| t.title.as_str()).collect();
-        assert_eq!(got, ["Ana's launch", "Ana's party"]);
+        assert_eq!(got, ["Speaker's launch", "Speaker's party"]);
     }
 
     #[test]
@@ -1739,28 +1739,28 @@ mod tests {
         let f = Fixture::new();
         let mut out = f.core.updates.subscribe();
         // Another laptop can't start one; it's told so, and no one else hears about it.
-        start(f.core.clone(), "im-1".into(), "Sam".into(), false);
+        start(f.core.clone(), "im-1".into(), "Colleague".into(), false);
         let refused = out.recv().await.unwrap();
-        assert_eq!(refused.to.as_deref(), Some("Sam"));
+        assert_eq!(refused.to.as_deref(), Some("Colleague"));
         assert!(matches!(refused.message, ServerMsg::Notice { ref message } if message == ONLY_HERE));
         assert!(!f.core.imports.running());
 
         // The host's import: its progress goes to the host only, also to a window that reconnects.
         let handle = tokio::spawn(std::future::pending::<()>()).abort_handle();
-        *f.core.imports.job.lock().unwrap() = Some(Job { handle, speaker: "Ana".into(), id: "im-1".into() });
-        publish(&f.core, "Ana", &Status { id: "im-1".into(), state: "reading".into(), ..Status::default() });
+        *f.core.imports.job.lock().unwrap() = Some(Job { handle, speaker: "Speaker".into(), id: "im-1".into() });
+        publish(&f.core, "Speaker", &Status { id: "im-1".into(), state: "reading".into(), ..Status::default() });
         let progress = out.recv().await.unwrap();
-        assert_eq!(progress.to.as_deref(), Some("Ana"));
+        assert_eq!(progress.to.as_deref(), Some("Speaker"));
         assert!(matches!(progress.message, ServerMsg::Import { ref status } if status.state == "reading"));
-        assert_eq!(f.core.imports.live_for("Ana").map(|s| s.state), Some("reading".into()));
-        assert!(f.core.imports.live_for("Sam").is_none());
+        assert_eq!(f.core.imports.live_for("Speaker").map(|s| s.state), Some("reading".into()));
+        assert!(f.core.imports.live_for("Colleague").is_none());
 
         // Only the host can stop it.
-        cancel(&f.core, "Sam");
+        cancel(&f.core, "Colleague");
         assert!(f.core.imports.running());
-        cancel(&f.core, "Ana");
+        cancel(&f.core, "Speaker");
         let stopped = out.recv().await.unwrap();
-        assert_eq!(stopped.to.as_deref(), Some("Ana"));
+        assert_eq!(stopped.to.as_deref(), Some("Speaker"));
         assert!(matches!(stopped.message, ServerMsg::Import { ref status } if status.state == "stopped" && status.note.contains("Nothing was added")));
     }
 
@@ -1844,6 +1844,14 @@ mod tests {
         let mut updates = f.core.updates.subscribe();
         f.core.commit(vec![Change::ThoughtAdded { thought: point }, Change::MessagesRead { at_ms: Vec::new(), keys: keys.clone() }]);
         assert!(matches!(updates.try_recv().unwrap().message, ServerMsg::Change { change: Change::ThoughtAdded { .. } }));
+        match updates.try_recv().unwrap().message {
+            ServerMsg::Change { change: Change::AgreementSource { thought_id, revision } } => {
+                assert_eq!(thought_id, "th-1");
+                assert_eq!(revision, f.core.snapshot().agreements[&thought_id].revision);
+                assert!(!revision.is_empty());
+            }
+            _ => panic!("expected broadcast of the imported thought's source revision"),
+        }
         let read = match updates.try_recv().unwrap().message {
             ServerMsg::Change { change: Change::MessagesRead { at_ms, keys } } => Change::MessagesRead { at_ms, keys },
             _ => panic!("expected broadcast of message hashes"),
@@ -1851,7 +1859,8 @@ mod tests {
         let record = json!({ "type": "messages_read", "keys": keys });
         assert_eq!(serde_json::to_value(read).unwrap(), record, "the broadcast contains only hashes, without message text or times");
         let lines = std::fs::read_to_string(&f.path).unwrap();
-        assert_eq!(serde_json::from_str::<Value>(lines.lines().last().unwrap()).unwrap(), record, "the journal also contains only hashes");
+        let recorded = crate::world::journal_record(lines.lines().last().unwrap().as_bytes(), true).unwrap();
+        assert_eq!(recorded.last().unwrap().1, record, "the journal's read record also contains only hashes");
         assert!(!lines.contains("thanks!"), "a message that gave no point must not gain journaled text");
         assert!(serde_json::to_value(f.core.snapshot()).unwrap().get("read_keys").is_none(), "hashes stay out of snapshots");
         assert_eq!(known(&f.core.snapshot()).keys, keys.iter().cloned().collect());
@@ -1895,7 +1904,7 @@ mod tests {
         let ideas = vec![idea("Move", "Lease ends Nov 30", 2_000), idea("Move", "Move in January", 1_000), idea("Move", "move in january", 3_000)];
         let group = Group { title: "Moving".into(), ideas: vec![0, 1, 2], question: "Lisbon or Porto?".into(), actions: vec![Task { kind: "event".into(), title: "Give notice".into(), when: "2026-11-15".into() }], ..Group::default() };
         // In a room the host's name, alone "you": whoever imported.
-        let changes = changes_for(&group, "I3", None, &ideas, &World::default(), 0, "Ana");
+        let changes = changes_for(&group, "I3", None, &ideas, &World::default(), 0, "Speaker");
         let mut world = World::default();
         for change in &changes {
             world.apply(change);
@@ -1904,11 +1913,11 @@ mod tests {
         assert_eq!((thread.title.as_str(), thread.last_point.as_str(), thread.touched_ms), ("Moving", "Lease ends Nov 30", 2_000));
         let points: Vec<(&str, u64)> = world.thoughts.iter().map(|t| (t.point.as_str(), t.at_ms)).collect();
         assert_eq!(points, [("Move in January", 1_000), ("Lease ends Nov 30", 2_000)], "in time order; a repeat lands once");
-        assert!(world.thoughts.iter().all(|t| t.placed && t.place_ms.is_none() && t.speaker == "Ana" && t.thread_id.as_deref() == Some("I3")));
+        assert!(world.thoughts.iter().all(|t| t.placed && t.place_ms.is_none() && t.speaker == "Speaker" && t.thread_id.as_deref() == Some("I3")));
         assert_eq!(world.suggestions[0].text, "Lisbon or Porto?");
         assert_eq!(world.actions[0].when, "2026-11-15");
         // Points added to a thread already on the map leave it as it is unless they're newer.
-        let older = changes_for(&Group { ideas: vec![1], ..Group::default() }, "I3", None, &ideas, &world, 0, "Ana");
+        let older = changes_for(&Group { ideas: vec![1], ..Group::default() }, "I3", None, &ideas, &world, 0, "Speaker");
         assert!(older.iter().all(|c| matches!(c, Change::ThoughtAdded { .. })));
     }
 }

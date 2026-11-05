@@ -763,10 +763,10 @@ async fn a_refused_key_keeps_an_app_that_asks_the_model_from_running() {
 fn in_a_room_an_app_hears_who_said_what() {
     let said_by = |speaker: &str, text: &str| Thought { id: text.into(), speaker: speaker.into(), text: text.into(), point: String::new(),
         thread_id: Some("T1".into()), placed: true, unclear: String::new(), guess: String::new(), heard: String::new(), fixed: String::new(), complete: true, at_ms: 0, place_ms: None, decided: false };
-    let (rent, friday, agree) = (said_by("Ana", "rent is due"), said_by("Ana", "pay it friday"), said_by("Sam", "friday works"));
+    let (rent, friday, agree) = (said_by("Speaker", "rent is due"), said_by("Speaker", "pay it friday"), said_by("Colleague", "friday works"));
     // One speaker: the prompt reads exactly as it did before rooms.
     assert_eq!(said(&[&rent], Some(&friday)), ("rent is due".to_string(), "pay it friday".to_string()));
-    assert_eq!(said(&[&rent, &friday], Some(&agree)), ("Ana: rent is due\nAna: pay it friday".to_string(), "Sam: friday works".to_string()));
+    assert_eq!(said(&[&rent, &friday], Some(&agree)), ("Speaker: rent is due\nSpeaker: pay it friday".to_string(), "Colleague: friday works".to_string()));
 }
 
 /// The model line says what a call was for (model-line.ts): one of your apps running when a watcher wakes it, or a

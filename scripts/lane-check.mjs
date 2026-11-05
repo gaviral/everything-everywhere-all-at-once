@@ -35,7 +35,7 @@ const section = (title, n) => ({ title, points: Array.from({ length: n }, (_, i)
 const note = (id) => ({ type: "note_card", id, title: "Hackathon plan", state: "dry_run", live: false, sections: [section("", 4), section("Demo recording", 4), section("README", 4), section("Submission", 4)],
   message: "Dry run: nothing written. With NOTES_WRITE=on this would be a new note in Notes." });
 // Counting for a minute, so it's still up to stop while the check looks (the core's real count is 5 s).
-const send = { type: "send_card", id: 1, to: "Mia", text: "Hi Mia, could you confirm what to bring?", state: "counting", in_ms: 60_000, live: false, message: "" };
+const send = { type: "send_card", id: 1, to: "Recipient", text: "Hi Recipient, could you confirm what to bring?", state: "counting", in_ms: 60_000, live: false, message: "" };
 
 /** Where each card is and whether each control is on top where it's drawn (what a click there would reach). */
 const MEASURE = `(() => {

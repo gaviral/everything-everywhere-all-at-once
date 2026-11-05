@@ -101,7 +101,7 @@ fn held(core: &Arc<Core>, speaker: &str, (rest, said): (String, String), search:
 pub struct Ask {
     /// What to look for ("the lease").
     pub query: String,
-    /// The topic as it was said, for "I couldn't find …" ("Dana's party").
+    /// The topic as it was said, for "I couldn't find …" ("Collaborator's party").
     pub topic: String,
     /// Words after the question's first sentence break ("Where did I talk about the lease? It's due Friday."): kept
     /// whatever the search finds.
@@ -137,7 +137,7 @@ fn clean(text: &str) -> String {
 }
 
 /// The first sentence and what follows it. A sentence ends at ".", "?", "!" or "…" before a space, but not at the
-/// dot of a title or an initial ("Dr. Patel", "St. Louis", "the U.S. visa", "e.g."). A name or number with a dot
+/// dot of a title or an initial ("Dr. Example", "St. Louis", "the U.S. visa", "e.g."). A name or number with a dot
 /// in it does end one ("example.com.", "v2.1."), and so does a digit ("step 2.").
 fn first_sentence(text: &str) -> (&str, &str) {
     const SHORT: [&str; 11] = ["dr", "mr", "mrs", "ms", "mt", "st", "jr", "sr", "prof", "vs", "ph.d"];
@@ -162,7 +162,7 @@ fn first_sentence(text: &str) -> (&str, &str) {
     (text, "")
 }
 
-/// `query`'s words as `question` has them, with their capitals and apostrophes ("Dana's party", "Paris").
+/// `query`'s words as `question` has them, with their capitals and apostrophes ("Collaborator's party", "Paris").
 fn as_said(question: &str, query: &str) -> String {
     // Each word as `clean` splits them, and where it is in the question.
     let mut spans: Vec<(String, std::ops::Range<usize>)> = Vec::new();

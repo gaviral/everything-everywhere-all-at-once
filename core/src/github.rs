@@ -258,7 +258,7 @@ fn takes(words: &[&str], at: usize, phrases: &[&str]) -> usize {
 }
 
 /// Reads a whole turn as a request for pull requests: "show me the open pull requests", "what's happening with PR 42",
-/// "any PRs in acme/garden-planner?". None when it isn't one: a to-do about a PR ("review Sam's PR tomorrow") stays a
+/// "any PRs in acme/garden-planner?". None when it isn't one: a to-do about a PR ("review Colleague's PR tomorrow") stays a
 /// thought, and so does a turn with anything else in it.
 pub fn read(text: &str) -> Option<Ask> {
     let said = crate::spoken::plain(text);

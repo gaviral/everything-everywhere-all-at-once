@@ -1,8 +1,8 @@
 import { useRef, useState } from "react";
 import type { BrickProps } from "../contract";
-import { ClarificationView, createClarification } from "../../msg1351/clarification";
-import type { SelectedSource, SelectedSourceAdapter } from "../../msg1351/clarification/contracts";
-import "../../msg1351/clarification/clarification.css";
+import { ClarificationView, createClarification } from "../../features/clarification";
+import type { SelectedSource, SelectedSourceAdapter } from "../../features/clarification/contracts";
+import "../../features/clarification/clarification.css";
 import "./example.css";
 import { LookSwitch, type Look } from "./looks/LookSwitch";
 import "./looks/looks.css";

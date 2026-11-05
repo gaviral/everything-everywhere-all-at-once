@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { PluginStateContext, type PluginState } from '../contract';
 import { PartLenses, styles } from './index';
 import { exampleTree } from './example';
-import type { Contribution } from '../../msg1351/part-dimensions';
+import type { Contribution } from '../../features/part-dimensions';
 import type { PartTree } from './tree';
 
 const memory = new Map<string, unknown>();

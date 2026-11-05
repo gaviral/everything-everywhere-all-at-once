@@ -21,9 +21,9 @@ export function documentsOf(map: MapSnapshot): ReadingDocument[] {
 export const exampleDocuments: ReadingDocument[] = [{
   id: "example:library", title: "A little library, close to home", kind: "Example conversation · fictional",
   blocks: [
-    { id: "example:why", by: "Maya · example", text: "Start with one neighbourhood. A two-week library pilot will tell us whether neighbours come back to borrow again." },
-    { id: "example:how", by: "Sam · example", text: "Invite twenty households for Saturday. Keep a quiet corner for reading, and ask what they would like to borrow next." },
-    { id: "example:next", by: "Maya · example", text: "Before we expand, look at repeat visits. Leave room for the people who need a little longer to find their next book." },
+    { id: "example:why", by: "Designer · example", text: "Start with one neighbourhood. A two-week library pilot will tell us whether neighbours come back to borrow again." },
+    { id: "example:how", by: "Colleague · example", text: "Invite twenty households for Saturday. Keep a quiet corner for reading, and ask what they would like to borrow next." },
+    { id: "example:next", by: "Designer · example", text: "Before we expand, look at repeat visits. Leave room for the people who need a little longer to find their next book." },
   ],
 }, {
   id: "example:helper", title: "A helper’s suggestion", kind: "Example helper result · history",

@@ -45,8 +45,8 @@ try {
   assert.equal(apply(two, { ...split, thought_id: "gone" }), two, "a thought taken back meanwhile: nothing");
 
   // Left off mid-sentence, by whoever said it; picked up again (new words there), it's open and no one's to finish.
-  const left = apply(base, { type: "thread_status", thread_id: "T1", status: "dropped", speaker: "Ana" }).threads[0];
-  assert.deepEqual([left.status, left.dropped_by], ["dropped", "Ana"]);
+  const left = apply(base, { type: "thread_status", thread_id: "T1", status: "dropped", speaker: "Speaker" }).threads[0];
+  assert.deepEqual([left.status, left.dropped_by], ["dropped", "Speaker"]);
   const back = run(base, { type: "thread_status", thread_id: "T1", status: "dropped", speaker: "you" },
     { type: "thread_touched", thread_id: "T1", last_point: "Sentences. I never finish them", at_ms: 99 }).threads[0];
   assert.deepEqual([back.status, back.dropped_by, back.last_point, back.touched_ms], ["open", "", "Sentences. I never finish them", 99]);
@@ -77,7 +77,7 @@ try {
     ["T2", "T2", "T2", "T2"], "everything made for T1 lands on T2");
 
   // Your place, per speaker.
-  assert.deepEqual(apply(base, { type: "active_changed", thread_id: "T3", speaker: "Sam" }).active_by, { you: "T1", Sam: "T3" });
+  assert.deepEqual(apply(base, { type: "active_changed", thread_id: "T3", speaker: "Colleague" }).active_by, { you: "T1", Colleague: "T3" });
 
   // A saved recap replaces the one for its period, and only that one.
   const recap = (period, summary) => ({ period, summary, since_ms: 0, through_ms: 1, generated_ms: 2, source_key: "", worked_on: [], plans: [],

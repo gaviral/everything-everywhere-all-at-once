@@ -72,7 +72,7 @@ try {
   for (const id of ids) assert.ok(again.includes(`[${id}]`), "killed batch comes back with each thought id");
   assert.ok(!fs.existsSync(path.join(state, "cursor")), "read did not advance the cursor");
   // A later thought is unread and must not steal the reply's target.
-  const unread = "This later thought has not been read by Claude.";
+  const unread = "This later thought has not been read by Helper.";
   await evaluate(`mapSocket.send(JSON.stringify({ type: "text", text: ${JSON.stringify(unread)} }))`);
   assert.ok(await until(`messages.some(m => m.change?.thought?.text === ${JSON.stringify(unread)})`));
   const text = "Your answer stays beside the words you just shared.";

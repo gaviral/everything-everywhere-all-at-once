@@ -90,7 +90,7 @@ async fn the_videos_script_as_the_transcriber_sends_it_does_every_beats_job() {
         ("Okay, decided: if it's under eighty dollars, I'm booking it tonight.", &["Okay, decided"], 5,
             &["Okay, decided: if it's under eighty dollars, I'm booking it tonight."], &[]),
         ("My stats midterm is Thursday, chapters four to six.", &["My stats"], 6, &["My stats midterm is Thursday, chapters four to six."], &[]),
-        ("Decided: I'll study with Priya on Wednesday night.", &["Decided"], 7, &["Decided: I'll study with Priya on Wednesday night."], &[]),
+        ("Decided: I'll study with Partner on Wednesday night.", &["Decided"], 7, &["Decided: I'll study with Partner on Wednesday night."], &[]),
         ("Make an app that plays a silly tune if we get loud.", &["Make an app"], 8, &[], &["app"]),
         ("And Mom is going to love that pottery class, I'm so excited!", &["And Mom"], 9, &["And Mom is going to love that pottery class, I'm so excited!"], &[]),
         ("What did I decide today?", &["What did I"], 10, &[], &["recap"]),

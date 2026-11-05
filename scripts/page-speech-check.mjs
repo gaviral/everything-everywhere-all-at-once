@@ -29,7 +29,7 @@ try {
     window.spoken = []; window.cancelled = 0; window.logs = []; window.delays = [];
     const installed = [
       { name: "French Premium", lang: "fr-FR", default: true, localService: true },
-      { name: "Samantha", lang: "en-US", default: true, localService: true },
+      { name: "System English", lang: "en-US", default: true, localService: true },
       { name: "English Enhanced", lang: "en-GB", localService: true },
       { name: "English Premium", lang: "en-US", localService: true },
     ];

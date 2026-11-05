@@ -35,29 +35,29 @@ export interface MemoryCollection {
 }
 
 export interface ProjectMemoryProps extends BrickProps {
-  /** Optional public handoff. The default is a synthetic fixture, never the live map. */
+  /** Optional public collection. The default is a synthetic fixture, never the live map. */
   readonly memory?: MemoryCollection;
 }
 
-/** Entirely synthetic public material; these excerpts are not recovered Inbox receipts. */
+/** Synthetic workshop planning records for the example view. */
 export const publicExample: MemoryCollection = {
   visibility: "public",
-  title: "Studio launch",
+  title: "Community workshop",
   example: true,
   sources: [
     { id: "first-sketch", visibility: "public", title: "First sketch", locator: "Example note · 01", excerpt: "Begin on an empty canvas so the visitor can choose their own starting point." },
     { id: "walkthrough", visibility: "public", title: "Walkthrough review", locator: "Example note · 02", excerpt: "Replace the empty opening with a clearly labelled example. People should understand the project before adding anything. This replaces the first sketch's opening decision." },
-    { id: "parts", visibility: "public", title: "Parts outline", locator: "Example note · 03", excerpt: "Project memory keeps decisions, parts, open asks and revisions together. Each record links to its supplied source. The canvas lane is mentioned, but no owner is recorded in the outline." },
-    { id: "receipt-gap", visibility: "public", title: "Receipt gap", locator: "Example handoff · 04", excerpt: "The original canvas receipt has not been supplied. Recover it and verify its owner and scope before assigning a replacement. A mention alone is not an assignment." },
-    { id: "revision-review", visibility: "public", title: "Whole-project review", locator: "Example note · 05", excerpt: "For the next whole-project revision: keep the useful example opening, retain the replaced decision with its reason, and resolve the canvas receipt gap before revising ownership. Confirm which example best explains the project." },
+    { id: "parts", visibility: "public", title: "Parts outline", locator: "Example note · 03", excerpt: "Project memory keeps decisions, parts, open asks and revisions together. Each record links to its supplied source. The venue plan is mentioned, but no owner is recorded in the outline." },
+    { id: "receipt-gap", visibility: "public", title: "Receipt gap", locator: "Example note · 04", excerpt: "The original venue confirmation has not been supplied. Recover it and verify its owner and scope before assigning a replacement. A mention alone is not an assignment." },
+    { id: "revision-review", visibility: "public", title: "Whole-project review", locator: "Example note · 05", excerpt: "For the next whole-project revision: keep the useful example opening, retain the replaced decision with its reason, and resolve the venue confirmation gap before revising ownership. Confirm which example best explains the project." },
   ],
   records: [
     { id: "useful-opening", visibility: "public", kind: "decision", title: "Open with a useful example", summary: "Show what the project does before asking someone to begin. Label the example clearly.", state: "current", sourceIds: ["walkthrough"], supersedes: "empty-opening", relatedIds: ["whole-review"] },
     { id: "memory-part", visibility: "public", kind: "part", title: "A memory for the whole project", summary: "A read-only index of the choices, pieces and questions that shape the next revision.", state: "current", sourceIds: ["parts"], relatedIds: ["whole-review"] },
-    { id: "canvas-part", visibility: "public", kind: "part", title: "Canvas lane · owner unverified", summary: "The lane is mentioned, but its original receipt is missing. Ownership stays unassigned until that evidence is recovered.", state: "unresolved", sourceIds: ["parts", "receipt-gap"], relatedIds: ["recover-receipt"], ownership: { status: "receipt-needed" } },
-    { id: "recover-receipt", visibility: "public", kind: "ask", title: "Recover the canvas receipt", summary: "Find the original receipt, verify scope and ownership, then consider whether a replacement is needed.", state: "unresolved", sourceIds: ["receipt-gap"], relatedIds: ["canvas-part", "whole-review"] },
+    { id: "canvas-part", visibility: "public", kind: "part", title: "Venue plan · owner unverified", summary: "The lane is mentioned, but its original receipt is missing. Ownership stays unassigned until that evidence is recovered.", state: "unresolved", sourceIds: ["parts", "receipt-gap"], relatedIds: ["recover-receipt"], ownership: { status: "receipt-needed" } },
+    { id: "recover-receipt", visibility: "public", kind: "ask", title: "Recover the venue confirmation", summary: "Find the original receipt, verify scope and ownership, then consider whether a replacement is needed.", state: "unresolved", sourceIds: ["receipt-gap"], relatedIds: ["canvas-part", "whole-review"] },
     { id: "example-question", visibility: "public", kind: "ask", title: "Which example tells the story?", summary: "Choose the public example that makes the whole project easiest to understand.", state: "unresolved", sourceIds: ["revision-review"], relatedIds: ["useful-opening"] },
-    { id: "whole-review", visibility: "public", kind: "revision", title: "Keep the reasons when the plan changes", summary: "Carry the current opening forward, preserve the replaced choice, and leave the canvas owner open pending its receipt.", state: "current", sourceIds: ["revision-review"], relatedIds: ["useful-opening", "empty-opening", "recover-receipt"] },
+    { id: "whole-review", visibility: "public", kind: "revision", title: "Keep the reasons when the plan changes", summary: "Carry the current opening forward, preserve the replaced choice, and leave the venue coordinator open pending its receipt.", state: "current", sourceIds: ["revision-review"], relatedIds: ["useful-opening", "empty-opening", "recover-receipt"] },
     { id: "empty-opening", visibility: "public", kind: "decision", title: "Start with a blank canvas", summary: "The first sketch left the opening empty. The walkthrough replaced this with a useful example.", state: "current", sourceIds: ["first-sketch"], relatedIds: ["whole-review"] },
   ],
 };

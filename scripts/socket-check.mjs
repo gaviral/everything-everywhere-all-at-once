@@ -112,8 +112,8 @@ try {
   assert.equal(core.handoff, "rent is due friday", "the turn ended: its words stay");
   const thought = (id, speaker) => ({ id, speaker, text: "Rent is due Friday", point: "", thread_id: "T1", placed: false, unclear: "",
     complete: true, at_ms: Date.now(), place_ms: null });
-  say({ type: "change", change: { type: "thought_added", thought: thought("t0", "Sam") } });
-  await until(() => core.world.thoughts.length === 1, "Sam's thought");
+  say({ type: "change", change: { type: "thought_added", thought: thought("t0", "Colleague") } });
+  await until(() => core.world.thoughts.length === 1, "Colleague's thought");
   assert.equal(core.handoff, "rent is due friday", "someone else's thought isn't yours");
   say({ type: "change", change: { type: "thought_added", thought: thought("t1", "me") } });
   await until(() => core.world.thoughts.length === 2, "your thought");

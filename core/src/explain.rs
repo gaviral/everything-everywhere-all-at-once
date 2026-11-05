@@ -394,10 +394,10 @@ fn notes(world: &World, thread_id: Option<&str>, around: &str, phrase: &str) -> 
 }
 
 /// Other threads' thoughts that name the phrase, or a name or acronym in a longer phrase, newest last:
-/// on a list of the week's tasks, "tomorrow: Jordan" is the teammate whose yes decides a hire, and
+/// on a list of the week's tasks, "tomorrow: Coordinator" is the teammate whose yes decides a hire, and
 /// that is said on the hiring thread. A handful is enough for one sentence; more only slows the answer.
 fn mentions(world: &World, thread_id: Option<&str>, phrase: &str) -> Vec<String> {
-    // Possessives too: double-clicking "Priya's" selects the 's.
+    // Possessives too: double-clicking "Partner's" selects the 's.
     let bare = |words: &str| {
         let words = words.trim_matches(|c: char| !c.is_alphanumeric());
         words.strip_suffix("'s").or_else(|| words.strip_suffix("’s")).unwrap_or(words).to_lowercase()
@@ -725,7 +725,7 @@ mod tests {
 
     /// Only the acceptance script starts this test-only server. No app startup, env loading or background jobs.
     #[tokio::test]
-    #[ignore = "synthetic browser fixture, owned by scripts/f7-explain-check.mjs"]
+    #[ignore = "synthetic browser fixture, owned by scripts/panels-explain-check.mjs"]
     async fn f7_explain_browser_fixture() {
         let dir = std::path::PathBuf::from(
             std::env::var("F7_EXPLAIN_FIXTURE_DIR").expect("script-owned temporary directory"),
@@ -968,25 +968,25 @@ mod tests {
         let world = map(
             &[("T1", "This week", None), ("T2", "Hiring", None), ("T3", "Trip", None)],
             &[
-                ("T1", "Tomorrow: talk to Jordan about Priya", "Tomorrow: Jordan"),
-                ("T2", "I want Jordan's opinion on Priya first", "Leaning Priya, want Jordan's take"),
+                ("T1", "Tomorrow: talk to Coordinator about Partner", "Tomorrow: Coordinator"),
+                ("T2", "I want Coordinator's opinion on Partner first", "Leaning Partner, want Coordinator's take"),
                 ("T2", "Her offer deadline is Friday", "Offer deadline Friday"),
                 ("T3", "The Jordanian visa takes a week", "Jordanian visa: a week"),
-                ("T3", "Ask Jordan for the tent", "Borrow a tent"),
+                ("T3", "Ask Coordinator for the tent", "Borrow a tent"),
             ],
         );
         let mentions = |phrase: &str| super::mentions(&world, Some("T1"), phrase);
         // Whole words only; the spoken words when the point leaves the name out; the selected thread is already there.
-        let jordan = ["Leaning Priya, want Jordan's take (in Hiring)", "Ask Jordan for the tent (in Trip)"];
-        assert_eq!(mentions("Jordan"), jordan);
-        assert_eq!(mentions("Jordan's"), jordan);
+        let coordinator = ["Leaning Partner, want Coordinator's take (in Hiring)", "Ask Coordinator for the tent (in Trip)"];
+        assert_eq!(mentions("Coordinator"), coordinator);
+        assert_eq!(mentions("Coordinator's"), coordinator);
         // A name in a longer selection, or the whole of it.
-        assert_eq!(mentions("talk to Priya"), ["Leaning Priya, want Jordan's take (in Hiring)"]);
+        assert_eq!(mentions("talk to Partner"), ["Leaning Partner, want Coordinator's take (in Hiring)"]);
         assert_eq!(mentions("offer deadline"), ["Offer deadline Friday (in Hiring)"]);
         assert!(mentions("X").is_empty() && mentions("about").is_empty());
-        assert!(super::notes(&world, Some("T1"), "Tomorrow: talk to Jordan about Priya", "Priya").ends_with(
-            "Mentioned in other threads:\n- Leaning Priya, want Jordan's take (in Hiring)\n\
-             Selected in: \"Tomorrow: talk to Jordan about Priya\""
+        assert!(super::notes(&world, Some("T1"), "Tomorrow: talk to Coordinator about Partner", "Partner").ends_with(
+            "Mentioned in other threads:\n- Leaning Partner, want Coordinator's take (in Hiring)\n\
+             Selected in: \"Tomorrow: talk to Coordinator about Partner\""
         ));
     }
 
@@ -995,19 +995,19 @@ mod tests {
     const LIVE: &[(&str, &str, &str)] = &[
         // Jargon, names, a misheard word, a half sentence, a whole point, a title, a number.
         ("founder-day", "th-2", "MRR"),
-        ("founder-day", "th-4", "Priya"),
-        ("student-week", "th-6", "Priya"),
+        ("founder-day", "th-4", "Partner"),
+        ("student-week", "th-6", "Partner"),
         ("founder-day", "th-9", "CSB"),
         ("student-week", "th-5", "need to transfer before fee"),
         ("student-week", "th-9", "Demo: mic, map building, then apps"),
         ("founder-day", "T3", "Checkout"),
         ("student-week", "T2", "Rent is due"),
-        ("founder-day", "th-18", "Jordan"),
+        ("founder-day", "th-18", "Coordinator"),
         ("founder-day", "th-2", "37K"),
-        ("founder-day", "th-16", "Maya"),
+        ("founder-day", "th-16", "Designer"),
         ("founder-day", "th-11", "CSP"),
         ("student-week", "th-14", "if under sixty dollars"),
-        ("founder-day", "th-25", "Jordan yes → offer tomorrow; no → reopen, one month delay"),
+        ("founder-day", "th-25", "Coordinator yes → offer tomorrow; no → reopen, one month delay"),
         ("student-week", "T8", "Submission"),
         ("founder-day", "th-19", "Team lunch"),
         ("student-week", "th-19", "BC Hydra"),
@@ -1017,16 +1017,16 @@ mod tests {
         // On the thread each sample opens on, where a judge looks first: words that point to other threads.
         ("student-week", "th-29", "rent"),
         ("student-week", "th-29", "rent now"),
-        ("student-week", "th-29", "text Priya"),
+        ("student-week", "th-29", "text Partner"),
         ("student-week", "th-3", "README"),
         ("founder-day", "th-26", "offer deadline"),
-        ("founder-day", "th-27", "Maya"),
+        ("founder-day", "th-27", "Designer"),
         ("founder-day", "th-27", "Datadog"),
-        ("founder-day", "th-27", "Jordan"),
-        ("founder-day", "th-27", "Dr. Chen"),
+        ("founder-day", "th-27", "Coordinator"),
+        ("founder-day", "th-27", "Dr. Example"),
         ("founder-day", "th-28", "Sequoia"),
         // Close to health: say what it refers to, never advise.
-        ("founder-day", "th-12", "Dr. Chen"),
+        ("founder-day", "th-12", "Dr. Example"),
         ("founder-day", "th-12", "follow-up"),
         ("founder-day", "th-12", "within two weeks"),
         ("founder-day", "th-14", "I need to drive her"),

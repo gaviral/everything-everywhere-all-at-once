@@ -768,7 +768,7 @@ mod tests {
     #[test]
     fn the_summary_leads_with_the_days_decisions() {
         let source = || slice(&sample(1000), Period::Session, 1000);
-        let decisions = || vec![Item { thread_id: "T2".into(), text: "Study with Priya on Wednesday night for stats midterm".into() },
+        let decisions = || vec![Item { thread_id: "T2".into(), text: "Study with Partner on Wednesday night for stats midterm".into() },
             Item { thread_id: "T1".into(), text: "Book pottery class tonight if it is under $80.".into() }];
         let with = |summary: &str, decisions: Vec<Item>| {
             let mut a = answer();
@@ -776,11 +776,11 @@ mod tests {
             a.decisions = decisions;
             finish(source(), a, "key".into()).summary
         };
-        let led = "You decided to book the pottery class if it's under $80 and to study with Priya on Wednesday.";
+        let led = "You decided to book the pottery class if it's under $80 and to study with Partner on Wednesday.";
         assert_eq!(with(led, decisions()), led, "the model's line, when it leads with a decision");
-        assert_eq!(with("You decided to study with Priya and book pottery if under $80", decisions()),
-            "You decided to study with Priya and book pottery if under $80.", "ends like a sentence");
-        let ours = "You decided: Study with Priya on Wednesday night for stats midterm. Book pottery class tonight if it is under $80.";
+        assert_eq!(with("You decided to study with Partner and book pottery if under $80", decisions()),
+            "You decided to study with Partner and book pottery if under $80.", "ends like a sentence");
+        let ours = "You decided: Study with Partner on Wednesday night for stats midterm. Book pottery class tonight if it is under $80.";
         assert_eq!(with("You circled around Topic T1, Topic T2 and Topic T3 today.", decisions()), ours, "names threads, not decisions");
         assert_eq!(with("You decided a few things today.", decisions()), ours, "says decided, but none of them");
         assert_eq!(with("Pottery and studying came up; you decided both.", decisions()), ours, "a decision, but not first");
@@ -935,7 +935,7 @@ mod tests {
         let fixture = Fixture::new(Some("wrong".into()));
         *fixture.core.world.lock().unwrap() = sample(crate::now_ms()).into();
         let _ = fixture.core.check(reqwest::StatusCode::UNAUTHORIZED);
-        fixture.core.add_thought("you", "ask Sam about the heater warranty");
+        fixture.core.add_thought("you", "ask Colleague about the heater warranty");
         let mut rx = fixture.core.updates.subscribe();
         request(fixture.core.clone(), "you".into(), Period::Today);
         let (message, recap) = ready(&mut rx).await;

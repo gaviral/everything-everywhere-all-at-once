@@ -2,11 +2,11 @@
 use super::*;
 
 type MailSent = Arc<Mutex<Vec<(String, String, String)>>>;
-const EMAIL: &str = "Email Mia that the cut is ready";
-const BODY: &str = "Hi Mia, the cut is ready.";
+const EMAIL: &str = "Email Recipient that the cut is ready";
+const BODY: &str = "Hi Recipient, the cut is ready.";
 
 fn settings(live: bool) -> Settings {
-    Settings { email_contacts: contacts("Mia=mia@example.com; Mia Chen=mia.chen@example.com; Sam=sam@example.com"), email_live: live, ..full(false) }
+    Settings { email_contacts: contacts("Recipient=recipient@example.com; Recipient Example=recipient.example@example.com; Colleague=colleague@example.com"), email_live: live, ..full(false) }
 }
 
 fn email_with(settings: Settings, adjust: impl FnOnce(Core) -> Core) -> (Fixture, MailSent) {
@@ -30,11 +30,11 @@ fn email_reads_only_a_request_as_the_whole_turn_and_subject_is_a_rule() {
     let ask = read(EMAIL, &s).unwrap();
     assert_eq!(ask.channel, Channel::Email);
     assert_eq!((ask.to.as_str(), ask.handle.as_str(), ask.subject.as_str(), ask.text.as_str()),
-        ("Mia", "mia@example.com", "the cut is ready", BODY));
-    assert_eq!(read("Okay, can you email Mia Chen that Version 2 is ready, please?", &s).unwrap().subject, "Version 2 is ready");
-    assert_eq!(read("Email Sam to review the cut", &s).unwrap().text, "Hi Sam, could you review the cut?");
+        ("Recipient", "recipient@example.com", "the cut is ready", BODY));
+    assert_eq!(read("Okay, can you email Recipient Example that Version 2 is ready, please?", &s).unwrap().subject, "Version 2 is ready");
+    assert_eq!(read("Email Colleague to review the cut", &s).unwrap().text, "Hi Colleague, could you review the cut?");
     assert_eq!(subject("One two three four five six seven eight nine ten."), "One two three four five six seven eight");
-    for talk in ["I should email Mia that the cut is ready", "We could email Mia that the cut is ready", "Email Mia", "Email Mia that", "Email me that the cut is ready", "Email Mia that the cut is ready, no, stop."] {
+    for talk in ["I should email Recipient that the cut is ready", "We could email Recipient that the cut is ready", "Email Recipient", "Email Recipient that", "Email me that the cut is ready", "Email Recipient that the cut is ready, no, stop."] {
         assert!(read(talk, &s).is_none(), "{talk}");
     }
     assert_eq!(crate::catalog::classify(EMAIL), Some(Act::Message), "email has the same external-action guard as Messages");
@@ -43,16 +43,16 @@ fn email_reads_only_a_request_as_the_whole_turn_and_subject_is_a_rule() {
 #[test]
 fn email_allow_list_is_separate_and_never_accepts_an_address_as_a_name() {
     let mut s = settings(false);
-    assert!(read("Email Bob that the cut is ready", &s).is_none());
-    assert!(read("Email mia@example.com that the cut is ready", &s).is_none());
-    assert_eq!(read("Email Mia Chen that the cut is ready", &s).unwrap().handle, "mia.chen@example.com");
+    assert!(read("Email Stranger that the cut is ready", &s).is_none());
+    assert!(read("Email recipient@example.com that the cut is ready", &s).is_none());
+    assert_eq!(read("Email Recipient Example that the cut is ready", &s).unwrap().handle, "recipient.example@example.com");
     assert_eq!(read(ASK, &s).unwrap().handle, "+15550100", "Messages retains its own list");
-    for bad in ["", "mia", "mia@", "@example.com", "mia@example.com other@example.com", "mia@example.com,other@example.com"] {
-        s.email_contacts = vec![("Mia".into(), bad.into())];
+    for bad in ["", "recipient", "recipient@", "@example.com", "recipient@example.com other@example.com", "recipient@example.com,other@example.com"] {
+        s.email_contacts = vec![("Recipient".into(), bad.into())];
         assert!(read(EMAIL, &s).is_none(), "{bad}");
     }
-    s.email_contacts = contacts("mia@example.com=mia@example.com");
-    assert!(read("Email mia@example.com that the cut is ready", &s).is_none());
+    s.email_contacts = contacts("recipient@example.com=recipient@example.com");
+    assert!(read("Email recipient@example.com that the cut is ready", &s).is_none());
 }
 
 #[tokio::test(start_paused = true)]
@@ -85,7 +85,7 @@ async fn email_at_zero_sends_exactly_the_card_once_through_its_own_sender() {
     assert!(sent.lock().unwrap().is_empty());
     wait(LATE_STOP_MS + 1).await;
     if crate::apple::reachable() {
-        assert_eq!(*sent.lock().unwrap(), vec![("mia@example.com".into(), "the cut is ready".into(), BODY.into())]);
+        assert_eq!(*sent.lock().unwrap(), vec![("recipient@example.com".into(), "the cut is ready".into(), BODY.into())]);
         assert!(matches!(card_for(&f.core, "me"), Some(ServerMsg::SendCard { state: SendState::Sent, .. })));
     } else { assert!(sent.lock().unwrap().is_empty()); }
     wait(60_000).await;
@@ -97,7 +97,7 @@ async fn email_at_zero_sends_exactly_the_card_once_through_its_own_sender() {
 async fn email_stop_by_typed_voice_draft_button_or_escape_and_withdrawal_never_sends() {
     for how in ["typed", "voice", "button", "esc", "withdrawn"] {
         let (f, sent) = email(true);
-        let turn = if how == "withdrawn" { "Email Mia that the cut is ready, no, stop." } else { EMAIL };
+        let turn = if how == "withdrawn" { "Email Recipient that the cut is ready, no, stop." } else { EMAIL };
         f.core.add_thought("me", turn);
         match how {
             "typed" => f.core.add_typed("me", "Stop"),
@@ -137,7 +137,7 @@ async fn email_guest_and_unlisted_contact_never_send_from_the_host() {
     assert!(f.told().iter().any(|line| line.contains("Only the host can send email")));
     assert!(card_for(&f.core, "guest").is_none());
     let (mut unlisted, unlisted_sent) = email(false);
-    unlisted.core.add_thought("me", "Email Bob that the cut is ready");
+    unlisted.core.add_thought("me", "Email Stranger that the cut is ready");
     assert!(unlisted.told().iter().any(|line| line.contains("EMAIL_TO")));
     settle().await;
     wait(60_000).await;

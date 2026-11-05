@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { NativeReceipts, createReceiptVisit } from "../../intake1417/native-receipts";
-import { sampleOperations } from "../../intake1417/native-receipts/samples";
+import { NativeReceipts, createReceiptVisit } from "../../features/native-receipts";
+import { sampleOperations } from "../../features/native-receipts/samples";
 import type { BrickProps } from "../contract";
 import "./example.css";
 

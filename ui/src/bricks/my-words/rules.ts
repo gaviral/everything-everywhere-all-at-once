@@ -1,8 +1,8 @@
 export type Term = { term: string; explanation: string };
 export type Record = { revision: number; terms: Term[] };
 export const EXAMPLES: Term[] = [
-  { term: "Nerith", explanation: "Example person’s name" },
-  { term: "Qorval lens", explanation: "Example specialist term" },
+  { term: "Wayfinder", explanation: "Example person’s name" },
+  { term: "Wide lens", explanation: "Example specialist term" },
 ];
 export const wordKey = (word: string) => word.trim().replace(/\s+/gu, " ").toLowerCase();
 export function problem(terms: Term[]): string {

@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { build } from '../../../node_modules/vite/dist/node/index.js';
 import react from '../../../node_modules/@vitejs/plugin-react/dist/index.js';
-import { openBrowser } from '../../../../scripts/intake1422/hosted-release/browser.mjs';
+import { openBrowser } from '../../../../scripts/feature-checks/hosted-release/browser.mjs';
 
 const directory = fileURLToPath(new URL('.', import.meta.url));
 const ui = resolve(directory, '../../..');

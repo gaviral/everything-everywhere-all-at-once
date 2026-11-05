@@ -375,7 +375,7 @@ async fn a_person_and_an_ai_participant_place_things_over_their_sockets_and_each
     let change = next(&mut person).await;
     assert_eq!((change["change"]["id"].as_str(), change["change"]["by"].as_str()), (Some("c"), Some("AI")), "no notice for the person, only the change");
     // A window that opens now finds the person's place in its snapshot.
-    let (_, snapshot) = open(address, "Sam").await;
+    let (_, snapshot) = open(address, "Colleague").await;
     assert_eq!(snapshot["world"]["positions"]["T1"]["by"], "you");
     assert_eq!(snapshot["world"]["positions"].as_object().unwrap().len(), 1);
 }

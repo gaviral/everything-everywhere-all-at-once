@@ -395,7 +395,7 @@ struct Unfold {
 
 /// "Expand the garden", "Expand all the sub cards inside app feedback", "Show everything under the trip", "Collapse
 /// this", "Fold everything": what to open or fold. "Expand the business into Europe" is a thought unless the map
-/// has a thread with all those words; "Show Dana the photos" and "Hide the presents" are thoughts unless a thread
+/// has a thread with all those words; "Show Collaborator the photos" and "Hide the presents" are thoughts unless a thread
 /// is titled so; "Fold the laundry" too.
 fn unfold(text: &str) -> Option<Unfold> {
     let t = plain(text);
@@ -462,7 +462,7 @@ pub(crate) fn name_words(name: &str) -> HashSet<String> {
 
 /// The thread a spoken name means: every word of it in the title, the closest title first (same words), then the
 /// most recently touched. With `title_only` ("show", "open", "hide"), only a title with exactly those words: "Show
-/// Dana the photos" is talk though a thread is titled "Dana photos from Japan". Otherwise a thread whose title, tags
+/// Collaborator the photos" is talk though a thread is titled "Collaborator photos from Japan". Otherwise a thread whose title, tags
 /// or points hold all the words counts too (find.rs).
 pub(crate) fn named_thread(world: &World, name: &str, title_only: bool) -> Option<String> {
     let wanted = name_words(name);

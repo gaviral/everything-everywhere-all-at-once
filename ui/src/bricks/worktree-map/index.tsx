@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { WorktreeMap, createMapSelection } from "../../intake1411/worktree-map";
-import { syntheticSnapshot } from "../../intake1411/worktree-map/syntheticSnapshot";
+import { WorktreeMap, createMapSelection } from "../../features/worktree-map";
+import { syntheticSnapshot } from "../../features/worktree-map/syntheticSnapshot";
 import type { BrickProps } from "../contract";
 import "./example.css";
 import { LookSwitch, type Look } from "./looks/LookSwitch";

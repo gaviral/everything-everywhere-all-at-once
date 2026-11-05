@@ -31,13 +31,13 @@ const words = first.replace(/<!--[\s\S]*?-->/g, "").replace(/!\[[^\]]*\]\([^)]*\
   .replace(/\]\([^)]*\)/g, "]").split(/\s+/).filter((w) => /[A-Za-z0-9]/.test(w));
 assert.ok(words.length <= MAX_WORDS, `the first screen has ${words.length} words; at most ${MAX_WORDS}`);
 
-// Require a concise, concrete outcome, not approved wording or a performance promise.
-const outcome = first.replace(/<!--[\s\S]*?-->/g, "").split(/\n\s*\n/)
-  .map((part) => part.trim()).find((part) => part && !part.startsWith("#"));
-assert.ok(outcome && outcome.split(/\s+/).length <= 90 && /\bE2A2O\b/.test(outcome)
-  && /\b(?:files?|groups?|organizes?|places?|maps?|keeps?|saves?|captures?|returns?|finds?|turns?)\b/i.test(outcome)
-  && /\b(?:thoughts?|topics?|ideas?|notes?|conversation|map)\b/i.test(outcome),
-"the opening needs a concise concrete outcome for thoughts, topics or the map");
+// Keep the visible IDE opening and its concrete capabilities, without a performance promise.
+const outcome = first.split("\n").slice(0, 3).join("\n");
+assert.equal(outcome, [
+  "# E2A2O",
+  "The IDE from the future, for developers and AI to follow each other.",
+  "Speak, type and sketch; build reusable board parts with Muse Spark; inspect the work across real Git branches.",
+].join("\n"), "the opening must introduce the IDE and its speech, sketch, parts and Git capabilities");
 assert.doesNotMatch(outcome, /\b\d+(?:\.\d+)?\s*(?:to\s*\d+\s*)?(?:ms|s|seconds?|minutes?)\b/i,
   "the product outcome must not promise latency");
 

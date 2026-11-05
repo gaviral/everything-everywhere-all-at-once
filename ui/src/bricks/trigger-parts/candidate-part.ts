@@ -1,4 +1,4 @@
-import { characters, sourceSpan } from "../../msg1351/dictation-breakdown/source-span";
+import { characters, sourceSpan } from "../../features/dictation-breakdown/source-span";
 import type { Candidate } from "./types";
 
 /** Offsets use the shared contract's Unicode scalar units, including emoji. */

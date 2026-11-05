@@ -44,7 +44,7 @@ if (shots) mkdirSync(shots, { recursive: true });
     assert.deepEqual(asksOf(jobs, [], new Set([early.id])).map((ask) => ask.text), ["Later question?"], "an answered question isn't asked again, though a reconnect replays it as it was");
     assert.deepEqual(asksOf(jobs.map((j) => (j.id === "kid" ? { ...j, at_ms: 9999 } : j)), [], new Set([early.id])).map((ask) => ask.text), ["Later question?", "Early question?"], "the same words asked again, with a new stamp, are asked");
     assert.ok(asksOf([], [hold(8, "agent", "Held only?")])[0].id.endsWith("|n8"), "a hold's asking is its message");
-    assert.deepEqual(asksOf([job("a", "waiting", { result: "Same words?", by: "Claude" }), job("b", "waiting", { result: "Same words?", by: "GPT" })], []).map((ask) => ask.by), ["Claude", "GPT"], "two helpers asking the same words are two questions");
+    assert.deepEqual(asksOf([job("a", "waiting", { result: "Same words?", by: "Helper" }), job("b", "waiting", { result: "Same words?", by: "GPT" })], []).map((ask) => ask.by), ["Helper", "GPT"], "two helpers asking the same words are two questions");
     assert.equal(asksOf([job("d", "waiting", { result: "A demo question?", demo: true })], [])[0].demo, true, "a simulated job's question says so");
 
     // The local continuation uses the feed's messages, once the card asks. Its remaining timers cannot undo an answer.
@@ -323,11 +323,11 @@ try {
     await s.scheme("dark");
     await s.shot("join", "dark");
     await s.scheme("light");
-    await s.type(".join input", "Maya");
+    await s.type(".join input", "Designer");
     await s.click(".join-card > button");
     await s.check('!!document.querySelector(".remote")', "joined: the Remote");
-    await s.check('document.querySelector(".remote-status")?.textContent === "On the shared map as Maya"', "connected, under its name");
-    assert.ok(joins.length >= 1 && joins.at(-1).name === "Maya" && joins.at(-1).room === "abcd2345", `its socket came in by name and room: ${JSON.stringify(joins)}`);
+    await s.check('document.querySelector(".remote-status")?.textContent === "On the shared map as Designer"', "connected, under its name");
+    assert.ok(joins.length >= 1 && joins.at(-1).name === "Designer" && joins.at(-1).room === "abcd2345", `its socket came in by name and room: ${JSON.stringify(joins)}`);
     // The replay: a waiting job is a question though no hold reached this window; the summary above it is not one.
     await s.check('!!document.querySelector(".remote-ask")', "the question waiting in the replay is held for you");
     assert.equal(await s.text(".remote-ask-text"), "Window or aisle?");
@@ -349,14 +349,14 @@ try {
     assert.equal(await s.evaluate('!!document.querySelector(\'[data-job-id="trip"]\')'), true, "the work stays in the Work spine until the helper moves on");
 
     // Another helper asks, "A, or B?": one tap, to that helper.
-    const color = job("color", "waiting", { by: "Claude", title: "Pick a color", result: "Blue, or green?" });
+    const color = job("color", "waiting", { by: "Helper", title: "Pick a color", result: "Blue, or green?" });
     s.core.send(color);
     await s.check('document.querySelector(".remote-ask-text")?.textContent === "Blue, or green?"', "the next helper's question");
-    assert.equal(await s.text(".remote-ask-by"), "Claude", "a human-looking name carries no AI mark unless the call says so");
+    assert.equal(await s.text(".remote-ask-by"), "Helper", "a human-looking name carries no AI mark unless the call says so");
     assert.deepEqual(await s.evaluate('[...document.querySelectorAll(".remote-quick-button")].map((b) => b.textContent)'), ["Blue", "Green"]);
     await s.click(".remote-quick-button:last-child");
-    await s.check('document.querySelector(".remote-sent")?.textContent === "Sent to Claude: “Green”"', "one tap sent it");
-    assert.deepEqual(answers().at(-1), { type: "answer", to: "Claude", text: "Green" }, "to Claude, in the words of the choice");
+    await s.check('document.querySelector(".remote-sent")?.textContent === "Sent to Helper: “Green”"', "one tap sent it");
+    assert.deepEqual(answers().at(-1), { type: "answer", to: "Helper", text: "Green" }, "to Helper, in the words of the choice");
 
     // A hold no job says is a question too; the same words as a job are one question; more than one waits behind a count.
     s.core.send({ type: "guide", kind: "hold", target: null, text: "Ship it today?", by: "agent", at_ms: Date.now() });
@@ -389,7 +389,7 @@ try {
     // The core replays each job as it was stamped.
     replay = [...replay, color, job("name", "waiting", { title: "Name", result: "Name the file?", at_ms: Date.now() - 5_000 })];
     away = false;
-    await s.check('document.querySelector(".remote-status")?.textContent === "On the shared map as Maya"', "back on the shared map", 30_000);
+    await s.check('document.querySelector(".remote-status")?.textContent === "On the shared map as Designer"', "back on the shared map", 30_000);
     await s.check('document.querySelector(".remote-ask-text")?.textContent === "Name the file?"', "the replay brings back what still waits, and not what was answered", 12_000);
     assert.equal(await s.evaluate('document.querySelector(".remote-field").value'), "report.txt", "the words typed while it was down are still there");
     await s.enter();

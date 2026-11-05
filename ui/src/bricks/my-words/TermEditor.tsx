@@ -32,7 +32,7 @@ export function TermEditor({ terms, change, busy }: { terms: Term[]; change: (te
       <p>Choose an example to edit, or enter your own below.</p>
     </div>}
     <div className="my-words-fields">
-      <label>Exact name or term<input value={term} onChange={e => setTerm(e.target.value)} placeholder="e.g. Nerith" /></label>
+      <label>Exact name or term<input value={term} onChange={e => setTerm(e.target.value)} placeholder="e.g. Wayfinder" /></label>
       <label>What it means <span>(optional)</span><input value={explanation} onChange={e => setExplanation(e.target.value)} placeholder="A person, project, or specialist word" /></label>
     </div>
     <p className="my-words-note">Explanations help you remember. Only the exact terms go to Meta’s recognizer.</p>

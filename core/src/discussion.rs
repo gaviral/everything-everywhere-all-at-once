@@ -136,12 +136,12 @@ mod tests {
         let core = std::sync::Arc::new(core);
         let id = crate::annotate::note(&core, "you", "p1", "blue wall", "Check daylight").unwrap();
         let gate = AtomicBool::new(false);
-        assert!(set(&core, &gate, "Sam", "r1", &id, "resolved", 0).is_err());
+        assert!(set(&core, &gate, "Colleague", "r1", &id, "resolved", 0).is_err());
         gate.store(true, Ordering::SeqCst);
-        let saved = set(&core, &gate, "Sam", "r1", &id, "resolved", 0).unwrap();
-        assert_eq!(saved.actor, "Sam");
+        let saved = set(&core, &gate, "Colleague", "r1", &id, "resolved", 0).unwrap();
+        assert_eq!(saved.actor, "Colleague");
         assert_eq!(
-            set(&core, &gate, "Sam", "r1", &id, "resolved", 0).unwrap(),
+            set(&core, &gate, "Colleague", "r1", &id, "resolved", 0).unwrap(),
             saved
         );
         assert!(set(&core, &gate, "you", "r2", &id, "open", 0).is_err());
