@@ -327,7 +327,7 @@ All go from the core to `api.meta.ai/v1`. Every chat call except Explain asks fo
 
 Additional offline checks run separately: [correction controls](../scripts/correction.mjs), [email dry runs](../scripts/email-dry-run.mjs), [offline test runner](../scripts/offline-driver-test.py), [playground readiness](../scripts/playground-ready-test.mjs), and [publication guard](../scripts/publication-guard-test.py).
 
-Explicit opt-in checks cover live [Flow](../scripts/flow-happy-live.mjs), [capture-to-send](../scripts/film-chain-live.mjs), and [synthetic speech](../scripts/voice-live.mjs). They need an isolated local setup and live Meta access; they are separate from offline documentation checks.
+Explicit opt-in checks cover live [Flow](../scripts/flow-happy-live.mjs), and [synthetic speech](../scripts/voice-live.mjs). They need an isolated local setup and live Meta access; they are separate from offline documentation checks.
 
 ## Prototype scope
 
@@ -341,4 +341,4 @@ Live placement, sketch reading, image generation and Crew need a working Meta ke
 
 Historical typed-input measurements do not validate this merged build or human microphone performance. Human microphone and interruption behavior, including loud-voice calibration, still need validation. The selected build, current live Meta demonstration, final film/link, media rights and owner approvals remain separate checks. Sample pictures are public generated fixtures; private journals, prompts, answers and owner words do not belong in the submission.
 
-`node scripts/readme-check.mjs`, `node scripts/links-check.mjs`, `node scripts/dates-check.mjs` and `python3 scripts/model-guards.py meta-only` check documentation and model-integration scope without service credentials. Their success does not establish a full build, browser flow, release clearance or validation of all historical merges. See the [film guide](../film/README.md) for narration provenance and rendering checks.
+`node scripts/readme-check.mjs`, `node scripts/links-check.mjs`, `node scripts/dates-check.mjs` and `python3 scripts/model-guards.py meta-only` check documentation and model-integration scope without service credentials. Their success does not establish a full build, browser flow, release clearance or validation of all historical merges. See the the film tooling kept outside this repository for narration provenance and rendering checks.

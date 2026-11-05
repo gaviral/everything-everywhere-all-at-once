@@ -23,11 +23,7 @@ AI is racing ahead of the person directing it. Here, you keep up with your agent
 
 ## Try the IDE
 
-```sh
-./run.sh sample
-```
-
-Opens a fictional payments API team at `http://localhost:4321/?sample`, with no key and no mic. The first run installs dependencies and compiles Rust, about four minutes, and needs network access. Live model features need a Meta key; see [Run it](#run-it).
+**Local sample:** `./run.sh sample` → `http://localhost:4321/?sample`, a fictional payments API team (no key or mic). The first run installs dependencies and compiles Rust, about four minutes, and needs network access. Live model features need a Meta key.
 
 ## Built during the hackathon
 
