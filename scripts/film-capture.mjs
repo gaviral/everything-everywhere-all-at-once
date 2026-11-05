@@ -268,6 +268,24 @@ async function checkCrewCounts() {
   contentCheck('all merged parts are kept with the right count', counts.total === counts.merged && kept?.count === counts.total && counts.catalog === keptPartIds.size,
     { ...counts, keptThisRun: kept?.count, expectedCatalog: keptPartIds.size });
 }
+async function checkBoardFacts() {
+  const text = await evaluate('document.querySelector(".crew-board").innerText');
+  const unsupportedDays = text.match(/\b(Monday|Tuesday|Wednesday|Thursday|Friday|Sunday)\b/gi) || [];
+  contentCheck('Crew keeps the supplied Saturday instead of inventing a day', unsupportedDays.length === 0, { unsupportedDays, boardText: text });
+}
+async function prepareSelectedClip(name) {
+  if (name === 'ask' && !await evaluate('document.querySelectorAll("[data-thought]").length')) {
+    await type(story);
+    await until('document.querySelectorAll("[data-thought]").length > 0');
+  }
+  if (name === 'crew' && !await evaluate('JSON.parse(localStorage.getItem("e2a2o-draw-strokes") || "[]").length')) {
+    if (!await evaluate('!!document.querySelector(".draw-page")')) await click('.draw-open');
+    await box(.14, .26, .24, .18, 'volunteer shifts');
+    await box(.57, .26, .24, .18, 'what to bring');
+    await box(.35, .66, .24, .18, 'flyer words');
+    await until('document.querySelectorAll(".draw-part").length >= 3', 120000);
+  }
+}
 async function verifyClip(record) {
   const { stdout } = await runFile('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height,r_frame_rate,avg_frame_rate', '-show_entries', 'format=duration', '-of', 'json', join(record.folder, `${record.name}.mp4`)]);
   const probe = JSON.parse(stdout), stream = probe.streams[0], seconds = Number(probe.format.duration);
@@ -640,6 +658,7 @@ async function repair() {
   current.observed = observed;
   current.limitations = ['genuine repair/merge responses held 3.5s each for reading'];
   await checkCrewCounts();
+  await checkBoardFacts();
   note('merged-visible', { part: faultPart });
   await delay(3500);
 }
@@ -689,6 +708,7 @@ async function board() {
   current.observed = { checked: await evaluate(`document.querySelectorAll(${JSON.stringify(`${bring} .kit-list button[aria-pressed="true"]`)}).length`), counts, answers };
   assert(current.observed.checked === 2 && counts + answers > 0, 'Board did not visibly change');
   current.real = `finished live Repair Night board: two Bring List ticks, ${counts} counter changes and ${answers} editable answers`;
+  await checkBoardFacts();
   await delay(2500);
 }
 async function prepareBoard() {
@@ -771,6 +791,7 @@ const clips = {
     note('all-parts-on-main');
     contentCheck('Build all that alone hands the sketch to Crew', !await evaluate('!!document.querySelector(".draw-page")'), { command: 'Build all that' });
     await checkCrewCounts();
+    await checkBoardFacts();
   }, 'real sketch handoff, Spark parts, checked Git branches and promotion to main'],
   'crew-more': [async () => {
     await navigate(flags);
@@ -783,6 +804,7 @@ const clips = {
     assert(await evaluate('document.querySelectorAll(".crew-off").length') === 0, 'Crew turned a part off');
     note('reused-and-main');
     await checkCrewCounts();
+    await checkBoardFacts();
   }, 'second live Spark run with persistent part reuse and a larger Git tree'],
   parts: [async () => {
     await navigate(`${flags}&parts`);
@@ -832,6 +854,7 @@ if (process.env.FILM_REENCODE === '1') {
     console.log(`Capture profile ready; takes: ${take}`);
     for (const name of (process.env.FILM_CLIPS || Object.keys(clips).join(',')).split(',')) {
       assert(clips[name], `Unknown clip ${name}`);
+      await prepareSelectedClip(name);
       if (name === 'repair') await prepareRepair();
       if (name === 'board') await prepareBoard();
       await capture(name, ...clips[name]);
