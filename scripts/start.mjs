@@ -16,7 +16,7 @@ const DEFAULT_PORT = 4321;
 
 /** The sample query labels the preloaded fixture; it does not request live model work. */
 export function launchUrl(port, mode = "") {
-  return `http://localhost:${port}/${mode === "sample" ? "?sample" : ""}`;
+  return `http://localhost:${port}/${mode === "sample" ? "?sample&bricks=crew,draw,clarify" : ""}`;
 }
 
 /** An optional executable supplied beside run.sh, named with Node's platform and architecture. */

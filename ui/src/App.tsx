@@ -1264,7 +1264,7 @@ export default function App() {
       requestAnimationFrame(() => document.querySelector<HTMLElement>(SHELL2 ? '[data-guide="catalog"]' : '[data-guide="view:focused-find"]')?.focus({ preventScroll: true }));
     },
     select: core.select,
-    notify: (text) => core.showNotice(text),
+    notify: (text) => core.showNotice(text.replace("MODEL_API_KEY is not set", "This copy has no Meta key yet; add one to .env to use Crew, Draw and Ask about words")),
     position: core.position,
     listen: (on) => {
       const capturing = !!stopMic;

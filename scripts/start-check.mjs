@@ -60,8 +60,8 @@ assert.equal(corePort({ PORT: "4400" }), 4400);
 assert.equal(corePort({ PORT: "+4400" }), 4400);
 assert.equal(corePort({ PORT: "70000" }), 4321);
 assert.equal(corePort({ PORT: "44 00" }), 4321);
-assert.equal(launchUrl(4321, "sample"), "http://localhost:4321/?sample");
-assert.equal(launchUrl(4411, "sample"), "http://localhost:4411/?sample");
+assert.equal(launchUrl(4321, "sample"), "http://localhost:4321/?sample&bricks=crew,draw,clarify");
+assert.equal(launchUrl(4411, "sample"), "http://localhost:4411/?sample&bricks=crew,draw,clarify");
 assert.equal(launchUrl(4411, "demo"), "http://localhost:4411/");
 assert.equal(launchUrl(4411), "http://localhost:4411/");
 
