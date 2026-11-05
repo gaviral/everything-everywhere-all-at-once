@@ -72,9 +72,9 @@ try {
   assert.equal(state({ noKey: true, resting: true, blocked: true }), "resting", "the AI is out first; allowing the mic wouldn't help yet");
   assert.match(MIC_WORDS.resting.tip, /^Today's free tries are used up, so listening is off until tomorrow\./);
   assert.doesNotMatch(MIC_WORDS.resting.tip + MIC_WORDS.resting.label + composerHint("resting"), /AI key|owner/);
-  assert.match(composerHint("resting"), /tomorrow/);
+  assert.equal(composerHint("resting"), "Type a thought");
   assert.match(MIC_WORDS.blocked.tip, /blocked/);
-  assert.match(composerHint("blocked"), /blocked/);
+  assert.equal(composerHint("blocked"), "Type a thought");
   // The running mic stops when the connection drops, even before the speech service said it listens: no "not
   // listening" follows then, and a reconnect never starts the stream again (bug hunt: "Starting" for good).
   const ends = (extra) => micEnds({ connected: true, listening: false, failed: false, statusNew: false, listenedNew: false, ...extra });
@@ -95,8 +95,8 @@ try {
   assert.equal(states.length, 13);
   assert.equal(new Set(states.map((s) => MIC_WORDS[s].tip)).size, states.length, "every state's tip differs");
   assert.equal(new Set(states.map((s) => MIC_WORDS[s].label)).size, states.length, "every state's name differs");
-  for (const s of ["off", "starting", "paused", "nokey", "refused", "resting", "blocked", "offline"]) assert.notEqual(composerHint(s), composerHint("listening"), s);
-  assert.equal(composerHint("listening"), composerHint("hearing"), "words in the strip already say you're heard");
+  for (const s of states) assert.equal(composerHint(s), "Type a thought", `typing stays independent of ${s}`);
+  assert.equal(composerHint("listening"), composerHint("hearing"), "voice state never changes the typing prompt");
   assert.match(MIC_WORDS.nokey.tip, /no AI key/);
   assert.match(MIC_WORDS.nokey.tip, /save typed thoughts/);
   assert.match(MIC_WORDS.nokey.tip, /Set up AI/);

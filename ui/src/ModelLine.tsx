@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { HOLD_MS, lineFor, useSteps } from "./model-line";
 import "./model-line.css";
 
-/** Inside the composer, right of your words and left of the mic: the Meta model doing the step now ("Muse Spark 1.2 ·
+/** Below the classic composer: the Meta model doing the step now ("Muse Spark 1.2 ·
  *  placing your thought"), what it just did and how long it took, or the one listening. Out of the way while you
  *  type (`hidden`). Screen readers hear each model once (model-line.ts `announcement`), not every change. */
 export function ModelLine({ hearing, hidden }: { hearing: boolean; hidden: boolean }) {

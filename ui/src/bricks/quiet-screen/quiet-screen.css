@@ -22,10 +22,10 @@ html.quiet-screen {
     .flow-canvas-source > div,
     .shell-status-right:not(:has(.shell-status-wait, [data-saved-id])),
     /* No map content: keep the one entry point. A focused or live input also stays. */
-    .app.shell:has(.spine-frame [data-thread], .map [data-thread], [aria-label="Thought list"] > li)
-      .map-capture[data-map-capture="active"]:not(.map-capture-speaking):not(:has(.mic.on)),
-    .app.shell:has(.spine-frame [data-thread], .map [data-thread], [aria-label="Thought list"] > li)
-      .shell-composer:not(.map-capture .shell-composer):not(:has(.mic.on)),
+    .app.shell:not(:has(.mic.on)):has(.spine-frame [data-thread], .map [data-thread], [aria-label="Thought list"] > li)
+      .map-capture[data-map-capture="active"]:not(.map-capture-speaking),
+    .app.shell:not(:has(.mic.on)):has(.spine-frame [data-thread], .map [data-thread], [aria-label="Thought list"] > li)
+      .shell-composer:not(.map-capture .shell-composer),
     .flow-canvas:has(.flow-canvas-grid) .flow-canvas-command:not(:has(.flow-canvas-listening))
   ) {
     opacity: var(--quiet-chrome-opacity, 1);
