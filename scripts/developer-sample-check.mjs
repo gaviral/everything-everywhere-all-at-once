@@ -5,7 +5,7 @@ import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, symlinkS
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { createServer } from '../ui/node_modules/vite/dist/node/index.js';
+import { uiServer } from './ui-server.mjs';
 
 const root = new URL('../', import.meta.url).pathname;
 const scratch = mkdtempSync(join(tmpdir(), 'developer-sample-check-'));
@@ -13,8 +13,7 @@ const read = path => readFileSync(join(root, path), 'utf8');
 
 async function checkMap() {
   globalThis.location = new URL('http://localhost/');
-  const server = await createServer({ configFile: false, root: join(root, 'ui'), cacheDir: join(scratch, 'vite'),
-    optimizeDeps: { noDiscovery: true, include: [] }, server: { middlewareMode: true, hmr: false, ws: false, watch: null } });
+  const server = await uiServer({ configFile: false });
   try {
     const { apply } = await server.ssrLoadModule('/src/core.ts');
     const { searchFields, searchMatches } = await server.ssrLoadModule('/src/search-rules.ts');
