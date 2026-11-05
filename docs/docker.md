@@ -36,6 +36,10 @@ stopping the first stack, since both use localhost port 8080.
 - `core-build`: builds and strips the locked Rust core, using Alpine's shared
   musl/OpenSSL libraries. Neither compiler nor Node is in the runtime image.
 - `app`: a non-root Alpine runtime, the UI, public sample fixtures, and the core.
+  `/app/LICENSE`, `/app/THIRD_PARTY_NOTICES.md` and `/app/dependency-licences/`
+  retain the project's licence and the dependency notice bundle. The bundle's
+  [documented gaps](../dependency-licences/UNRESOLVED.md) still require review
+  before distributing affected components; including it is not release approval.
 - `gateway`: a non-root TCP relay sharing the app's network namespace. It forwards
   port 8080 to the core's loopback-only port 4321, retaining Host/Origin checks and
   WebSocket upgrades. Only host loopback port 8080 is published. This is a local
@@ -95,7 +99,7 @@ could not run because PyYAML is not installed; no package was installed for it.
    page. The changed topic should remain. Inspect runtime contents and image size:
 
    ```sh
-   docker compose exec app sh -c 'test "$(id -u)" = 10001 && ! command -v node && ! command -v cargo && ! command -v rustc'
+   docker compose exec app sh -c 'test "$(id -u)" = 10001 && ! command -v node && ! command -v cargo && ! command -v rustc && test -s /app/LICENSE && test -s /app/THIRD_PARTY_NOTICES.md && test -s /app/dependency-licences/inventory.json'
    docker image inspect "$(docker compose images -q app)" --format '{{.Size}} bytes'
    docker compose logs --tail=40 app gateway
    ```

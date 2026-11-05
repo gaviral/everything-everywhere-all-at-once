@@ -7,7 +7,7 @@ E2A2O turns your words and sketches into a usable board, with Muse building reus
 ## Try it
 
 - **Local sample:** `./run.sh sample` → `http://localhost:4321/?sample` (no key or mic).
-- **Hosted preview, verification pending:** https://e2a2o.aviralgarg.com
+- **Hosted preview, verification pending (last link check: HTTP 401):** https://e2a2o.aviralgarg.com
 
 Say it. **Ask about words** questions a word right where it was used. Draw it: Muse Spark reads the sketch; Muse Image draws it back. **Crew** splits the work into parts on real Git branches, checks and merges what works, repairs or turns off what breaks, and reuses finished parts. **Parts** follows the work into the code.
 
@@ -34,7 +34,7 @@ Say it. **Ask about words** questions a word right where it was used. Draw it: M
 
 ## Run it
 
-From this repository, use Node.js 22.12 or newer, npm, and Rust 1.89 or newer. A source build on macOS also needs Apple's command-line tools. Linux needs a C compiler, pkg-config and OpenSSL headers. Linux and Windows are not validated here.
+From this repository, use Node.js 22.12 or newer, npm, and Rust 1.89 or newer. A source build on macOS also needs Apple's command-line tools. Linux needs a C compiler, pkg-config and OpenSSL headers. Crew and the optional coding helpers also need Git. Linux and Windows are not validated here.
 
 ```sh
 ./run.sh sample
@@ -86,6 +86,8 @@ The Features page lists **122 features**. That is an entry count, not a count of
 
 The app calls Meta models only, with no GPT runtime dependency. The Rust core holds the key and sends model requests through [model.rs](core/src/model.rs).
 
+ChatGPT and Claude appear as supported export formats: import reads files and sends selected content to Meta, without calling either service. Optional coding helpers default to the built-in Meta runner; leave `HELPERS_CMD` unset for this runtime.
+
 | Work | Meta model | Implementation |
 |---|---|---|
 | Ask about a word | Muse Spark 1.3 | [clarify.rs](core/src/clarify.rs) |
@@ -107,6 +109,8 @@ These are recorded observations from typed input. They are not speed or reliabil
 ## New work for the hackathon
 
 The implementation in this repository was built for the Meta x Cerebral Valley hackathon. The idea and design preceded the event; no application code did. New work includes the board, speech and sketch paths, questions attached to words, Crew's part workflow, reuse, recovery and source inspection. Dependencies are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+Author: gaviral. The project's [MIT licence](LICENSE) covers its own code; dependencies retain their original licences and notices.
 
 ## Samples, simulation and limits
 

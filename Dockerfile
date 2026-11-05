@@ -30,6 +30,8 @@ WORKDIR /app
 COPY --from=core-build /build/core/target/release/e2a2o-core /usr/local/bin/e2a2o-core
 COPY --from=ui-build /build/ui/dist/ /app/ui/
 COPY samples/ /app/samples/
+COPY LICENSE THIRD_PARTY_NOTICES.md /app/
+COPY dependency-licences/ /app/dependency-licences/
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/docker-entrypoint
 ENV E2A2O_DATA=/data/map E2A2O_UI=/app/ui E2A2O_SAMPLES=/app/samples PORT=4321
 USER 10001:10001
