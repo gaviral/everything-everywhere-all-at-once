@@ -296,11 +296,6 @@
       "provenance": "Authored scripted regression/demo scenario, reviewed synthetic input, not a captured conversation; existing audit confirms handwritten sample scenarios.",
       "sha256": "502053e5469e785f8f5fe1ee9fec507527d473d8fad23026942b164c8b7cafa7"
     },
-    "scripts/burst-talk.jsonl": {
-      "kind": "synthetic",
-      "provenance": "Authored scripted regression/demo scenario, reviewed synthetic input, not a captured conversation; existing audit confirms handwritten sample scenarios.",
-      "sha256": "a9046d763fd5fd5693c10db306d6d3e8c4bd89c4e066ca0cfac230fc744e346d"
-    },
     "scripts/chunk-cases.jsonl": {
       "kind": "synthetic",
       "provenance": "Authored scripted regression/demo scenario, reviewed synthetic input, not a captured conversation; existing audit confirms handwritten sample scenarios.",
@@ -316,35 +311,15 @@
       "provenance": "Authored scripted regression/demo scenario, reviewed synthetic input, not a captured conversation; existing audit confirms handwritten sample scenarios.",
       "sha256": "53cb8232f9da1866075adf110456f36b27f5bed9df1e68e222da095c16cc3a4e"
     },
-    "scripts/demo-talk-v4.jsonl": {
-      "kind": "synthetic",
-      "provenance": "Authored scripted regression/demo scenario, reviewed synthetic input, not a captured conversation; existing audit confirms handwritten sample scenarios.",
-      "sha256": "9e779d77ae541385fa846458b4deeba1cef0fedbb80e2f9ec698e82682d923ee"
-    },
     "scripts/demo-talk.jsonl": {
       "kind": "synthetic",
       "provenance": "Authored scripted regression/demo scenario, reviewed synthetic input, not a captured conversation; existing audit confirms handwritten sample scenarios.",
       "sha256": "5816bd79445afbf1de04b45ae0e0fdf6881dd013f1e515ab977a2f0b2770a64c"
     },
-    "scripts/montage-talk.jsonl": {
-      "kind": "synthetic",
-      "provenance": "Authored scripted regression/demo scenario, reviewed synthetic input, not a captured conversation; existing audit confirms handwritten sample scenarios.",
-      "sha256": "dc9d26a1776b48d76556e7ffe46bcaeefe90256d037e31b4442aebf62e470383"
-    },
-    "scripts/room-talk.jsonl": {
-      "kind": "synthetic",
-      "provenance": "Authored scripted regression/demo scenario, reviewed synthetic input, not a captured conversation; existing audit confirms handwritten sample scenarios.",
-      "sha256": "15dfec1d23392c0b853eb58dbe151fe8408e606eafa0cb68b937d1f35c2ea042"
-    },
     "scripts/routing-cases.jsonl": {
       "kind": "synthetic",
       "provenance": "Authored scripted regression/demo scenario, reviewed synthetic input, not a captured conversation; existing audit confirms handwritten sample scenarios.",
       "sha256": "47a5f5b59721758fd8647fa5fcae19b5f46a0a75e3dc164492e7ddcb7decf740"
-    },
-    "scripts/rules-talk.jsonl": {
-      "kind": "synthetic",
-      "provenance": "Authored scripted regression/demo scenario, reviewed synthetic input, not a captured conversation; existing audit confirms handwritten sample scenarios.",
-      "sha256": "ce94bfd2844c9b1f68b927504dca01232cc66539ed08d75e5596a42046d7ca83"
     },
     "scripts/story-talk.jsonl": {
       "kind": "synthetic",
@@ -355,16 +330,6 @@
       "kind": "synthetic",
       "provenance": "Synthetic sample export explicitly authored in introducing commit 5992c4f, confirmed by audit Demo honesty. Fictional Lisbon/Porto scenario.",
       "sha256": "41ded1336d4f849fab37d1d087c0389468b1a04a0939d3f16260e8f2dbb27649"
-    },
-    "docs/compaction-check.md": {
-      "kind": "synthetic",
-      "provenance": "Explanatory regression summary replacing the preserved raw report; audit finding 1 confirms synthetic replacement. Contains workshop/rehearsal scenario description only.",
-      "sha256": "7dcee5afb04b76a835dc4998a9e8776b5b2b7a9cbf87c06dc3839e2feebe960b"
-    },
-    "docs/trace.md": {
-      "kind": "synthetic",
-      "provenance": "Historical trace of synthesized demo talk, explicitly labelled synthetic evidence at bd04356 on 2026-11-02. Derived model output from scripted inputs, not owner dictation. Does not validate the current release or film.",
-      "sha256": "4a3aba253503e7c4ec069395e4636a0f17fc4a0680b931e7dad8387d57c324c0"
     }
   }
 }

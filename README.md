@@ -17,18 +17,18 @@ Say it. **Ask about words** questions a word right where it was used. Draw it: M
 
 ## Meta models
 
-| You… | Model | Code | Historical synthetic report |
-|---|---|---|---|
-| Speak | Muse Voice Transcribe 1.0 | [asr.rs](core/src/asr.rs) | [heard](docs/trace.md#heard) |
-| Finish a thought | Muse Spark 1.3 + 1.2 | [placer.rs](core/src/placer.rs) | [placer](docs/trace.md#placer) |
-| Pause | Muse Spark 1.3 | [refiner.rs](core/src/refiner.rs) | [refiner](docs/trace.md#refiner) |
-| Request an app | Muse Spark 1.3 | [apps.rs](core/src/apps.rs) | [composer](docs/trace.md#composer) |
-| Ask for a recap | Muse Spark 1.3 | [recap.rs](core/src/recap.rs) | [recap](docs/trace.md#recap) |
-| Let a topic settle | Muse Image 1.0 | [pictures.rs](core/src/pictures.rs) | [pictures](docs/trace.md#pictures) |
-| Use a word it can't place | Muse Spark 1.3 | [clarify.rs](core/src/clarify.rs) | none yet |
-| Sketch an idea | Muse Spark 1.3 reads it; Muse Image 1.0 draws it back | [draw.rs](core/src/draw.rs) | none yet |
-| Tell Crew what to build | Muse Spark 1.3 splits, builds and repairs parts on Git branches | [crew.rs](core/src/crew.rs) | none yet |
-| Ask “where was I?” | no model | [spoken.rs](core/src/spoken.rs) | [rules](docs/trace.md#rules) |
+| You… | Model | Code |
+|---|---|---|
+| Speak | Muse Voice Transcribe 1.0 | [asr.rs](core/src/asr.rs) |
+| Finish a thought | Muse Spark 1.3 + 1.2 | [placer.rs](core/src/placer.rs) |
+| Pause | Muse Spark 1.3 | [refiner.rs](core/src/refiner.rs) |
+| Request an app | Muse Spark 1.3 | [apps.rs](core/src/apps.rs) |
+| Ask for a recap | Muse Spark 1.3 | [recap.rs](core/src/recap.rs) |
+| Let a topic settle | Muse Image 1.0 | [pictures.rs](core/src/pictures.rs) |
+| Use a word it can't place | Muse Spark 1.3 | [clarify.rs](core/src/clarify.rs) |
+| Sketch an idea | Muse Spark 1.3 reads it; Muse Image 1.0 draws it back | [draw.rs](core/src/draw.rs) |
+| Tell Crew what to build | Muse Spark 1.3 splits, builds and repairs parts on Git branches | [crew.rs](core/src/crew.rs) |
+| Ask “where was I?” | no model | [spoken.rs](core/src/spoken.rs) |
 
 <!-- end of the first screen -->
 
@@ -94,16 +94,6 @@ The app calls Meta models only, with no GPT runtime dependency. The Rust core ho
 | Plan, build and repair Crew parts | Muse Spark 1.3 | [crew.rs](core/src/crew.rs) |
 | Plan and run text transformations | Muse Spark 1.3 | [flow.rs](core/src/flow.rs) |
 
-## Typed-input measurements
-
-These are recorded observations from typed input. They are not speed or reliability promises, or measurements of someone speaking into a microphone.
-
-| Recorded task | Result | Input |
-|---|---|---|
-| Spark reads a sketch | 4 to 6 s | typed input |
-| Muse Image draws back | about 9 s | typed input |
-| Crew builds parts | 6 of 6 in 11.3 s, with 1 repaired | typed input |
-
 ## New work for the hackathon
 
 The implementation in this repository was built for the Meta x Cerebral Valley hackathon. The idea and design preceded the event; no application code did. New work includes the board, speech and sketch paths, questions attached to words, Crew's part workflow, reuse, recovery and source inspection. Dependencies are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
@@ -122,4 +112,4 @@ Reply playback uses a browser/OS voice only when the voice reports `localService
 
 Optional connectors need separate setup. The seeded apps that act on their own start off until you switch them on in Apps: Argument resolver and Volume watcher. Review proposed external actions before approving them.
 
-[Features](docs/FEATURES.md) · [Commands](docs/COMMANDS.md) · [Architecture and parts](docs/ARCHITECTURE.md) · [Configuration](docs/configuration.md) · [MIT license](LICENSE)
+[Features](docs/FEATURES.md) · [Commands](docs/COMMANDS.md) · [Architecture](docs/ARCHITECTURE.md) · [Extension contract](docs/bricks.md) · [Configuration](docs/configuration.md) · [MIT license](LICENSE)

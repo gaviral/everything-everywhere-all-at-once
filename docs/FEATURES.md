@@ -86,16 +86,6 @@ Text and image interpretation use `https://api.meta.ai/v1/chat/completions`. Ima
 
 Navigation, Git operations, block checks and feature recovery do not need model judgment. Reply playback uses a browser/OS voice only when the voice reports `localService === true`; remote and unknown-locality voices are excluded. Without a usable local voice, replies remain text. This browser flag is not proof of network isolation.
 
-## Typed-input measurements
-
-These recorded results used **typed input**. They do not measure human speech or establish speed or reliability for another run.
-
-| Task | Recorded result | Input |
-|---|---|---|
-| Spark reads a sketch | 4 to 6 s | typed input |
-| Muse Image draws back | about 9 s | typed input |
-| Crew builds parts | 6 of 6 in 11.3 s, with 1 repaired | typed input |
-
 ## Samples and simulated work
 
 `./run.sh sample` opens prepared thoughts with saved images and example deadlines. It needs no key or mic. `./run.sh sample founder` opens another prepared map. Each start restores the fixture and retains a backup. See the [run instructions](../README.md#run-it).

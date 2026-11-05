@@ -64,3 +64,7 @@ MODEL_API_KEY=
 # Optional, Full only: "save this thread as a note" really writes a new note into Apple Notes. Off, it's a dry run.
 # NOTES_WRITE=on
 ```
+
+## Containers
+
+The optional [Compose setup](../compose.yaml) builds the UI and Rust core from the [Dockerfile](../Dockerfile). Run `docker compose up --build --wait`, then open `http://localhost:8080/?sample`. The keyless sample is labelled SAMPLE; a named volume keeps edits across restarts. `docker compose down` stops the stack and retains that volume. Container builds remain unverified. macOS automation and host CLI integrations are unavailable inside the container.
