@@ -127,7 +127,7 @@ export async function cut(args = process.argv.slice(2)) {
   await mkdir(opts.cuts, { recursive: true }); await mkdir(dirname(opts.out), { recursive: true });
   const hashes = new Map();
   const hashFile = path => { if (!hashes.has(path)) hashes.set(path, fileDigest(path)); return hashes.get(path); };
-  const code = await Promise.all(['stage.html', 'wall.mjs', 'wall-field.mjs', 'brand.mjs', 'motion.mjs', 'laptop.mjs', 'chrome.mjs', 'timeline.mjs', 'cut.mjs'].map(name => hashFile(join(here, name))));
+  const code = await Promise.all(['stage.html', 'title-morph.mjs', 'wall.mjs', 'wall-field.mjs', 'brand.mjs', 'motion.mjs', 'laptop.mjs', 'chrome.mjs', 'timeline.mjs', 'cut.mjs'].map(name => hashFile(join(here, name))));
   const shared = { format, code, logo: await hashFile(join(here, '../ui/public/icons/icon-512.png')), shapes: await hashFile(join(here, '../ui/public/icon.svg')) };
   const results = new Array(plan.shots.length), inFlight = new Map();
   await pool(plan.shots, async (original, index) => {

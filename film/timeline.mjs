@@ -36,7 +36,8 @@ export function timeline(config) {
   if (!Array.isArray(config.shots) || !config.shots.length) throw new Error('shots must be a nonempty array');
   let cursor = 0;
   const shots = config.shots.map((shot, index) => {
-    if (!['title', 'pulse', 'feature', 'brand', 'laptop', 'plane', 'planes', 'wall', 'card', 'list', 'end'].includes(shot.kind)) throw new Error(`Unknown shot kind: ${shot.kind}`);
+    if (!['title', 'titlemorph', 'pulse', 'feature', 'brand', 'laptop', 'plane', 'planes', 'wall', 'card', 'list', 'end'].includes(shot.kind)) throw new Error(`Unknown shot kind: ${shot.kind}`);
+    if (shot.kind === 'titlemorph' && shot.variant !== undefined && !['short', 'long'].includes(shot.variant)) throw new Error('titlemorph variant must be short or long');
     let duration = positive(shot.seconds, `shot ${index + 1} seconds`);
     if (shot.kind === 'title' || shot.kind === 'pulse') words(shot.words, 'title words');
     if (shot.kind === 'card' || shot.kind === 'feature') words(shot.word, 'card word');
