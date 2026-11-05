@@ -151,7 +151,7 @@ for (const [doc, text] of [["README.md", readme], ["docs/FEATURES.md", read("doc
     assert.ok(/start(s)? off/.test(sentence) || !/runs|plays|fires/.test(sentence), `${doc} says a seed runs without saying it starts off: ${sentence.slice(0, 120)}`);
 }
 for (const text of [readme, features])
-  assert.match(text, /In \*\*Apps\*\*, switch on \*\*Argument resolver\*\* or \*\*Volume watcher\*\*[^.]*; both start off/,
+  assert.match(text, /In \*\*(?:Apps|Features)\*\*, switch on \*\*Argument resolver\*\* or \*\*Volume watcher\*\*[^.]*; both start off/,
     "the app route must explain that the Argument resolver and Volume watcher start off");
 
 console.log(`readme-check: OK (first screen ${words.length} words, ${images.length} images, ${sources.length} source files listed)`);

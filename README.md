@@ -86,7 +86,7 @@ Add your Meta key as `MODEL_API_KEY` in `.env`, then run:
 ./run.sh demo
 ```
 
-Open the printed URL. Type and press Enter, or start the mic yourself. Open **Features** (`C`) to enable **Ask about words**, **Draw** and **Crew**. For topic images, switch on **Pictures**, then choose **Show**. In **Apps**, switch on **Argument resolver** or **Volume watcher** to use them; both start off.
+Open the printed URL. Type and press Enter, or start the mic yourself. Open **Features** (`C`) to enable **Ask about words**, **Draw** and **Crew**. For topic images, switch on **Pictures**, then choose **Show**. In **Features**, switch on **Argument resolver** or **Volume watcher** to use them; both start off.
 
 Stop with Ctrl+C. Restart after changing the key. `./run.sh` opens your regular map; see [storage](docs/storage.md).
 
