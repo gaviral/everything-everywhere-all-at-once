@@ -113,7 +113,7 @@ The idea and design preceded the Meta x Cerebral Valley hackathon. The applicati
 - Live model features need a working Meta key and network access. The keyless sample cannot demonstrate live generation.
 - Model answers can be wrong. Crew's block checks cover structure, not whether the result fulfills the person's intent.
 - Speech is configured for English. Names and unusual words may be misheard. Human microphone, interruption and shared-room behavior still need validation.
-- Hosted guest entry and the served build remain unverified for this handoff.
+- Hosted guest entry and the served build remain unverified.
 - Source builds require the tools listed in the README. Linux and Windows are not validated here.
 - Local maps use an append-only journal. The journal has no compaction. A shared microphone setup can capture the same speaker more than once.
 - Some connectors depend on macOS and explicit configuration. Review external actions before approving them.

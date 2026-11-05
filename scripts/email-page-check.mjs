@@ -14,7 +14,7 @@ const why = ready();
 if (why) { console.log(`SKIP email-page-check: ${why}`); process.exit(3); }
 const world = { threads: [], thoughts: [], active: null, active_by: {}, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: true, recaps: [], notes: {}, proposals: [] };
 let id = 0;
-const card = (state = "counting") => ({ type: "send_card", id, channel: "email", to: "Mia", subject: "the cut is ready", text: "Hi Mia, the cut is ready.", state, in_ms: state === "counting" ? 8000 : 0, live: false, message: state === "dry_run" ? "Dry run: nothing sent. With EMAIL_SEND=on it would have gone to Mia." : "" });
+const card = (state = "counting") => ({ type: "send_card", id, channel: "email", to: "Recipient", subject: "the cut is ready", text: "Hi Recipient, the cut is ready.", state, in_ms: state === "counting" ? 8000 : 0, live: false, message: state === "dry_run" ? "Dry run: nothing sent. With EMAIL_SEND=on it would have gone to Recipient." : "" });
 const core = await standInCore(() => [{ type: "snapshot", world }], {
   door: { room: false, member: true, email: true },
   onMessage: (message) => { if (message.type === "stop_send") core.send(card("stopped")); },
@@ -31,8 +31,8 @@ try {
       assert.ok(await until(`!!document.querySelector('.shell-composer')`));
       await waitFor(() => core.connected() > 0);
       id++; core.send(card());
-      assert.ok(await until(`document.querySelector('.send-card-head')?.textContent === 'Email to Mia · dry run'`));
-      assert.deepEqual(await run(`[...document.querySelectorAll('.send-card-subject, .send-card-text')].map(e=>e.textContent)`), ["Subject: the cut is ready", "Hi Mia, the cut is ready."]);
+      assert.ok(await until(`document.querySelector('.send-card-head')?.textContent === 'Email to Recipient · dry run'`));
+      assert.deepEqual(await run(`[...document.querySelectorAll('.send-card-subject, .send-card-text')].map(e=>e.textContent)`), ["Subject: the cut is ready", "Hi Recipient, the cut is ready."]);
       assert.ok(await run(`document.querySelector('.send-card-status').textContent.startsWith('Sends in ') && document.querySelector('.send-card-stop').checkVisibility()`));
       assert.ok(await run(`(()=>{const r=document.querySelector('.send-card').getBoundingClientRect();return r.left>=0 && r.right<=innerWidth && r.bottom<=innerHeight})()`));
       assert.ok(await until(`Number(getComputedStyle(document.querySelector('.send-card')).opacity) >= .99`));

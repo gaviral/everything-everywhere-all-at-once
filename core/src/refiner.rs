@@ -1329,7 +1329,7 @@ mod tests {
         world.suggestions.push(Suggestion { id: "sg-app".into(), thread_id: "T3".into(), text: card.into(), status: ItemStatus::New });
         let pass: Pass = serde_json::from_value(serde_json::json!({
             "suggestions": [
-                {"thread_id": "T2", "text": "Ask Sam about the budget"},
+                {"thread_id": "T2", "text": "Ask Colleague about the budget"},
                 {"thread_id": "T2", "text": "A second idea for the same thread"},
                 {"thread_id": "T3", "text": "The same point as the app's card"},
             ],
@@ -1350,7 +1350,7 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(ideas, ["Ask Sam about the budget"]);
+        assert_eq!(ideas, ["Ask Colleague about the budget"]);
         let tags: Vec<(&str, &str)> = out
             .iter()
             .filter_map(|c| match c {
@@ -1414,9 +1414,9 @@ mod tests {
         let alone = describe(&world, 0, TODAY);
         assert!(alone.contains("T2: Topic T2 (parent: none) tags: #rent #home last: "), "{alone}");
         assert!(alone.contains("T1: Topic T1 (parent: none) tags: #demo\n  - a said"), "{alone}");
-        world.thoughts.push(said("b", "Sam"));
+        world.thoughts.push(said("b", "Colleague"));
         let room = describe(&world, 0, TODAY);
-        assert!(room.contains("  - you: a said\n  - Sam: b said"), "{room}");
+        assert!(room.contains("  - you: a said\n  - Colleague: b said"), "{room}");
         world.thoughts.push(Thought { complete: false, ..said("c", "you") });
         assert!(describe(&world, 0, TODAY).contains("  - you: c said (trailed off)"), "a trailed-off point is marked");
     }
@@ -1474,7 +1474,7 @@ mod tests {
         world.thoughts[2].at_ms = crate::clock::ms("2026-11-01 00:30").unwrap();
         world.threads[0].last_point = world.thoughts[0].text.clone();
         for room in [false, true] {
-            if room { world.thoughts[1].speaker = "Sam".into(); }
+            if room { world.thoughts[1].speaker = "Colleague".into(); }
             let text = describe(&world, u64::MAX, TODAY);
             assert!(text.contains("last: Call the electrician tomorrow. (said 2026-10-29)"), "{text}");
             assert!(text.contains("Pay rent Friday. (said 2026-10-22)"), "{text}");
@@ -1783,12 +1783,12 @@ mod tests {
 
     #[test]
     fn a_pass_says_nothing_about_a_thread_whose_thought_was_deleted_while_it_was_out() {
-        let sent = map(&[("T1", "Rent", &["Pay rent on Friday.", "Ask Sam to cancel the lease."]), ("T2", "Groceries", &["Buy oat milk."])]);
+        let sent = map(&[("T1", "Rent", &["Pay rent on Friday.", "Ask Colleague to cancel the lease."]), ("T2", "Groceries", &["Buy oat milk."])]);
         let pass = || -> Pass {
             serde_json::from_value(serde_json::json!({
                 "titles": [{"thread_id": "T1", "title": "Lease"}, {"thread_id": "T2", "title": "Groceries and milk"}],
-                "suggestions": [{"thread_id": "T1", "text": "Email Sam about the lease"}, {"thread_id": "T2", "text": "Check the pantry first"}],
-                "actions": [{"thread_id": "T1", "kind": "reminder", "title": "Ask Sam to cancel the lease", "when": ""}],
+                "suggestions": [{"thread_id": "T1", "text": "Email Colleague about the lease"}, {"thread_id": "T2", "text": "Check the pantry first"}],
+                "actions": [{"thread_id": "T1", "kind": "reminder", "title": "Ask Colleague to cancel the lease", "when": ""}],
                 "tags": [{"thread_id": "T1", "tags": ["#home"]}],
                 "merges": [{"from": "T2", "into": "T1"}]
             }))
@@ -1800,9 +1800,9 @@ mod tests {
             shown(&changes_on(now, p, TODAY))
         };
         assert!(landed(&sent).iter().any(|l| l.starts_with("T1")), "nothing deleted: the pass stands");
-        // "Ask Sam to cancel the lease" deleted while the model read it: nothing from it lands, the other thread's does.
+        // "Ask Colleague to cancel the lease" deleted while the model read it: nothing from it lands, the other thread's does.
         let mut now = sent.clone();
-        let gone = now.thoughts.iter().find(|t| t.text.starts_with("Ask Sam")).unwrap().id.clone();
+        let gone = now.thoughts.iter().find(|t| t.text.starts_with("Ask Colleague")).unwrap().id.clone();
         now.apply(&Change::ThoughtSkipped { thought_id: gone });
         let out = landed(&now);
         assert!(out.iter().all(|l| !l.starts_with("T1") && !l.contains("into T1") && !l.contains("lease")), "{out:?}");
@@ -1881,8 +1881,8 @@ mod tests {
     #[test]
     fn a_later_speaker_in_a_room_can_rename_a_person_named_title() {
         let mut world = map(&[("T1", "Project Falcon", &["Calling this Project Falcon.", "Let's call it Quick Launch actually."])]);
-        world.thoughts[0].speaker = "Ana".into();
-        world.thoughts[1].speaker = "Sam".into();
+        world.thoughts[0].speaker = "Speaker".into();
+        world.thoughts[1].speaker = "Colleague".into();
         assert_eq!(rename(&world, "Quick Launch"), ["T1 title Quick Launch"]);
         assert!(rename(&world, "Launch plan").is_empty(), "a model-invented title still has no cue");
         world.thoughts.reverse();
@@ -2046,18 +2046,18 @@ mod tests {
         let mut world = map(&[
             ("T1", "Midterm", &["Midterm is on Tuesday.", "Midterm is Wednesday, not Tuesday."]),
             ("T2", "Lisbon conference", &["Thinking about the Lisbon conference.", "Forget Lisbon, the conference got cancelled."]),
-            ("T3", "Take-home", &["Need to send the take-home to Priya.", "Sent the take-home, done."]),
-            ("T4", "Study group", &["Study with Maya and Dev on Thursday.", "Dev dropped out, it's just Maya now."]),
+            ("T3", "Take-home", &["Need to send the take-home to Partner.", "Sent the take-home, done."]),
+            ("T4", "Study group", &["Study with Designer and Dev on Thursday.", "Dev dropped out, it's just Designer now."]),
         ]);
         let task = |id: &str, thread: &str, kind: &str, title: &str, when: &str| Action {
             id: id.into(), thread_id: thread.into(), kind: kind.into(), title: title.into(), when: when.into(), status: ItemStatus::New, done_ms: None,
         };
         world.actions = vec![
             task("ac-0a1b2c3d4e5f", "T1", "event", "Midterm", "2026-11-03"),
-            task("ac-1b2c3d4e5f6a", "T3", "reminder", "Send take-home to Priya", ""),
+            task("ac-1b2c3d4e5f6a", "T3", "reminder", "Send take-home to Partner", ""),
         ];
         let idea = |id: &str, thread: &str, text: &str| Suggestion { id: id.into(), thread_id: thread.into(), text: text.into(), status: ItemStatus::New };
-        world.suggestions = vec![idea("sg-2c3d4e5f6a7b", "T2", "Book Lisbon flights"), idea("sg-3d4e5f6a7b8c", "T4", "Plan a session with Maya and Dev")];
+        world.suggestions = vec![idea("sg-2c3d4e5f6a7b", "T2", "Book Lisbon flights"), idea("sg-3d4e5f6a7b8c", "T4", "Plan a session with Designer and Dev")];
         world
     }
 
@@ -2074,7 +2074,7 @@ mod tests {
         let pass: Pass = serde_json::from_value(serde_json::json!({
             "revise": [
                 {"id": "ac-0a1b2c", "title": "Midterm", "when": "2026-11-04", "why": "midterm is Wednesday"},
-                {"id": "sg-3d4e5f", "title": "Plan a session with Maya", "when": "", "why": "Dev dropped out"},
+                {"id": "sg-3d4e5f", "title": "Plan a session with Designer", "when": "", "why": "Dev dropped out"},
             ],
             "retire": [
                 {"id": "sg-2c3d4e", "why": "conference cancelled"},
@@ -2086,7 +2086,7 @@ mod tests {
         out.iter().for_each(|c| world.apply(c));
         // Date moved and a person dropped out: the same row, corrected.
         assert_eq!((item(&world, "ac-0a1b2c3d4e5f").when.as_str(), item(&world, "ac-0a1b2c3d4e5f").status), ("2026-11-04", ItemStatus::New));
-        assert_eq!(item(&world, "sg-3d4e5f6a7b8c").text, "Plan a session with Maya");
+        assert_eq!(item(&world, "sg-3d4e5f6a7b8c").text, "Plan a session with Designer");
         // Cancelled and done: off the card.
         assert_eq!(item(&world, "sg-2c3d4e5f6a7b").status, ItemStatus::Dismissed);
         assert_eq!(item(&world, "ac-1b2c3d4e5f6a").status, ItemStatus::Dismissed);
@@ -2315,7 +2315,7 @@ mod tests {
         }
         let pass: Pass = serde_json::from_value(serde_json::json!({
             "retire": [{"id": "sg-2c3d4e", "why": "conference cancelled"}, {"id": "ac-1b2c3d", "why": "take-home sent"}],
-            "revise": [{"id": "sg-3d4e5f", "title": "Plan a session with Maya", "when": "", "why": "Dev dropped out"}],
+            "revise": [{"id": "sg-3d4e5f", "title": "Plan a session with Designer", "when": "", "why": "Dev dropped out"}],
         }))
         .unwrap();
         let path = std::env::temp_dir().join(format!("e2a2o-refiner-{}.jsonl", uuid::Uuid::new_v4()));
@@ -2325,7 +2325,7 @@ mod tests {
         let after = core.snapshot();
         let _ = std::fs::remove_file(&path);
         assert_eq!(item(&after, "sg-2c3d4e5f6a7b").status, ItemStatus::New, "Lisbon is on again: its idea stays");
-        assert_eq!(item(&after, "sg-3d4e5f6a7b8c").text, "Plan a session with Maya and Dev", "Dev is in again");
+        assert_eq!(item(&after, "sg-3d4e5f6a7b8c").text, "Plan a session with Designer and Dev", "Dev is in again");
         assert_eq!(item(&after, "ac-1b2c3d4e5f6a").status, ItemStatus::Dismissed, "words still on the map still count");
     }
 
@@ -2364,7 +2364,7 @@ mod tests {
         let core = crate::Core::test(journal, start.clone());
         let pass: Pass = serde_json::from_value(serde_json::json!({
             "retire": [{"id": "sg-2c3d4e", "why": "conference cancelled"}],
-            "revise": [{"id": "sg-3d4e5f", "title": "Plan a session with Maya", "when": "", "why": "Dev dropped out"}],
+            "revise": [{"id": "sg-3d4e5f", "title": "Plan a session with Designer", "when": "", "why": "Dev dropped out"}],
         }))
         .unwrap();
         land(&core, pass, &start, "test");
@@ -2372,7 +2372,7 @@ mod tests {
         core.commit(vec![Change::ItemStatus { id: "sg-3d4e5f6a7b8c".into(), status: ItemStatus::Kept, done_ms: None }]);
         super::restore(&core, "sg-3d4e5f6a7b8c");
         let kept = item(&core.snapshot(), "sg-3d4e5f6a7b8c");
-        assert_eq!((kept.status, kept.text.as_str()), (ItemStatus::Kept, "Plan a session with Maya"));
+        assert_eq!((kept.status, kept.text.as_str()), (ItemStatus::Kept, "Plan a session with Designer"));
         // The withdrawn idea comes back, once; a second Undo, or one for an item never changed, writes nothing.
         super::restore(&core, "sg-2c3d4e5f6a7b");
         assert_eq!(item(&core.snapshot(), "sg-2c3d4e5f6a7b").status, ItemStatus::New);
@@ -2406,7 +2406,7 @@ mod tests {
         let (journal, _) = crate::world::Journal::open(&path).unwrap();
         let core = crate::Core::test(journal, start.clone());
         let pass: Pass = serde_json::from_value(serde_json::json!({
-            "revise": [{"id": "sg-3d4e5f", "title": "Plan a session with Maya", "when": "", "why": "Dev dropped out"}],
+            "revise": [{"id": "sg-3d4e5f", "title": "Plan a session with Designer", "when": "", "why": "Dev dropped out"}],
             "retire": [{"id": "sg-2c3d4e", "why": "conference cancelled"}],
         }))
         .unwrap();
@@ -2417,8 +2417,8 @@ mod tests {
             }
         });
         let now = core.snapshot();
-        let maya = item(&now, "sg-3d4e5f6a7b8c");
-        assert_eq!((maya.status, maya.text.as_str()), (ItemStatus::Kept, "Plan a session with Maya and Dev"), "never reset to new");
+        let designer = item(&now, "sg-3d4e5f6a7b8c");
+        assert_eq!((designer.status, designer.text.as_str()), (ItemStatus::Kept, "Plan a session with Designer and Dev"), "never reset to new");
         assert_eq!(item(&now, "sg-2c3d4e5f6a7b").status, ItemStatus::Dismissed, "the rest of the pass still lands");
         let _ = std::fs::remove_file(&path);
     }
@@ -2467,16 +2467,16 @@ mod tests {
     fn words_taken_back_after_their_thread_merged_still_leave_nothing_from_the_pass() {
         let sent = map(&[
             ("T1", "Rent", &["Pay rent on Friday."]),
-            ("T2", "Lease", &["Ask Sam to cancel the lease."]),
+            ("T2", "Lease", &["Ask Colleague to cancel the lease."]),
             ("T3", "Groceries", &["Buy oat milk."]),
         ]);
         let mut now = sent.clone();
         now.apply(&Change::ThreadMerged { from: "T2".into(), into: "T1".into() });
-        let lease = now.thoughts.iter().find(|t| t.text.starts_with("Ask Sam")).unwrap().id.clone();
+        let lease = now.thoughts.iter().find(|t| t.text.starts_with("Ask Colleague")).unwrap().id.clone();
         now.apply(&Change::ThoughtSkipped { thought_id: lease });
         let mut pass: Pass = serde_json::from_value(serde_json::json!({
-            "suggestions": [{"thread_id": "T1", "text": "Email Sam about the lease"}, {"thread_id": "T3", "text": "Check the pantry first"}],
-            "actions": [{"thread_id": "T2", "kind": "reminder", "title": "Ask Sam to cancel the lease", "when": ""}],
+            "suggestions": [{"thread_id": "T1", "text": "Email Colleague about the lease"}, {"thread_id": "T3", "text": "Check the pantry first"}],
+            "actions": [{"thread_id": "T2", "kind": "reminder", "title": "Ask Colleague to cancel the lease", "when": ""}],
             "tags": [{"thread_id": "T1", "tags": ["#home"]}],
         }))
         .unwrap();

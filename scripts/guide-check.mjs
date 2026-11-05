@@ -118,7 +118,7 @@ assert.deepEqual(aimAt({ left: 400, top: 900, right: 1000, bottom: 1000 }, band)
 // could have read it.
 assert.equal(captionMs("Look here."), CAPTION_SHORTEST_MS);
 assert.ok(captionMs(Array(70).fill("word").join(" ")) >= (70 / 200) * 60_000 + 1000, "a long caption outlasts its words spoken");
-const question = "Quick thing: Maya said Lena is away Saturday. Sunday works?";
+const question = "Quick thing: Designer said Guest is away Saturday. Sunday works?";
 assert.ok(askMs(question) > captionMs(question) + 2000, "a question waits for an answer longer than a line is read");
 assert.ok(overMs(question) < captionMs(question), "talking over is before a slow reader's time, not after");
 assert.equal(captionMs("**Look** here."), captionMs("Look here."), "Markdown isn't read");
@@ -135,7 +135,7 @@ const fitsTwo = (page, first = 0) => {
   return lines <= 2;
 };
 assert.deepEqual(pages("Short and sweet.", 600, nine), ["Short and sweet."]);
-const long = "Here's what I'd suggest for the dinner. Sunday at noon works for Lena, since she's back by then. Maya can bring the folding chairs, and Jun has the speaker. If it rains, we move it inside to your place.";
+const long = "Here's what I'd suggest for the dinner. Sunday at noon works for Guest, since she's back by then. Designer can bring the folding chairs, and Jun has the speaker. If it rains, we move it inside to your place.";
 let paged = pages(long, 600, nine, 80);
 assert.ok(paged.length >= 2, `a long caption pages (${paged.length})`);
 assert.equal(paged.join(" "), long, "every word, once, in order");
@@ -146,24 +146,24 @@ paged = pages(run, 600, nine);
 assert.ok(paged.length >= 2 && paged.every((page) => (page.match(/\*\*/g) ?? []).length % 2 === 0), `a bold span cut by a page closes and opens again: ${JSON.stringify(paged)}`);
 
 // A question's main words: the sender's, else its short question, else a short first sentence.
-assert.equal(mainWords("Which Saturday? Lena leaves on the 14th."), "**Which Saturday?** Lena leaves on the 14th.");
-assert.equal(mainWords(question), "Quick thing: Maya said Lena is away Saturday. **Sunday works?**");
+assert.equal(mainWords("Which Saturday? Guest leaves on the 14th."), "**Which Saturday?** Guest leaves on the 14th.");
+assert.equal(mainWords(question), "Quick thing: Designer said Guest is away Saturday. **Sunday works?**");
 assert.equal(mainWords("Bring chairs?"), "Bring chairs?");
 assert.equal(mainWords("Is **this** the one? Yes."), "Is **this** the one? Yes.");
 
 // The caption's own voice through the mic isn't you talking over it; your words are.
-assert.equal(echoOf("quick thing Maya said", question), true);
+assert.equal(echoOf("quick thing Designer said", question), true);
 assert.equal(echoOf("no wait I meant Friday", question), false);
 assert.equal(echoOf("so", question), false);
 assert.equal(echoOf("", question), false);
 
 // One point at a time; only its sender takes it down; the same words again are a new caption; a point's words take
 // the caption's place.
-const msg = (kind, target, text, by = "Claude") => ({ type: "guide", kind, target, text, by, at_ms: 1 });
+const msg = (kind, target, text, by = "Helper") => ({ type: "guide", kind, target, text, by, at_ms: 1 });
 let s = guided(NOTHING, msg("point", "composer", "Type here"), 1);
 s = guided(s, msg("point", "mic", ""), 2);
 assert.equal(s.point.target, "mic");
-assert.equal(guided(s, msg("point", null, "", "Sam"), 3), s, "someone else's clear leaves it");
+assert.equal(guided(s, msg("point", null, "", "Colleague"), 3), s, "someone else's clear leaves it");
 assert.equal(guided(s, msg("point", null, ""), 4).point, null);
 s = guided(guided(s, msg("caption", null, "Hello"), 5), msg("caption", null, "Hello"), 6);
 assert.equal(s.caption.n, 6);
@@ -182,7 +182,7 @@ s = guided(s, hold("Bring chairs?"), 11);
 s = guided(s, hold(question, "point:a4"), 12);
 assert.deepEqual(s.held.map((h) => [h.n, h.kind, h.state]), [[11, "question", "waiting"], [12, "question", "waiting"]], "the same question again is the one held");
 assert.equal(guided(s, hold("", null), 13).held.length, 0, "taken back");
-assert.equal(guided(s, hold("", null, "Sam"), 13).held.length, 2, "only by its sender");
+assert.equal(guided(s, hold("", null, "Colleague"), 13).held.length, 2, "only by its sender");
 let many = NOTHING;
 for (let i = 0; i < 40; i++) many = guided(many, hold(`Question ${i}?`), 100 + i);
 assert.deepEqual([many.held.length, many.held[0].text], [40, "Question 0?"], "every unanswered question stays, including the oldest");
@@ -280,10 +280,10 @@ const thoughts = [
   ...titles.slice(1).map((title, i) => thought(`t${i + 2}`, `${title} needs a look this week`, `T${i + 2}`)),
   thought("seed", "Start the tomato seedlings indoors in March", "T2b"),
 ];
-// Claude joined as an AI participant: its name ✦ and purple, its arrow purple.
-const world = { threads, thoughts, active: "T1", active_by: { you: "T1" }, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: true, recaps: [], notes: {}, proposals: [], ai: ["Claude"] };
+// Helper joined as an AI participant: its name ✦ and purple, its arrow purple.
+const world = { threads, thoughts, active: "T1", active_by: { you: "T1" }, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: true, recaps: [], notes: {}, proposals: [], ai: ["Helper"] };
 const core = await standInCore(() => [{ type: "snapshot", world }]);
-const guide = (kind, target, text, by = "Claude") => core.send({ type: "guide", kind, target, text, by, at_ms: Date.now() });
+const guide = (kind, target, text, by = "Helper") => core.send({ type: "guide", kind, target, text, by, at_ms: Date.now() });
 // Never stuck: a step that runs past STEP_LIMIT_MS fails the check, naming it. The longest step takes about 21 s (it waits
 // out a caption's time), the whole check about two minutes with four of them running at once. It watches the steps, not
 // the clock: a total time limit blamed the last step for a check that had finished but whose process was slow to end
@@ -395,12 +395,12 @@ try {
   }).observe(document.body, { childList: true })`);
 
   step("a caption");
-  // A caption: bottom center above where you type, its name first (✦: Claude joined as an AI), up for its time.
+  // A caption: bottom center above where you type, its name first (✦: Helper joined as an AI), up for its time.
   const line = "Do you see the arrow? That's where you type.";
   guide("caption", null, line);
   assert.ok(await until(`!!document.querySelector(".guide-caption")`, 2000), "a caption shows");
   await sleep(250);
-  assert.match(await words(), /^✦ Claude Do you see the arrow\?/);
+  assert.match(await words(), /^✦ Helper Do you see the arrow\?/);
   assert.equal(await atStage(), true, "bottom center, above the dock");
   assert.equal(await evaluate(`getComputedStyle(document.querySelector(".guide-caption .guide-by")).color`), await colorOf("var(--ai)"), "an AI's name in purple");
   await shot("0-caption");
@@ -413,7 +413,7 @@ try {
   guide("caption", null, "Your **rent** is due `Friday`.");
   assert.ok(await until(`!!document.querySelector(".guide-caption strong")`, 2000), "bold shows as bold");
   assert.deepEqual(await evaluate(`[document.querySelector(".guide-caption strong").textContent, document.querySelector(".guide-caption code").textContent, /[*\`]/.test(document.querySelector(".guide-caption").innerText)]`), ["rent", "Friday", false]);
-  const story = "Here's what I'd suggest for the dinner. Sunday at noon works for Lena, since she's back by then. Maya can bring the folding chairs, and Jun has the speaker. If it rains, we move it inside to your place, and we keep the playlist going.";
+  const story = "Here's what I'd suggest for the dinner. Sunday at noon works for Guest, since she's back by then. Designer can bring the folding chairs, and Jun has the speaker. If it rains, we move it inside to your place, and we keep the playlist going.";
   guide("caption", null, story);
   assert.ok(await until(`document.querySelector(".guide-caption")?.innerText.includes("Here's what")`, 2000));
   await sleep(300);
@@ -429,7 +429,7 @@ try {
   guide("point", "composer", "Type your answer here.");
   assert.ok(await until(`["near", "aimed"].includes(document.querySelector(".guide-layer")?.dataset.state)`, 2000), "a point lands");
   await sleep(300);
-  assert.equal(await words(), "✦ Claude Type your answer here.", "its words take the caption's place");
+  assert.equal(await words(), "✦ Helper Type your answer here.", "its words take the caption's place");
   assert.equal(await layer(), "near", "no arrow: the caption is at it already");
   assert.ok(await ringed("composer"), "its ring");
   assert.ok(await evaluate(`document.querySelector(".guide-layer").matches(":popover-open")`), "in the top layer");
@@ -477,13 +477,13 @@ try {
   assert.ok(await until(`document.querySelector(".guide-layer")?.dataset.state === "aimed"`, 2000));
   await sleep(700);
   await lands("thread:T2b", "the card a folded thought is in");
-  assert.equal(await words(), "✦ Claude This is the seedling idea. It's in “Tomato Seedlings”: Show opens it.");
+  assert.equal(await words(), "✦ Helper This is the seedling idea. It's in “Tomato Seedlings”: Show opens it.");
   await shot("4-point-folded");
   await click('[data-guide="thread:T2b"] .thread-toggle');
   assert.ok(await until(`!!document.querySelector('[data-guide="point:seed"]') && document.querySelector(".guide-caption")?.innerText.indexOf("Show opens it") < 0`, 2000), "Show leads the arrow on");
   await sleep(700);
   await lands("point:seed", "the thought, once its card opens");
-  assert.equal(await words(), "✦ Claude This is the seedling idea.");
+  assert.equal(await words(), "✦ Helper This is the seedling idea.");
 
   step("Pictures");
   // In the Palace: a thread is its picture; search is on the Map, said so, and the Map button leads there.
@@ -498,7 +498,7 @@ try {
   guide("point", "search", "Search finds the words you used.");
   await sleep(700);
   await lands("view:map", "the way to search");
-  assert.equal(await words(), "✦ Claude Search finds the words you used. Search is in Cards: switch to it here.");
+  assert.equal(await words(), "✦ Helper Search finds the words you used. Search is in Cards: switch to it here.");
   await shot("5-point-other-view");
   await click('[data-guide="view:map"]');
   assert.ok(await until(`document.querySelector(".guide-caption")?.innerText.indexOf("switch") < 0`, 2000), "the Map button leads the arrow on");
@@ -515,7 +515,7 @@ try {
   assert.ok(await until(`document.querySelector(".guide-layer")?.dataset.state === "aimed"`, 2000), "the arrow is on Apps, seen");
   await sleep(600);
   await lands("apps", "the Apps panel the Catalog is in");
-  assert.equal(await words(), "✦ Claude More views live in Features. The Features button is in Apps: open Apps.");
+  assert.equal(await words(), "✦ Helper More views live in Features. The Features button is in Apps: open Apps.");
   await click(".apps-title");
   assert.ok(await until(`!!document.querySelector('[data-guide="catalog"]') && document.querySelector(".guide-caption")?.innerText.indexOf("open Apps") < 0`, 2000), "opening Apps leads the arrow on");
   await sleep(800);
@@ -526,9 +526,9 @@ try {
   // A part that's nowhere: no arrow, said where; someone else's clear leaves it, the sender's takes it down.
   guide("point", "nope", "Look at this.");
   assert.ok(await until(`document.querySelector(".guide-layer")?.dataset.state === "alone"`, 2000), "no arrow for a name not on screen");
-  assert.equal(await words(), "✦ Claude Look at this. Nothing called “nope” is on this screen.");
+  assert.equal(await words(), "✦ Helper Look at this. Nothing called “nope” is on this screen.");
   assert.equal(await atStage(), true, "said at the stage, whole on screen");
-  guide("point", null, "", "Sam");
+  guide("point", null, "", "Colleague");
   await sleep(300);
   assert.equal(await layer(), "alone", "someone else's clear leaves it");
   guide("point", null, "");
@@ -655,7 +655,7 @@ try {
   assert.ok(await until(`[...document.querySelectorAll(".guide-held-card")].some((c) => c.innerText.includes("Said while you talk") && c.innerText.includes("says when you stop"))`, 1000), "a caption said while you talk waits too, behind the count");
   await click(".guide-held-more");
   // Urgent (the Interrupt level): it jumps the line, shown and asked first.
-  core.send({ type: "guide", kind: "hold", target: null, text: "The landlord's deadline is today?", by: "Claude", at_ms: Date.now(), urgent: true });
+  core.send({ type: "guide", kind: "hold", target: null, text: "The landlord's deadline is today?", by: "Helper", at_ms: Date.now(), urgent: true });
   assert.ok(await until(`document.querySelectorAll(".guide-held-card").length === 1 && document.querySelector(".guide-held-card").innerText.includes("Interrupt") && document.querySelector(".guide-held-card").innerText.includes("deadline")`, 1500), "the urgent one is next in line");
   assert.equal(await evaluate(`document.querySelector(".guide-held-more")?.innerText.replace(/\s+/g, " ")`), "2 more held", "nothing dropped");
   const stack = await box(".guide-held");
@@ -668,12 +668,12 @@ try {
   const quiet = Date.now();
   assert.ok(await until(`!!document.querySelector(".guide-caption[data-asking]")`, NATURAL_PAUSE_MS + 1500), "asked at your pause");
   assert.ok(Date.now() - quiet >= NATURAL_PAUSE_MS - 150, `not before a natural pause (${Date.now() - quiet} ms)`);
-  assert.match(await words(), /^✦ Claude · Interrupt The landlord's deadline is today\?/, "the urgent one first, marked");
+  assert.match(await words(), /^✦ Helper · Interrupt The landlord's deadline is today\?/, "the urgent one first, marked");
   await shot("9a-asked-urgent");
   await key("Escape", 27);
   // Then, a beat later, the next in line.
   assert.ok(await until(`document.querySelector(".guide-caption[data-asking]")?.innerText.includes("Quick thing")`, NATURAL_PAUSE_MS + 1500), "one per pause: the next comes up after a beat");
-  assert.match(await words(), /^✦ Claude Quick thing: you said Friday\. Rent is due Friday\? Go ahead ↵ Later L Drop it esc or talk over me to stop$/);
+  assert.match(await words(), /^✦ Helper Quick thing: you said Friday\. Rent is due Friday\? Go ahead ↵ Later L Drop it esc or talk over me to stop$/);
   assert.equal(await atStage(), true, "at the stage");
   assert.equal(await evaluate(`[...document.querySelectorAll(".guide-held-card")].some((c) => c.innerText.includes("Quick thing"))`), false, "no sentence twice: out of the stack");
   await until(`document.querySelector(".guide-layer")?.dataset.state === "aimed"`, 2000);
@@ -740,7 +740,7 @@ try {
   const at3 = await tip();
   assert.ok(Math.min(Math.abs(at3.y - (canvasTopic.top - TIP_GAP)), Math.abs(at3.y - (canvasTopic.bottom + TIP_GAP)), Math.abs(at3.x - (canvasTopic.left - TIP_GAP)), Math.abs(at3.x - (canvasTopic.right + TIP_GAP))) <= 1.5,
     `the arrow lands on the Canvas topic (${JSON.stringify({ at3, canvasTopic })})`);
-  assert.equal(await words(), "✦ Claude Your rent is this topic.");
+  assert.equal(await words(), "✦ Helper Your rent is this topic.");
   await shot("5b-point-canvas");
   await key("Escape", 27);
   await click('[data-guide="view:map"]');

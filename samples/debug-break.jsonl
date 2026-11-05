@@ -26,9 +26,9 @@
 {"type":"thread_added","thread":{"id":"T3","title":"Before standup","parent_id":null,"status":"open","last_point":"","touched_ms":1793744100000,"tags":[],"picture":null}}
 {"type":"tag_suggested","thread_id":"T3","tag":"today"}
 {"type":"active_changed","thread_id":"T3"}
-{"type":"thought_added","thought":{"id":"th-7","speaker":"you","text":"Standup moved to two, and I still need to review Omar's pull request before then.","point":"Standup at 2; review Omar's PR first","thread_id":"T3","placed":true,"unclear":"","guess":"","heard":"","fixed":"","complete":true,"at_ms":1793744100000,"place_ms":3090,"decided":false}}
-{"type":"thread_touched","thread_id":"T3","last_point":"Standup at 2; review Omar's PR first","at_ms":1793744100000}
-{"type":"action_proposed","action":{"id":"ac-2","thread_id":"T3","kind":"reminder","title":"Review Omar's pull request","when":"2026-11-03","status":"new","done_ms":null}}
-{"type":"thought_added","thought":{"id":"th-8","speaker":"you","text":"His change touches the same export code, so I'll read that one first.","point":"Omar's PR touches export code → read it first","thread_id":"T3","placed":true,"unclear":"","guess":"","heard":"","fixed":"","complete":true,"at_ms":1793744160000,"place_ms":3460,"decided":false}}
-{"type":"thread_touched","thread_id":"T3","last_point":"Omar's PR touches export code → read it first","at_ms":1793744160000}
+{"type":"thought_added","thought":{"id":"th-7","speaker":"you","text":"Standup moved to two, and I still need to review Guide's pull request before then.","point":"Standup at 2; review Guide's PR first","thread_id":"T3","placed":true,"unclear":"","guess":"","heard":"","fixed":"","complete":true,"at_ms":1793744100000,"place_ms":3090,"decided":false}}
+{"type":"thread_touched","thread_id":"T3","last_point":"Standup at 2; review Guide's PR first","at_ms":1793744100000}
+{"type":"action_proposed","action":{"id":"ac-2","thread_id":"T3","kind":"reminder","title":"Review Guide's pull request","when":"2026-11-03","status":"new","done_ms":null}}
+{"type":"thought_added","thought":{"id":"th-8","speaker":"you","text":"His change touches the same export code, so I'll read that one first.","point":"Guide's PR touches export code → read it first","thread_id":"T3","placed":true,"unclear":"","guess":"","heard":"","fixed":"","complete":true,"at_ms":1793744160000,"place_ms":3460,"decided":false}}
+{"type":"thread_touched","thread_id":"T3","last_point":"Guide's PR touches export code → read it first","at_ms":1793744160000}
 {"type":"thread_picture","thread_id":"T3","path":"/images/T3-e375cf7ef7524a8689aca2a8031310a8-small.webp"}

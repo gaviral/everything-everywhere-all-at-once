@@ -36,7 +36,7 @@ export async function fixture(name,changes=[]){
   await start();return {out,data,base,start,stop,connect,screenshots,open:()=>openPage('about:blank'),close:stop};
 }
 export const thread={id:'schedule',title:'Travel plan',parent_id:null,status:'open',last_point:'',touched_ms:1,tags:[],picture:null,dropped_by:''};
-export const thoughts=[['q','How should we travel?','Sam'],['a','Take the train','Sam'],['b','Take the bus','Lee'],['pro','Train is quicker','Lee'],['con','Train costs more','Sam']].map(([id,text,speaker])=>({id,text,speaker,point:text,thread_id:thread.id,placed:true,unclear:'',guess:'',heard:'',fixed:'',complete:true,at_ms:1,place_ms:null,decided:false}));
+export const thoughts=[['q','How should we travel?','Colleague'],['a','Take the train','Colleague'],['b','Take the bus','Reviewer'],['pro','Train is quicker','Reviewer'],['con','Train costs more','Colleague']].map(([id,text,speaker])=>({id,text,speaker,point:text,thread_id:thread.id,placed:true,unclear:'',guess:'',heard:'',fixed:'',complete:true,at_ms:1,place_ms:null,decided:false}));
 export const seed=[{type:'thread_added',thread},...thoughts.map(thought=>({type:'thought_added',thought})),{type:'apps_seeded'}];
 export async function toggle(browser,id,on){
   await browser.evaluate(`document.querySelector('[data-guide="catalog"]').click()`);

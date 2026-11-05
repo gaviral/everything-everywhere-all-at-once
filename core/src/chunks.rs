@@ -143,7 +143,7 @@ pub fn unlink(core: &Core, thought_id: &str) {
     let own = world.thoughts.iter().find(|t| t.id == thought_id).map(|t| t.text.trim().to_string()).filter(|text| !text.is_empty());
     let mut changes = vec![Change::ThoughtNoted { thought_id: thought_id.into(), note: Note { continues: String::new(), ..note } }];
     changes.extend(own.map(|point| Change::ThoughtRepointed { thought_id: thought_id.into(), point }));
-    // Its own words alone may no longer say a decision ("Priya on Wednesday night" without "Decided: I'll study with").
+    // Its own words alone may no longer say a decision ("Partner on Wednesday night" without "Decided: I'll study with").
     let changes = crate::decided::remarked(&world, changes);
     drop(world);
     core.commit(changes);

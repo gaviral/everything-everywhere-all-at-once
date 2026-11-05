@@ -104,7 +104,7 @@ fn listing(args: &[String]) -> Result<String, Failure> {
     match args.get(1).map(String::as_str) {
         Some("list") => Ok(PULLS.into()),
         Some("view") => Ok(r#"{"number": 7, "title": "Rename beds", "state": "MERGED", "isDraft": false, "updatedAt": "2026-10-01T00:00:00Z", "url": "https://github.com/acme/garden-planner/pull/7", "statusCheckRollup": null}"#.into()),
-        _ => Ok("pat-example\n".into()),
+        _ => Ok("organizer-example\n".into()),
     }
 }
 
@@ -145,12 +145,12 @@ fn requests_for_pull_requests_read_as_one_and_to_dos_about_them_stay_thoughts() 
     assert_eq!(read("show me PRs in 日本語プロジェクト"), open(Some("日本語プロジェクト")));
     assert_eq!(crate::catalog::classify("show me PRs in é日本語 repo"), Some(Act::GitHub));
     for talk in [
-        "I need to review Sam's PR tomorrow",
+        "I need to review Colleague's PR tomorrow",
         "Check the PR before lunch",
         "Show me the garden thread",
         "The PR is open",
         "What PR should I review first",
-        "Show me the PRs and then call Mia",
+        "Show me the PRs and then call Recipient",
         "PR",
         "Show me",
     ] {
@@ -257,10 +257,10 @@ async fn a_bare_repo_name_is_the_signed_in_accounts_asked_once() {
     f.core.add_thought("me", "Show me the merged PRs in seed swap");
     settle().await;
     let told = f.told();
-    assert!(told[1].starts_with("card Ready Open pull requests [pat-example/seed-swap]"), "{told:?}");
+    assert!(told[1].starts_with("card Ready Open pull requests [organizer-example/seed-swap]"), "{told:?}");
     let calls = f.calls();
     assert_eq!(calls.iter().filter(|c| c[0] == "api").count(), 1, "the account's name is asked once: {calls:?}");
-    assert_eq!(calls[1].last().map(String::as_str), Some("pat-example/seed-swap"));
+    assert_eq!(calls[1].last().map(String::as_str), Some("organizer-example/seed-swap"));
     assert_eq!(calls[2][3], "merged");
 }
 

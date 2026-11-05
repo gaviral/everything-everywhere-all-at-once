@@ -135,22 +135,22 @@ try {
   await fixture('live');
   await click('.decision-history-actions button', 'Record a decision');
   await fillDecision('Storage failure must keep history', 'This save is intentionally refused by browser storage.');
-  const raw = await browser.evaluate(`localStorage.getItem('decision-history:v1:["preview-map","Alex"]')`);
+  const raw = await browser.evaluate(`localStorage.getItem('decision-history:v1:["preview-map","Visitor"]')`);
   await browser.evaluate(`window.nativeSetItem=Storage.prototype.setItem;Storage.prototype.setItem=()=>{throw new DOMException('Full','QuotaExceededError')}`);
   await click('.decision-history-form button[type=submit]');
   await wait(`${body}.includes('History was not saved')`, 'storage failure is visible');
-  assert.equal(await browser.evaluate(`localStorage.getItem('decision-history:v1:["preview-map","Alex"]')`), raw, 'failed save preserves complete previous history');
+  assert.equal(await browser.evaluate(`localStorage.getItem('decision-history:v1:["preview-map","Visitor"]')`), raw, 'failed save preserves complete previous history');
   assert.equal(await browser.evaluate(`${cards}.length`), 2, 'failed save adds no visible decision');
   await browser.evaluate('Storage.prototype.setItem=window.nativeSetItem');
   await browser.page('Page.reload');
   await wait(`${body}?.includes('Move to the studio')`, 'history still readable after failed save');
   // The storage event models another tab updating this notebook before the local form saves.
-  await browser.evaluate(`(()=>{const key='decision-history:v1:["preview-map","Alex"]';localStorage.setItem(key,'{"version":2,"entries":[]}');dispatchEvent(new StorageEvent('storage',{key}));})()`);
+  await browser.evaluate(`(()=>{const key='decision-history:v1:["preview-map","Visitor"]';localStorage.setItem(key,'{"version":2,"entries":[]}');dispatchEvent(new StorageEvent('storage',{key}));})()`);
   await wait(`${body}.includes('Saved history could not be read')`, 'unknown format pauses saving');
   await click('.decision-history-actions button', 'Record a decision');
   assert.equal(await browser.evaluate(`document.querySelector('.decision-history-form button[type=submit]').disabled`), true, 'unreadable history cannot be overwritten');
-  assert.equal(await browser.evaluate(`localStorage.getItem('decision-history:v1:["preview-map","Alex"]')`), '{"version":2,"entries":[]}');
-  await browser.evaluate(`(()=>{const key='decision-history:v1:["preview-map","Alex"]';localStorage.setItem(key,${JSON.stringify(raw)});dispatchEvent(new StorageEvent('storage',{key}));})()`);
+  assert.equal(await browser.evaluate(`localStorage.getItem('decision-history:v1:["preview-map","Visitor"]')`), '{"version":2,"entries":[]}');
+  await browser.evaluate(`(()=>{const key='decision-history:v1:["preview-map","Visitor"]';localStorage.setItem(key,${JSON.stringify(raw)});dispatchEvent(new StorageEvent('storage',{key}));})()`);
   await wait(`${cards}.length===2 && !${body}.includes('Saved history could not be read')`, 'valid cross-tab update refreshes notebook');
   await click('.decision-history-form button', 'Cancel');
   // Focus and activate a section using the keyboard, with a visible section result.

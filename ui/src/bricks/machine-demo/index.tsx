@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { MachineDemo, createMachineSession } from "../../intake1417/machine-demo";
-import { createSyntheticAdapter, syntheticParts, syntheticProfiles, type SyntheticProfileName } from "../../intake1417/machine-demo/synthetic";
+import { MachineDemo, createMachineSession } from "../../features/machine-demo";
+import { createSyntheticAdapter, syntheticParts, syntheticProfiles, type SyntheticProfileName } from "../../features/machine-demo/synthetic";
 import type { BrickProps } from "../contract";
 import "./example.css";
 

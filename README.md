@@ -7,13 +7,8 @@ E2A2O turns your words and sketches into a usable board, with Muse building reus
 ## Try it
 
 - **Local sample:** `./run.sh sample` → `http://localhost:4321/?sample` (no key or mic).
-- **Hosted preview, verification pending:** https://e2a2o.aviralgarg.com
 
 Say it. **Ask about words** questions a word right where it was used. Draw it: Muse Spark reads the sketch; Muse Image draws it back. **Crew** splits the work into parts on real Git branches, checks and merges what works, repairs or turns off what breaks, and reuses finished parts. **Parts** follows the work into the code.
-
-![Earlier scripted demo of thoughts landing on the board.](docs/screens/hero.gif)
-
-*Historical synthetic demo; edited zoom, labels and captions.*
 
 ## Meta models
 
@@ -116,7 +111,7 @@ Work spine and Remote include simulated helper feeds. Those examples do not perf
 
 The demo film's narration is a third-party synthetic voice (Deepgram Aura), used for the film only; the app itself calls Meta models only.
 
-Models can misread words, sketches or intent. Speech is configured for English. Human microphone and interruption behavior still need validation. Hosted guest entry and the served build remain unverified for this handoff. The journal grows without compaction.
+Models can misread words, sketches or intent. Speech is configured for English. Human microphone and interruption behavior still need validation. Hosted guest entry and the served build remain unverified. The event log grows without compaction.
 
 Reply playback uses a browser/OS voice only when the voice reports `localService === true`; remote and unknown-locality voices are excluded. Without a usable local voice, replies remain text. This browser flag is not proof of network isolation.
 

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { BrickProps } from "../contract";
-import { DictationBreakdown } from "../../msg1351/dictation-breakdown";
-import { syntheticDictation, syntheticHomes } from "../../msg1351/dictation-breakdown/fixture";
+import { DictationBreakdown } from "../../features/dictation-breakdown";
+import { syntheticDictation, syntheticHomes } from "../../features/dictation-breakdown/fixture";
 import "./example.css";
 
 export default function DictationExample({ actions }: BrickProps) {

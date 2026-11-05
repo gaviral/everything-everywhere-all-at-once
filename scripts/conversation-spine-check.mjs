@@ -7,7 +7,7 @@ const unavailable = ready();
 if (unavailable) { console.log(`SKIP conversation-spine-check: ${unavailable}`); process.exit(3); }
 const at = Date.now();
 const topic = (id, title, parent_id = null) => ({ id, title, parent_id, status: "open", last_point: "", touched_ms: at, tags: [], picture: null, dropped_by: "" });
-const thought = (n) => ({ id: `p${n}`, speaker: n % 2 ? "you" : "Sam", text: `Um, thought ${n}: keep the wall blue, and rent is due Friday.`, point: `Um, thought ${n}: keep the wall blue, and rent is due Friday.`, thread_id: "T1", placed: true, complete: true, at_ms: at + n, place_ms: 0 });
+const thought = (n) => ({ id: `p${n}`, speaker: n % 2 ? "you" : "Colleague", text: `Um, thought ${n}: keep the wall blue, and rent is due Friday.`, point: `Um, thought ${n}: keep the wall blue, and rent is due Friday.`, thread_id: "T1", placed: true, complete: true, at_ms: at + n, place_ms: 0 });
 const world = { threads: [topic("T1", "Our room")], thoughts: Array.from({ length: 11 }, (_, i) => thought(i + 1)), active: "T1", active_by: { you: "T1" }, stay_here: "T1", anchors: {}, notes: {}, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: true, recaps: [], proposals: [], ai: ["Helper"] };
 const comment = (n, text) => {
   const id = `c${n}`, p = thought(n);
@@ -32,7 +32,7 @@ try {
   assert.ok(await until(`!!document.querySelector('.spine-ready .spine-original')`, 10000), "pinned spine opens");
   const camera = () => evaluate(`document.querySelector('.react-flow__viewport').style.transform`);
   const newestVisible = (n) => evaluate(`(() => { const r=document.querySelector('[data-thought="p${n}"] .spine-text').getBoundingClientRect(); return r.top>=0 && r.bottom<innerHeight && r.left>=0 && r.right<=innerWidth; })()`);
-  assert.deepEqual(await evaluate(`[...document.querySelectorAll('.spine-point .spine-speaker')].map(e=>e.textContent)`), Array.from({length:11},(_,i)=>i%2 ? "Sam" : "you"), "actual speaker names, no inferred assistant");
+  assert.deepEqual(await evaluate(`[...document.querySelectorAll('.spine-point .spine-speaker')].map(e=>e.textContent)`), Array.from({length:11},(_,i)=>i%2 ? "Colleague" : "you"), "actual speaker names, no inferred assistant");
   assert.equal(await evaluate(`document.querySelector('[data-thought="p2"] .spine-who').textContent`), "S", "stable human initial");
   assert.equal(await evaluate(`document.querySelector('[data-thought="p2"] .spine-who').classList.contains('spine-who-ai')`), false, "second speaker is human");
   assert.ok(await newestVisible(11), "newest thought opens in view");

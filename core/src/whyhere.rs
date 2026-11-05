@@ -357,11 +357,11 @@ mod tests {
     #[test]
     fn every_waiter_hears_back() {
         let id = format!("waiters-{}", uuid::Uuid::new_v4());
-        assert!(join(&id, "Ana"), "the first asks");
-        assert!(!join(&id, "Ben"), "the second waits");
-        assert!(!join(&id, "Ana"), "asking again waits too");
-        assert_eq!(waiters(&id), ["Ana", "Ben"]);
-        assert!(join(&id, "Ben"), "once answered, a new ask asks again");
-        assert_eq!(waiters(&id), ["Ben"]);
+        assert!(join(&id, "Speaker"), "the first asks");
+        assert!(!join(&id, "Participant"), "the second waits");
+        assert!(!join(&id, "Speaker"), "asking again waits too");
+        assert_eq!(waiters(&id), ["Speaker", "Participant"]);
+        assert!(join(&id, "Participant"), "once answered, a new ask asks again");
+        assert_eq!(waiters(&id), ["Participant"]);
     }
 }

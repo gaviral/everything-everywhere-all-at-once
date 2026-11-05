@@ -91,7 +91,7 @@ fn load_at(core: &Core, speaker: &str, samples: &Path, images: &Path, file: &str
         .filter_map(|mut v| { rebase(&mut v, made); serde_json::from_value(v).ok() })
         // The person who opens it owns it: a hosted visitor or a room guest isn't "you", and only their own words and
         // drops give them the unfinished card and "where was I?". Only the sample's own "you" lines become theirs:
-        // the others in it (Sam and Lena at the team meeting) keep their words.
+        // the others in it (Colleague and Guest at the team meeting) keep their words.
         .map(|change| match change {
             Change::ThoughtAdded { mut thought } => {
                 if thought.speaker == "you" {
@@ -234,13 +234,13 @@ mod tests {
         let (journal, world) = Journal::open(&journal_path).unwrap();
         let core = Core::test(journal, world);
         let images = dir.join("images");
-        load(&core, "Ana", &samples(), &images, SAMPLE).unwrap();
+        load(&core, "Speaker", &samples(), &images, SAMPLE).unwrap();
 
         let world = core.snapshot();
         assert_eq!(world.threads.len(), 8, "a student's week: 8 threads");
         assert!(world.thoughts.len() >= 30 && world.thoughts.iter().all(|t| t.placed));
         assert!(world.threads.iter().any(|t| t.status == ThreadStatus::Dropped), "with its unfinished card");
-        assert_eq!(world.active_for("Ana"), world.active.as_ref(), "the speaker lands where the sample is");
+        assert_eq!(world.active_for("Speaker"), world.active.as_ref(), "the speaker lands where the sample is");
         for thread in &world.threads {
             let picture = thread.picture.as_ref().expect("a picture per thread");
             let file = picture.strip_prefix("/images/").expect(picture);
@@ -251,7 +251,7 @@ mod tests {
         assert_eq!((reopened.threads.len(), reopened.thoughts.len()), (world.threads.len(), world.thoughts.len()));
 
         // A second click, or a map with thoughts: nothing added.
-        assert_eq!(load(&core, "Ana", &samples(), &images, SAMPLE), Err(NOT_EMPTY.into()));
+        assert_eq!(load(&core, "Speaker", &samples(), &images, SAMPLE), Err(NOT_EMPTY.into()));
         assert_eq!(core.snapshot().thoughts.len(), world.thoughts.len());
     }
 
@@ -265,7 +265,7 @@ mod tests {
         world.merged.insert("T2".into(), "T1".into());
         world.removed = 1;
         let core = Core::test(journal, world);
-        load(&core, "Ana", &samples(), &dir.join("images"), SAMPLE).unwrap();
+        load(&core, "Speaker", &samples(), &dir.join("images"), SAMPLE).unwrap();
         let world = core.snapshot();
         assert_eq!(world.threads.len(), 8);
         for th in &world.threads {
@@ -316,19 +316,19 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("e2a2o-sample-{}", uuid::Uuid::new_v4()));
         let (journal, world) = Journal::open(&dir.join("journal.jsonl")).unwrap();
         let core = Core::test(journal, world);
-        load(&core, "Dana", &samples(), &dir.join("images"), SAMPLE).unwrap();
+        load(&core, "Collaborator", &samples(), &dir.join("images"), SAMPLE).unwrap();
         let world = core.snapshot();
-        let card = world.threads.iter().filter(|t| t.status == ThreadStatus::Dropped && t.dropped_by == "Dana").max_by_key(|t| t.touched_ms).map(|t| t.id.clone());
+        let card = world.threads.iter().filter(|t| t.status == ThreadStatus::Dropped && t.dropped_by == "Collaborator").max_by_key(|t| t.touched_ms).map(|t| t.id.clone());
         let _ = std::fs::remove_dir_all(dir);
-        assert!(card.is_some(), "the unfinished card is offered to Dana");
-        assert_eq!(crate::way_back(&world, "Dana", crate::now_ms()), card, "“where was I?” goes where the card points");
+        assert!(card.is_some(), "the unfinished card is offered to Collaborator");
+        assert_eq!(crate::way_back(&world, "Collaborator", crate::now_ms()), card, "“where was I?” goes where the card points");
     }
 
-    /// The meeting sample is a meeting: whoever opens it takes the sample's own "you" lines, and Sam's and Lena's
+    /// The meeting sample is a meeting: whoever opens it takes the sample's own "you" lines, and Colleague's and Guest's
     /// stay theirs, so their names show on their points and the model still sees who said what.
     #[test]
     fn the_opener_takes_the_samples_own_lines_and_the_others_keep_theirs() {
-        for opener in ["you", "Dana"] {
+        for opener in ["you", "Collaborator"] {
             let dir = std::env::temp_dir().join(format!("e2a2o-sample-{}", uuid::Uuid::new_v4()));
             let (journal, world) = Journal::open(&dir.join("journal.jsonl")).unwrap();
             let core = Core::test(journal, world);
@@ -336,7 +336,7 @@ mod tests {
             let world = core.snapshot();
             let _ = std::fs::remove_dir_all(&dir);
             let speakers: std::collections::BTreeSet<&str> = world.thoughts.iter().map(|t| t.speaker.as_str()).collect();
-            assert_eq!(speakers, std::collections::BTreeSet::from([opener, "Lena", "Sam"]), "opened by {opener}");
+            assert_eq!(speakers, std::collections::BTreeSet::from([opener, "Guest", "Colleague"]), "opened by {opener}");
         }
     }
 

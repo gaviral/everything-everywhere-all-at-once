@@ -22,13 +22,13 @@
 {"type":"active_changed","thread_id":"T1"}
 {"type":"thread_added","thread":{"id":"T3","title":"Group project meeting","parent_id":null,"status":"open","last_point":"","touched_ms":1793747100000,"tags":[],"picture":null}}
 {"type":"active_changed","thread_id":"T3"}
-{"type":"thought_added","thought":{"id":"th-6","speaker":"you","text":"Also the group project presentation is Wednesday and Priya hasn't sent her slides yet","point":"Group presentation Wednesday, Priya's slides missing","thread_id":"T3","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793747100000,"place_ms":1900}}
-{"type":"thread_touched","thread_id":"T3","last_point":"Group presentation Wednesday, Priya's slides missing","at_ms":1793747100000}
-{"type":"thought_added","thought":{"id":"th-7","speaker":"you","text":"I should text her tonight and also check if Marcus finished the data analysis section","point":"Text Priya tonight, check Marcus's data section","thread_id":"T3","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793747150000,"place_ms":1600}}
-{"type":"thread_touched","thread_id":"T3","last_point":"Text Priya tonight, check Marcus's data section","at_ms":1793747150000}
+{"type":"thought_added","thought":{"id":"th-6","speaker":"you","text":"Also the group project presentation is Wednesday and Partner hasn't sent her slides yet","point":"Group presentation Wednesday, Partner's slides missing","thread_id":"T3","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793747100000,"place_ms":1900}}
+{"type":"thread_touched","thread_id":"T3","last_point":"Group presentation Wednesday, Partner's slides missing","at_ms":1793747100000}
+{"type":"thought_added","thought":{"id":"th-7","speaker":"you","text":"I should text her tonight and also check if Marcus finished the data analysis section","point":"Text Partner tonight, check Marcus's data section","thread_id":"T3","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793747150000,"place_ms":1600}}
+{"type":"thread_touched","thread_id":"T3","last_point":"Text Partner tonight, check Marcus's data section","at_ms":1793747150000}
 {"type":"thought_added","thought":{"id":"th-8","speaker":"you","text":"We need to rehearse at least once before Wednesday morning","point":"Rehearse before Wednesday morning","thread_id":"T3","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793747200000,"place_ms":1500}}
 {"type":"thread_touched","thread_id":"T3","last_point":"Rehearse before Wednesday morning","at_ms":1793747200000}
-{"type":"action_proposed","action":{"id":"ac-2","thread_id":"T3","kind":"reminder","title":"Text Priya about slides","when":"2026-11-03","status":"new","done_ms":null}}
+{"type":"action_proposed","action":{"id":"ac-2","thread_id":"T3","kind":"reminder","title":"Text Partner about slides","when":"2026-11-03","status":"new","done_ms":null}}
 {"type":"tag_suggested","thread_id":"T3","tag":"school"}
 {"type":"tag_suggested","thread_id":"T3","tag":"group-project"}
 {"type":"suggestion_added","suggestion":{"id":"sg-1","thread_id":"T3","text":"Could combine the rehearsal with a Zoom call this evening","status":"new"}}
@@ -101,8 +101,8 @@
 {"type":"thread_touched","thread_id":"T5","last_point":"Book cooking class on phone during downtime","at_ms":1793749400000}
 {"type":"thread_picture","thread_id":"T5","path":"/images/T5-204f841d8c574f58ba2e434b8a5d84c3-small.webp"}
 {"type":"active_changed","thread_id":"T5"}
-{"type":"thought_added","thought":{"id":"th-29","speaker":"you","text":"Alright I think the priority is README then record then submit, rent transfer right now, and text Priya before I forget","point":"Priority: README, record, submit; rent now; text Priya","thread_id":"T1","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793749500000,"place_ms":1600}}
-{"type":"thread_touched","thread_id":"T1","last_point":"Priority: README, record, submit; rent now; text Priya","at_ms":1793749500000}
+{"type":"thought_added","thought":{"id":"th-29","speaker":"you","text":"Alright I think the priority is README then record then submit, rent transfer right now, and text Partner before I forget","point":"Priority: README, record, submit; rent now; text Partner","thread_id":"T1","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793749500000,"place_ms":1600}}
+{"type":"thread_touched","thread_id":"T1","last_point":"Priority: README, record, submit; rent now; text Partner","at_ms":1793749500000}
 {"type":"thread_picture","thread_id":"T1","path":"/images/T1-bd42b23eb79442baa2cf8a2033608b11-small.webp"}
 {"type":"active_changed","thread_id":"T1"}
 {"type":"thought_added","thought":{"id":"th-30","speaker":"you","text":"And the electric bill can wait until after the hackathon, it's not late yet","point":"Electric bill can wait until after hackathon","thread_id":"T7","placed":true,"unclear":"","guess":"","complete":true,"at_ms":1793749560000,"place_ms":1500}}

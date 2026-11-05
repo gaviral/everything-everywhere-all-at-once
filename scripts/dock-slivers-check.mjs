@@ -34,7 +34,7 @@ const world = {
   ],
   thoughts: [
     thought("a1", "Deadline tomorrow 9 PM, need to record demo", "T1"), thought("a2", "Repo ready, precheck passes, README not done", "T1"),
-    thought("a3", "Write README before recording", "T1"), thought("a4", "Priority: README, record, submit; rent now; text Priya", "T1"),
+    thought("a3", "Write README before recording", "T1"), thought("a4", "Priority: README, record, submit; rent now; text Partner", "T1"),
     thought("b1", "Plan the shots", "T1a"), thought("b2", "Record twice", "T1a"), thought("b3", "Cut to two minutes", "T1a"), thought("b4", "Music off", "T1a"), thought("b5", "Title card last", "T1a"),
     thought("c1", "Install steps", "T1b"), thought("c2", "What it is", "T1b"), thought("c3", "Honest limits", "T1b"),
     thought("d1", "Repo public", "T1c"), thought("d2", "Video link", "T1c"), thought("d3", "Form filled", "T1c"), thought("d4", "Deadline", "T1c"),
@@ -42,7 +42,7 @@ const world = {
     thought("r2", "It's already the 3rd so it's technically late, I need to do it right now before they charge a fee", "T2", { complete: false }),
     thought("e1", "Set up autopay for electric bill", "T2a"), thought("e2", "BC Hydra portal, need account number", "T2a", { unclear: "BC Hydra", guess: "BC Hydro" }),
     thought("e3", "Electric bill can wait until after hackathon", "T2a"),
-    thought("g1", "Group presentation Wednesday, Priya's slides missing", "T3"), thought("g2", "Text Priya tonight, check Marcus's data section", "T3"),
+    thought("g1", "Group presentation Wednesday, Partner's slides missing", "T3"), thought("g2", "Text Partner tonight, check Marcus's data section", "T3"),
     thought("g3", "Rehearse before Wednesday morning", "T3"), thought("g4", "Group presentation and hackathon deadline same week", "T3"),
     thought("g5", "Group stuff this afternoon, hackathon tonight and tomorrow AM", "T3"),
     thought("m1", "Mom's birthday Friday, no gift yet", "T4"), thought("m2", "She wants the cooking class on Main Street", "T4"),
@@ -55,7 +55,7 @@ const world = {
   ],
   actions: [
     { id: "ac-1", thread_id: "T2", kind: "reminder", title: "Transfer rent to landlord", when: "Today", status: "new", done_ms: null },
-    { id: "ac-2", thread_id: "T3", kind: "reminder", title: "Text Priya about slides", when: "Today", status: "new", done_ms: null },
+    { id: "ac-2", thread_id: "T3", kind: "reminder", title: "Text Partner about slides", when: "Today", status: "new", done_ms: null },
   ],
   proposals: [], merged: {}, apps: [], apps_seeded: true, recaps: [], notes: {},
 };

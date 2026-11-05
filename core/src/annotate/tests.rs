@@ -56,7 +56,7 @@ fn never_split_while_pinned_and_comments_can_attach_immediately() {
     let text = "Um, keep the wall blue, and rent is due Friday.";
     let mut ids = Vec::new();
     for n in 0..12 {
-        let id = f.core.keep(if n % 2 == 0 { "you" } else { "Sam" }, text);
+        let id = f.core.keep(if n % 2 == 0 { "you" } else { "Colleague" }, text);
         // No placer tick or model response between arrival and the bridge's comment.
         if [0, 2, 5, 8, 11].contains(&n) {
             let thread = note(&f.core, "Helper", &id, text, "Which shade of blue?").unwrap();
@@ -126,7 +126,7 @@ async fn a_later_note_on_the_same_words_answers_in_it_and_other_words_start_thei
     // The Friend, over the bridge, answers on the same words: the same tangent, its name on the reply.
     let reply = note(&f.core, "Friend", "a", "the lease  ends in March", "Yes, at the same rent.").unwrap();
     assert_eq!(reply, first);
-    let other = note(&f.core, "Sam", "a", "due Friday", "Which Friday?").unwrap();
+    let other = note(&f.core, "Colleague", "a", "due Friday", "Which Friday?").unwrap();
     assert_ne!(other, first, "other words of the same point: a note of their own");
     let world = f.core.snapshot();
     assert_eq!(notes(&world, &first), [("you".into(), "Month to month after?".into()), ("Friend".into(), "Yes, at the same rent.".into())]);
@@ -185,9 +185,9 @@ fn the_window_sends_it_as_annotate() {
 #[test]
 fn only_the_live_comment_carries_speech_and_the_journal_never_does() {
     let f = Fixture::new();
-    note(&f.core, "Claude", "a", "the lease", "An older comment.").unwrap();
+    note(&f.core, "Helper", "a", "the lease", "An older comment.").unwrap();
     let mut updates = f.core.updates.subscribe();
-    let thread = note_speaking(&f.core, "Claude", "a", "the lease", "The new reply.", true).unwrap();
+    let thread = note_speaking(&f.core, "Helper", "a", "the lease", "The new reply.", true).unwrap();
     let mut spoken = Vec::new();
     while let Ok(out) = updates.try_recv() {
         if out.speak {

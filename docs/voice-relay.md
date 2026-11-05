@@ -8,7 +8,7 @@ Live partials also receive private journal checkpoints, using the same source id
 
 ## Candidate acceptance
 
-Fresh Rust release and UI builds, with synthetic Samantha speech routed through native WebAudio, the actual microphone worklet, the app socket, real Meta ASR and real Muse placement. No transcription or placement fixtures were used in these live runs. No email or message was sent.
+Fresh Rust release and UI builds, with synthetic system-voice speech routed through native WebAudio, the actual microphone worklet, the app socket, real Meta ASR and real Muse placement. No transcription or placement fixtures were used in these live runs. No email or message was sent.
 
 The unmodified batch4 binary reproduced `Audio processing backlog too large`: 14 silent 80 ms microphone frames, error 309 ms before synthetic playback. No phrase recognition is attributed to that baseline.
 

@@ -25,7 +25,7 @@ Mini-apps may use a single publisher with no model prompt:
 {"kind":"app_block","block":{"query":"rent","when":"2026-11-06"}}
 ```
 
-The existing watcher creates three proposals in the same hub. It never executes a
+The existing watcher creates three proposals in the same view. It never executes a
 connection step or tune. Connection blocks are deliberately excluded from portable
 recipes. The explicit form and execution path need no model. No GPT service is used.
 

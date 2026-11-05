@@ -23,8 +23,8 @@ const world = {
   active: "T1", active_by: { you: "T1" }, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: true, recaps: [], notes: {}, proposals: [],
 };
 const snapshot = { type: "snapshot", world };
-const text = "Hi Mia, could you confirm what to bring?";
-const card = (id, state, extra = {}) => ({ type: "send_card", id, to: "Mia", text, state, in_ms: 0, live: false, message: "", ...extra });
+const text = "Hi Recipient, could you confirm what to bring?";
+const card = (id, state, extra = {}) => ({ type: "send_card", id, to: "Recipient", text, state, in_ms: 0, live: false, message: "", ...extra });
 const OFFLINE = "Not sent: your window was offline, so you couldn't stop it.";
 
 // What a window gets when it connects: the core's catch-up, as each step sets it; null refuses the connection.
@@ -157,7 +157,7 @@ try {
   // never resets the waiting list), and while capture runs its "Listening" shows. A stand-in microphone (a tone
   // through a real MediaStream) lets capture run as it does with a device.
   const onItsWay = (id, text) => ({ ...thought(id, text, null), placed: false, place_ms: null });
-  joinReply = [{ type: "snapshot", world: { ...world, thoughts: [...world.thoughts, onItsWay("w1", "Call the bank about the card"), onItsWay("w2", "Ask Sam about Saturday")] } }];
+  joinReply = [{ type: "snapshot", world: { ...world, thoughts: [...world.thoughts, onItsWay("w1", "Call the bank about the card"), onItsWay("w2", "Ask Colleague about Saturday")] } }];
   await cdp("Emulation.setDeviceMetricsOverride", { width: 320, height: 700, deviceScaleFactor: 1, mobile: true });
   await cdp("Page.reload", {});
   assert.ok(await until(`document.querySelectorAll(".pending .pill").length === 2`, 10000), "two thoughts on their way");

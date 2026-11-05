@@ -1,4 +1,4 @@
-//! Pointing, captions, held questions and tours: another participant (an AI joined with a name, e.g. `?name=Claude`) shows
+//! Pointing, captions, held questions and tours: another participant (an AI joined with a name, e.g. `?name=Helper`) shows
 //! the person one exact part of the screen, with an arrow and a one-line caption, says a line as a caption, or holds a
 //! question for the person's next pause, instead of adding a thought to the map. Completed captions are journaled;
 //! arrows, held questions and tours remain transient. Live relays exclude the originating window. No model is asked. Jobs also replay
@@ -397,10 +397,10 @@ mod tests {
         })).unwrap();
         let crate::protocol::ClientMsg::Tour { steps } = message else { panic!("expected tour") };
         assert!(steps.iter().all(|step| step.target.is_none()));
-        let wire = serde_json::to_value(crate::protocol::ServerMsg::Tour { steps, by: "Claude".into(), at_ms: 123, from: 42 }).unwrap();
+        let wire = serde_json::to_value(crate::protocol::ServerMsg::Tour { steps, by: "Helper".into(), at_ms: 123, from: 42 }).unwrap();
         assert_eq!(wire, serde_json::json!({
             "type": "tour", "steps": [{"target": null, "text": "First"}, {"target": null, "text": "Second"}],
-            "by": "Claude", "at_ms": 123
+            "by": "Helper", "at_ms": 123
         }));
     }
 
@@ -524,17 +524,17 @@ mod tests {
     fn speech_flags_are_live_only_and_silent_messages_keep_their_wire_shape() {
         let (core, path, _) = prepared();
         let mut updates = core.updates.subscribe();
-        super::caption_speaking(&core, "Claude", 42, &mut Pace::default(), "Speak this caption.".into(), true);
+        super::caption_speaking(&core, "Helper", 42, &mut Pace::default(), "Speak this caption.".into(), true);
         let outgoing = updates.try_recv().unwrap();
         assert!(serde_json::to_string(&outgoing).unwrap().starts_with("{\"type\":\"guide\""), "the page's prefix dispatch remains valid");
         let caption = serde_json::to_value(outgoing).unwrap();
         assert_eq!(caption["speak"], true);
         assert_eq!(caption["kind"], "caption");
         assert!(caption.get("to").is_none() && caption.get("from").is_none());
-        super::caption(&core, "Claude", 42, &mut Pace::default(), "Silent caption.".into());
+        super::caption(&core, "Helper", 42, &mut Pace::default(), "Silent caption.".into());
         let silent = updates.try_recv().unwrap();
         assert_eq!(serde_json::to_value(&silent).unwrap(), serde_json::to_value(&silent.message).unwrap());
-        core.take_turn("Claude", "This is a spoken thought.", true, true, true, None);
+        core.take_turn("Helper", "This is a spoken thought.", true, true, true, None);
         let mut thoughts = Vec::new();
         while let Ok(update) = updates.try_recv() {
             if matches!(update.message, crate::protocol::ServerMsg::Change { change: Change::ThoughtAdded { .. } }) {
@@ -583,33 +583,33 @@ mod tests {
             request.headers_mut().insert("origin", HeaderValue::from_static("https://192.168.1.179:48266"));
             request
         };
-        let (mut claude, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws?name=Claude&ai")).await.unwrap();
+        let (mut assistant_peer, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws?name=Helper&ai")).await.unwrap();
         let (mut host, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws?name=host")).await.unwrap();
         let (mut guest2, _) = tokio_tungstenite::connect_async(guest()).await.unwrap();
-        for window in [&mut claude, &mut host, &mut guest2] { drain(window, 30).await; }
+        for window in [&mut assistant_peer, &mut host, &mut guest2] { drain(window, 30).await; }
         let before = std::fs::read_to_string(&path).unwrap();
         for payload in [
             serde_json::json!({"type":"caption", "text":"Here is the answer.", "speak":true}),
             serde_json::json!({"type":"point", "target":"composer", "caption":"Type here."}),
             serde_json::json!({"type":"hold", "text":"Shall we continue?", "target":"mic"}),
-        ] { claude.send(send(payload)).await.unwrap(); }
+        ] { assistant_peer.send(send(payload)).await.unwrap(); }
         let shown = drain(&mut host, 30).await;
         assert_eq!(drain(&mut guest2, 30).await, shown);
         assert_eq!(shown.len(), 3);
         assert_eq!(shown[0]["speak"], true);
         assert_eq!(shown[1]["kind"], "point");
         assert_eq!(shown[2]["kind"], "hold");
-        assert!(shown.iter().all(|m| m["by"] == "Claude" && m.get("to").is_none() && m.get("from").is_none()));
+        assert!(shown.iter().all(|m| m["by"] == "Helper" && m.get("to").is_none() && m.get("from").is_none()));
         let journal = std::fs::read_to_string(&path).unwrap();
         assert!(journal.starts_with(&before));
         assert_eq!(journal.lines().count(), before.lines().count() + 1, "only the completed caption is journaled");
         assert_eq!(core.snapshot().captions.len(), 1);
         assert!(!journal.contains("Type here.") && !journal.contains("Shall we continue?"), "gestures stay transient");
-        claude.send(send(serde_json::json!({"type":"text", "text":"I think the answer belongs here.", "speak":true}))).await.unwrap();
+        assistant_peer.send(send(serde_json::json!({"type":"text", "text":"I think the answer belongs here.", "speak":true}))).await.unwrap();
         let live = drain(&mut guest2, 30).await;
         let thought = live.iter().find(|m| m["change"]["type"] == "thought_added").unwrap();
         assert_eq!(thought["speak"], true);
-        assert_eq!(thought["change"]["thought"]["speaker"], "Claude");
+        assert_eq!(thought["change"]["thought"]["speaker"], "Helper");
         let journal = std::fs::read_to_string(&path).unwrap();
         assert!(!journal.contains("\"speak\""), "playback is never journaled");
         assert!(!core.hosts.lock().unwrap().contains("guest2"), "exercise a genuine guest identity");
@@ -927,7 +927,7 @@ mod tests {
         super::answer(&core, "Helper", &mut pace, "Asker".into(), "界".repeat(281));
         assert!(updates.try_recv().is_err(), "invalid input shares the refusal throttle");
         assert!(pace.sent.is_empty());
-        for recipient in ["  Sam\n界!\u{7} ".to_string(), "x".repeat(25), "you".into(), "Guest".into()] {
+        for recipient in ["  Colleague\n界!\u{7} ".to_string(), "x".repeat(25), "you".into(), "Guest".into()] {
             super::answer(&core, "Helper", &mut pace, recipient.clone(), format!(" \n{}\t", "界".repeat(280)));
             let outgoing = updates.try_recv().unwrap();
             assert_eq!(outgoing.to, Some(crate::speaker_name(&recipient, true)));
@@ -1054,16 +1054,16 @@ mod tests {
         let before = std::fs::read_to_string(&path).unwrap();
         let world = core.snapshot();
         let [mut helper, mut ears, mut asker, mut asker_tab, mut unrelated, mut you] =
-            windows(address, ["Helper", "Helper", "Sam%20%E7%95%8C!", "Sam%20%E7%95%8C!", "Other", ""]).await;
+            windows(address, ["Helper", "Helper", "Colleague%20%E7%95%8C!", "Colleague%20%E7%95%8C!", "Other", ""]).await;
         let started = crate::now_ms();
-        helper.send(send(serde_json::json!({"type": "answer", "to": "  Sam\n 界!\u{7} ", "text": "  Yes\n this\t one\u{7} ", "by": "Spoof", "at_ms": 1}))).await.unwrap();
+        helper.send(send(serde_json::json!({"type": "answer", "to": "  Colleague\n 界!\u{7} ", "text": "  Yes\n this\t one\u{7} ", "by": "Spoof", "at_ms": 1}))).await.unwrap();
         let shown = next(&mut asker, 500).await.unwrap();
         let at = shown["at_ms"].as_u64().unwrap();
         assert!((started..=crate::now_ms()).contains(&at));
         assert_eq!(shown, serde_json::json!({"type": "answer", "by": "Helper", "text": "Yes this one", "at_ms": at}));
         assert_eq!(next(&mut asker_tab, 500).await.unwrap(), shown);
         // A name with spaces, Unicode and punctuation is a speaker identity, not a screen target.
-        helper.send(send(serde_json::json!({"type": "answer", "to": "Sam 界!", "text": "界".repeat(280)}))).await.unwrap();
+        helper.send(send(serde_json::json!({"type": "answer", "to": "Colleague 界!", "text": "界".repeat(280)}))).await.unwrap();
         let shown = next(&mut asker, 500).await.unwrap();
         assert_eq!(shown["text"], "界".repeat(280), "the limit counts normalized characters, not bytes");
         assert_eq!(next(&mut asker_tab, 500).await.unwrap(), shown);
@@ -1076,7 +1076,7 @@ mod tests {
         let shown = next(&mut helper, 500).await.unwrap();
         assert_eq!(shown["text"], "Self");
         assert_eq!(next(&mut ears, 500).await.unwrap(), shown, "all recipient windows, including the origin");
-        let (mut joined, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws?name=Sam%20%E7%95%8C!")).await.unwrap();
+        let (mut joined, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws?name=Colleague%20%E7%95%8C!")).await.unwrap();
         assert!(drain(&mut joined, 50).await.iter().all(|m| m["type"] != "answer"), "answers aren't retained");
         assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
         assert!(Arc::ptr_eq(&world, &core.snapshot()));
@@ -1154,7 +1154,7 @@ mod tests {
         let (core, address, path, mut queue) = served().await;
         let before = std::fs::read_to_string(&path).unwrap();
         let world = core.snapshot();
-        let [mut claude, mut ears, mut you, mut other_tab] = windows(address, ["Claude", "Claude", "", ""]).await;
+        let [mut assistant_peer, mut ears, mut you, mut other_tab] = windows(address, ["Helper", "Helper", "", ""]).await;
         let started = crate::now_ms();
         let jobs = [
             serde_json::json!({"id": "work:1", "title": "Starting", "status": "running"}),
@@ -1169,7 +1169,7 @@ mod tests {
             payload["by"] = "Someone else".into();
             payload["at_ms"] = 1.into();
             payload["from"] = 1.into();
-            claude.send(send(payload)).await.unwrap();
+            assistant_peer.send(send(payload)).await.unwrap();
         }
         let mut relayed = None;
         for window in [&mut you, &mut other_tab, &mut ears] {
@@ -1182,7 +1182,7 @@ mod tests {
             expected[3].as_object_mut().unwrap().remove("parent");
             for (message, mut payload) in got.iter().zip(expected) {
                 payload["type"] = "job".into();
-                payload["by"] = "Claude".into();
+                payload["by"] = "Helper".into();
                 if payload.get("demo").is_none() { payload["demo"] = false.into(); }
                 let at = message["at_ms"].as_u64().unwrap();
                 assert!((started..=crate::now_ms()).contains(&at), "server-owned timestamp: {message}");
@@ -1194,10 +1194,10 @@ mod tests {
             }
             relayed = Some(got);
         }
-        assert!(drain(&mut claude, 100).await.is_empty(), "no echo to the originating window");
+        assert!(drain(&mut assistant_peer, 100).await.is_empty(), "no echo to the originating window");
 
-        claude.send(send(serde_json::json!({"type": "job", "id": "<b>", "title": "Refused", "status": "done"}))).await.unwrap();
-        for window in [&mut claude, &mut ears] {
+        assistant_peer.send(send(serde_json::json!({"type": "job", "id": "<b>", "title": "Refused", "status": "done"}))).await.unwrap();
+        for window in [&mut assistant_peer, &mut ears] {
             let got = drain(window, 100).await;
             assert_eq!(got.len(), 1, "{got:?}");
             assert_eq!(got[0]["type"], "notice");
@@ -1207,7 +1207,7 @@ mod tests {
             assert!(drain(window, 100).await.is_empty(), "only the sender's windows hear a refusal");
         }
 
-        let (mut reconnected, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws?name=Claude")).await.unwrap();
+        let (mut reconnected, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws?name=Helper")).await.unwrap();
         let caught_up = drain(&mut reconnected, 100).await;
         assert!(caught_up.iter().any(|message| message["type"] == "snapshot"));
         let replay: Vec<_> = caught_up.into_iter().filter(|message| message["type"] == "job").collect();
@@ -1268,13 +1268,13 @@ mod tests {
             payload[field] = value.into();
             let ClientMsg::Job { job } = serde_json::from_value(payload).unwrap() else { panic!("expected job") };
             let mut pace = Pace::default();
-            super::job(&core, "Claude", 42, &mut pace, job.clone());
+            super::job(&core, "Helper", 42, &mut pace, job.clone());
             let outgoing = updates.try_recv().unwrap();
-            assert_eq!(outgoing.to.as_deref(), Some("Claude"));
+            assert_eq!(outgoing.to.as_deref(), Some("Helper"));
             assert!(matches!(outgoing.message, ServerMsg::Notice { message } if message == format!("Not shown: {why}")));
             assert!(pace.sent.is_empty(), "invalid input doesn't consume the budget");
-            super::job(&core, "Claude", 42, &mut pace, job);
-            super::caption(&core, "Claude", 42, &mut pace, "".into());
+            super::job(&core, "Helper", 42, &mut pace, job);
+            super::caption(&core, "Helper", 42, &mut pace, "".into());
             assert!(updates.try_recv().is_err(), "invalid jobs and guides share refusal throttling");
             assert!(pace.sent.is_empty());
         }
@@ -1298,11 +1298,11 @@ mod tests {
                 malformed.push(payload);
             }
         }
-        let [mut ears, mut you] = windows(address, ["Claude", ""]).await;
+        let [mut ears, mut you] = windows(address, ["Helper", ""]).await;
         for payload in malformed {
             assert!(serde_json::from_value::<ClientMsg>(payload.clone()).is_err(), "{payload}");
             // A fresh origin gives each malformed payload its own refusal throttle and budget.
-            let (mut origin, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws?name=Claude")).await.unwrap();
+            let (mut origin, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws?name=Helper")).await.unwrap();
             drain(&mut origin, 20).await;
             // Its arrival (and the last origin's departure) reaches the other windows as a presence update first.
             drain(&mut ears, 50).await;
@@ -1337,7 +1337,7 @@ mod tests {
         let (core, address, path, mut queue) = served().await;
         let before = std::fs::read_to_string(&path).unwrap();
         let world = core.snapshot();
-        let [mut claude, mut ears, mut you] = windows(address, ["Claude", "Claude", ""]).await;
+        let [mut assistant_peer, mut ears, mut you] = windows(address, ["Helper", "Helper", ""]).await;
         let job = serde_json::json!({"type": "job", "id": "work:1", "title": "Working", "status": "running"});
         for payload in [
             job.clone(),
@@ -1350,12 +1350,12 @@ mod tests {
             serde_json::json!({"type": "tour", "steps": []}),
             serde_json::json!({"type": "point", "target": "mic"}),
         ] {
-            claude.send(send(payload)).await.unwrap();
+            assistant_peer.send(send(payload)).await.unwrap();
         }
         let shown = drain(&mut you, 100).await;
         assert_eq!(shown.iter().map(|m| m["type"].as_str().unwrap()).collect::<Vec<_>>(), ["job", "guide", "tour", "job"]);
         let notice = serde_json::json!({"type": "notice", "message": "Not shown: 4 a second at most."});
-        assert_eq!(drain(&mut claude, 100).await, [notice.clone()], "no echoes and only one refusal");
+        assert_eq!(drain(&mut assistant_peer, 100).await, [notice.clone()], "no echoes and only one refusal");
         let mut expected = shown;
         expected.push(notice);
         assert_eq!(drain(&mut ears, 100).await, expected);
@@ -1364,8 +1364,8 @@ mod tests {
         ears.send(send(job)).await.unwrap();
         let shown = next(&mut you, 500).await.unwrap();
         assert_eq!(shown["type"], "job");
-        assert_eq!(shown["by"], "Claude");
-        assert_eq!(next(&mut claude, 500).await.unwrap(), shown);
+        assert_eq!(shown["by"], "Helper");
+        assert_eq!(next(&mut assistant_peer, 500).await.unwrap(), shown);
         assert!(drain(&mut ears, 100).await.is_empty());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
         assert!(Arc::ptr_eq(&world, &core.snapshot()));
@@ -1373,63 +1373,63 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
-    /// A point and a caption from one window (Claude's, over the bridge) reach every other window, the person's two
-    /// and another of Claude's, exactly as sent, with who sent them; never the window they came from. Only completed
+    /// A point and a caption from one window (Helper's, over the bridge) reach every other window, the person's two
+    /// and another of Helper's, exactly as sent, with who sent them; never the window they came from. Only completed
     /// captions enter the journal, without entering the map or asking a model. Too long, not a name, or past 4 a second: only the sender hears why.
     #[tokio::test]
     async fn a_point_and_a_caption_reach_every_other_window_and_nothing_else() {
         let (core, address, path, mut queue) = served().await;
         let journaled = || std::fs::read_to_string(&path).unwrap();
         let before = journaled();
-        let [mut claude, mut ears, mut you, mut other_tab] = windows(address, ["Claude", "Claude", "", ""]).await;
+        let [mut assistant_peer, mut ears, mut you, mut other_tab] = windows(address, ["Helper", "Helper", "", ""]).await;
 
-        claude.send(send(serde_json::json!({"type": "point", "target": "thread:T1", "caption": "Your rent notes are here."}))).await.unwrap();
-        claude.send(send(serde_json::json!({"type": "caption", "text": "Do you see\nthe card I'm pointing at?"}))).await.unwrap();
-        claude.send(send(serde_json::json!({"type": "point", "target": null}))).await.unwrap();
+        assistant_peer.send(send(serde_json::json!({"type": "point", "target": "thread:T1", "caption": "Your rent notes are here."}))).await.unwrap();
+        assistant_peer.send(send(serde_json::json!({"type": "caption", "text": "Do you see\nthe card I'm pointing at?"}))).await.unwrap();
+        assistant_peer.send(send(serde_json::json!({"type": "point", "target": null}))).await.unwrap();
         for window in [&mut you, &mut other_tab, &mut ears] {
             let got = drain(window, 500).await;
             let shape = |m: &serde_json::Value| (m["type"].clone(), m["kind"].clone(), m["target"].clone(), m["text"].clone(), m["by"].clone());
             assert_eq!(
                 got.iter().map(shape).collect::<Vec<_>>(),
                 [
-                    ("guide".into(), "point".into(), "thread:T1".into(), "Your rent notes are here.".into(), "Claude".into()),
-                    ("guide".into(), "caption".into(), serde_json::Value::Null, "Do you see the card I'm pointing at?".into(), "Claude".into()),
-                    ("guide".into(), "point".into(), serde_json::Value::Null, "".into(), "Claude".into()),
+                    ("guide".into(), "point".into(), "thread:T1".into(), "Your rent notes are here.".into(), "Helper".into()),
+                    ("guide".into(), "caption".into(), serde_json::Value::Null, "Do you see the card I'm pointing at?".into(), "Helper".into()),
+                    ("guide".into(), "point".into(), serde_json::Value::Null, "".into(), "Helper".into()),
                 ],
                 "{got:?}"
             );
             assert!(got.iter().all(|m| m["at_ms"].as_u64().is_some_and(|at| at > 0) && m.get("from").is_none()), "{got:?}");
         }
-        assert_eq!(drain(&mut claude, 300).await, Vec::<serde_json::Value>::new(), "never echoed to the window that sent it");
+        assert_eq!(drain(&mut assistant_peer, 300).await, Vec::<serde_json::Value>::new(), "never echoed to the window that sent it");
 
         // Refused: only the sender's own windows hear why (once a second at most), the others nothing.
-        claude.send(send(serde_json::json!({"type": "point", "target": "thread:T1", "caption": "x".repeat(super::POINT_MAX + 1)}))).await.unwrap();
-        let told = drain(&mut claude, 300).await;
+        assistant_peer.send(send(serde_json::json!({"type": "point", "target": "thread:T1", "caption": "x".repeat(super::POINT_MAX + 1)}))).await.unwrap();
+        let told = drain(&mut assistant_peer, 300).await;
         assert_eq!(told.len(), 1, "{told:?}");
         assert_eq!(told[0]["message"], "Not shown: A point's caption is 140 characters at most.");
         tokio::time::sleep(Duration::from_millis(1000)).await;
-        claude.send(send(serde_json::json!({"type": "point", "target": "<img src=x>", "caption": "hi"}))).await.unwrap();
-        assert_eq!(drain(&mut claude, 300).await[0]["message"], "Not shown: “<img src=x>” isn't the name of a part of the screen (docs/guide.md).");
+        assistant_peer.send(send(serde_json::json!({"type": "point", "target": "<img src=x>", "caption": "hi"}))).await.unwrap();
+        assert_eq!(drain(&mut assistant_peer, 300).await[0]["message"], "Not shown: “<img src=x>” isn't the name of a part of the screen (docs/guide.md).");
         tokio::time::sleep(Duration::from_millis(1000)).await;
-        claude.send(send(serde_json::json!({"type": "caption", "text": "y".repeat(super::CAPTION_MAX + 1)}))).await.unwrap();
-        assert_eq!(drain(&mut claude, 300).await[0]["message"], "Not shown: A caption is 400 characters at most.");
+        assistant_peer.send(send(serde_json::json!({"type": "caption", "text": "y".repeat(super::CAPTION_MAX + 1)}))).await.unwrap();
+        assert_eq!(drain(&mut assistant_peer, 300).await[0]["message"], "Not shown: A caption is 400 characters at most.");
         for window in [&mut you, &mut other_tab, &mut ears] {
             assert!(drain(window, 300).await.iter().all(|m| m["type"] != "guide"), "nothing refused reaches another window");
         }
         let caption_max = "y".repeat(super::CAPTION_MAX);
-        claude.send(send(serde_json::json!({"type": "caption", "text": caption_max}))).await.unwrap();
+        assistant_peer.send(send(serde_json::json!({"type": "caption", "text": caption_max}))).await.unwrap();
         assert_eq!(next(&mut you, 500).await.unwrap()["text"], caption_max, "a caption at the cap is shown");
 
         // Past 4 a second from one window: the rest are dropped, and the sender hears why once.
         tokio::time::sleep(Duration::from_millis(1000)).await;
         for i in 0..10 {
-            claude.send(send(serde_json::json!({"type": "point", "target": "composer", "caption": format!("step {i}")}))).await.unwrap();
+            assistant_peer.send(send(serde_json::json!({"type": "point", "target": "composer", "caption": format!("step {i}")}))).await.unwrap();
         }
         let shown: Vec<_> = drain(&mut you, 500).await.into_iter().filter(|m| m["type"] == "guide").map(|m| m["text"].clone()).collect();
         assert_eq!(shown, ["step 0", "step 1", "step 2", "step 3"]);
-        let told: Vec<_> = drain(&mut claude, 300).await.into_iter().map(|m| m["message"].clone()).collect();
+        let told: Vec<_> = drain(&mut assistant_peer, 300).await.into_iter().map(|m| m["message"].clone()).collect();
         assert_eq!(told, ["Not shown: 4 a second at most."]);
-        // A window's own pace: the person's window can still point (any window can), and Claude's other window sees it.
+        // A window's own pace: the person's window can still point (any window can), and Helper's other window sees it.
         you.send(send(serde_json::json!({"type": "point", "target": "mic", "caption": ""}))).await.unwrap();
         let seen = drain(&mut ears, 300).await;
         assert!(seen.iter().any(|m| m["type"] == "guide" && m["target"] == "mic" && m["by"] == "you"), "{seen:?}");
@@ -1451,38 +1451,38 @@ mod tests {
         let (core, address, path, mut queue) = served().await;
         let journaled = || std::fs::read_to_string(&path).unwrap();
         let before = journaled();
-        let [mut claude, mut ears, mut you] = windows(address, ["Claude", "Claude", ""]).await;
+        let [mut assistant_peer, mut ears, mut you] = windows(address, ["Helper", "Helper", ""]).await;
 
-        claude.send(send(serde_json::json!({"type": "hold", "text": "Which Saturday?\nLena leaves on the 14th.", "target": "thread:T1"}))).await.unwrap();
-        claude.send(send(serde_json::json!({"type": "hold", "text": "Bring chairs?", "urgent": true}))).await.unwrap();
-        claude.send(send(serde_json::json!({"type": "hold", "text": "  ", "target": "thread:T1", "urgent": true}))).await.unwrap();
+        assistant_peer.send(send(serde_json::json!({"type": "hold", "text": "Which Saturday?\nGuest leaves on the 14th.", "target": "thread:T1"}))).await.unwrap();
+        assistant_peer.send(send(serde_json::json!({"type": "hold", "text": "Bring chairs?", "urgent": true}))).await.unwrap();
+        assistant_peer.send(send(serde_json::json!({"type": "hold", "text": "  ", "target": "thread:T1", "urgent": true}))).await.unwrap();
         for window in [&mut you, &mut ears] {
             let got = drain(window, 500).await;
             let shape = |m: &serde_json::Value| (m["type"].clone(), m["kind"].clone(), m["target"].clone(), m["text"].clone(), m["by"].clone());
             assert_eq!(
                 got.iter().map(shape).collect::<Vec<_>>(),
                 [
-                    ("guide".into(), "hold".into(), "thread:T1".into(), "Which Saturday? Lena leaves on the 14th.".into(), "Claude".into()),
-                    ("guide".into(), "hold".into(), serde_json::Value::Null, "Bring chairs?".into(), "Claude".into()),
-                    ("guide".into(), "hold".into(), serde_json::Value::Null, "".into(), "Claude".into()),
+                    ("guide".into(), "hold".into(), "thread:T1".into(), "Which Saturday? Guest leaves on the 14th.".into(), "Helper".into()),
+                    ("guide".into(), "hold".into(), serde_json::Value::Null, "Bring chairs?".into(), "Helper".into()),
+                    ("guide".into(), "hold".into(), serde_json::Value::Null, "".into(), "Helper".into()),
                 ],
                 "{got:?}"
             );
             // Urgent (it jumps the line) only where it was asked for: not on a plain one, nor on taking them back.
             assert_eq!(got.iter().map(|m| m.get("urgent").cloned()).collect::<Vec<_>>(), [None, Some(serde_json::Value::Bool(true)), None], "{got:?}");
         }
-        assert_eq!(drain(&mut claude, 300).await, Vec::<serde_json::Value>::new(), "never echoed to the window that sent it");
+        assert_eq!(drain(&mut assistant_peer, 300).await, Vec::<serde_json::Value>::new(), "never echoed to the window that sent it");
 
         // Refused: only the sender hears why; the others get nothing.
         tokio::time::sleep(Duration::from_millis(1000)).await;
-        claude.send(send(serde_json::json!({"type": "hold", "text": "q".repeat(super::HOLD_MAX + 1)}))).await.unwrap();
-        assert_eq!(drain(&mut claude, 300).await[0]["message"], "Not shown: A held question is 140 characters at most.");
+        assistant_peer.send(send(serde_json::json!({"type": "hold", "text": "q".repeat(super::HOLD_MAX + 1)}))).await.unwrap();
+        assert_eq!(drain(&mut assistant_peer, 300).await[0]["message"], "Not shown: A held question is 140 characters at most.");
         tokio::time::sleep(Duration::from_millis(1000)).await;
-        claude.send(send(serde_json::json!({"type": "hold", "text": "Here?", "target": "<b>"}))).await.unwrap();
-        assert_eq!(drain(&mut claude, 300).await[0]["message"], "Not shown: “<b>” isn't the name of a part of the screen (docs/guide.md).");
+        assistant_peer.send(send(serde_json::json!({"type": "hold", "text": "Here?", "target": "<b>"}))).await.unwrap();
+        assert_eq!(drain(&mut assistant_peer, 300).await[0]["message"], "Not shown: “<b>” isn't the name of a part of the screen (docs/guide.md).");
         assert!(drain(&mut you, 300).await.iter().all(|m| m["type"] != "guide"), "nothing refused reaches another window");
         let at_cap = "q".repeat(super::HOLD_MAX);
-        claude.send(send(serde_json::json!({"type": "hold", "text": at_cap}))).await.unwrap();
+        assistant_peer.send(send(serde_json::json!({"type": "hold", "text": at_cap}))).await.unwrap();
         assert_eq!(next(&mut you, 500).await.unwrap()["text"], at_cap, "a question at the cap is held");
 
         assert_eq!(journaled(), before, "held questions stay transient");
@@ -1496,32 +1496,32 @@ mod tests {
         let (core, address, path, mut queue) = served().await;
         let before = std::fs::read_to_string(&path).unwrap();
         let world = core.snapshot();
-        let [mut claude, mut ears, mut you, mut other_tab] = windows(address, ["Claude", "Claude", "", ""]).await;
+        let [mut assistant_peer, mut ears, mut you, mut other_tab] = windows(address, ["Helper", "Helper", "", ""]).await;
         let steps = serde_json::json!([
             {"target": "thread:T1", "text": "  Start\nhere.\t\u{7} "},
             {"text": "Then look around."},
             {"target": null, "text": "最后一步"}
         ]);
-        claude.send(send(serde_json::json!({"type": "tour", "steps": steps}))).await.unwrap();
+        assistant_peer.send(send(serde_json::json!({"type": "tour", "steps": steps}))).await.unwrap();
         // Once a recipient has the active tour, a newly connected window must not catch it up.
         let first = next(&mut ears, 500).await.unwrap();
         for window in [&mut you, &mut other_tab] {
             assert_eq!(next(window, 500).await.unwrap(), first, "the active tour reaches every recipient");
         }
-        assert!(drain(&mut claude, 100).await.is_empty(), "no originating-window echo");
-        let (mut reconnected, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws?name=Claude")).await.unwrap();
+        assert!(drain(&mut assistant_peer, 100).await.is_empty(), "no originating-window echo");
+        let (mut reconnected, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws?name=Helper")).await.unwrap();
         let caught_up = drain(&mut reconnected, 100).await;
         assert!(caught_up.iter().any(|message| message["type"] == "snapshot"), "{caught_up:?}");
         assert!(caught_up.iter().all(|message| message["type"] != "tour"), "tours aren't retained for reconnect");
         // Reconnecting changes call presence. Consume that independent broadcast explicitly, so the relay and
         // no-echo assertions below still check every message produced by the tours themselves.
-        for window in [&mut claude, &mut ears, &mut you, &mut other_tab] {
+        for window in [&mut assistant_peer, &mut ears, &mut you, &mut other_tab] {
             let presence = drain(window, 100).await;
             assert_eq!(presence.len(), 1, "{presence:?}");
             assert_eq!(presence[0]["type"], "call", "{presence:?}");
         }
-        claude.send(send(serde_json::json!({"type": "tour", "steps": [{"text": "Next tour."}]}))).await.unwrap();
-        claude.send(send(serde_json::json!({"type": "tour", "steps": []}))).await.unwrap();
+        assistant_peer.send(send(serde_json::json!({"type": "tour", "steps": [{"text": "Next tour."}]}))).await.unwrap();
+        assistant_peer.send(send(serde_json::json!({"type": "tour", "steps": []}))).await.unwrap();
         let mut relayed = None;
         for window in [&mut you, &mut other_tab, &mut ears] {
             let mut got = vec![first.clone()];
@@ -1534,9 +1534,9 @@ mod tests {
                         {"target": "thread:T1", "text": "Start here."},
                         {"target": null, "text": "Then look around."},
                         {"target": null, "text": "最后一步"}
-                    ]), "Claude".into()),
-                    ("tour".into(), serde_json::json!([{"target": null, "text": "Next tour."}]), "Claude".into()),
-                    ("tour".into(), serde_json::json!([]), "Claude".into()),
+                    ]), "Helper".into()),
+                    ("tour".into(), serde_json::json!([{"target": null, "text": "Next tour."}]), "Helper".into()),
+                    ("tour".into(), serde_json::json!([]), "Helper".into()),
                 ],
                 "{got:?}"
             );
@@ -1551,13 +1551,13 @@ mod tests {
             }
             relayed = Some(got);
         }
-        assert!(drain(&mut claude, 100).await.is_empty(), "no originating-window echo");
+        assert!(drain(&mut assistant_peer, 100).await.is_empty(), "no originating-window echo");
 
         // An invalid later step must not leak the valid first one, even to another sender window.
-        claude.send(send(serde_json::json!({"type": "tour", "steps": [
+        assistant_peer.send(send(serde_json::json!({"type": "tour", "steps": [
             {"text": "Must not escape."}, {"target": "<b>", "text": "Bad target."}
         ]}))).await.unwrap();
-        for window in [&mut claude, &mut ears] {
+        for window in [&mut assistant_peer, &mut ears] {
             let got = drain(window, 100).await;
             assert_eq!(got.len(), 1, "{got:?}");
             assert_eq!(got[0]["type"], "notice");
@@ -1595,18 +1595,18 @@ mod tests {
         for (steps, refusal) in cases {
             let mut pace = Pace::default();
             let count = steps.len();
-            super::tour(&core, "Claude", 42, &mut pace, steps);
+            super::tour(&core, "Helper", 42, &mut pace, steps);
             let outgoing = updates.try_recv().unwrap();
             match (outgoing.message, refusal) {
                 (ServerMsg::Notice { message }, Some(why)) => {
-                    assert_eq!(outgoing.to.as_deref(), Some("Claude"));
+                    assert_eq!(outgoing.to.as_deref(), Some("Helper"));
                     assert_eq!(message, format!("Not shown: {why}"));
                     assert!(pace.sent.is_empty(), "invalid input doesn't consume the budget");
                 }
                 (ServerMsg::Tour { steps, by, at_ms, from }, None) => {
                     assert!(outgoing.to.is_none());
                     assert_eq!(steps.len(), count);
-                    assert_eq!(by, "Claude");
+                    assert_eq!(by, "Helper");
                     assert_eq!(from, 42);
                     assert!(at_ms > 0);
                     assert!(steps.iter().all(|step| !step.text.is_empty() && step.text.chars().count() <= 140));
@@ -1628,29 +1628,29 @@ mod tests {
         let (core, path, _) = prepared();
         let mut updates = core.updates.subscribe();
         let mut pace = Pace::default();
-        super::tour(&core, "Claude", 42, &mut pace, vec![super::Step { target: None, text: "First".into() }; 20]);
-        super::point(&core, "Claude", 42, &mut pace, Some("composer".into()), None);
-        super::caption(&core, "Claude", 42, &mut pace, "Caption".into());
-        super::hold(&core, "Claude", 42, &mut pace, "Question?".into(), None, false);
+        super::tour(&core, "Helper", 42, &mut pace, vec![super::Step { target: None, text: "First".into() }; 20]);
+        super::point(&core, "Helper", 42, &mut pace, Some("composer".into()), None);
+        super::caption(&core, "Helper", 42, &mut pace, "Caption".into());
+        super::hold(&core, "Helper", 42, &mut pace, "Question?".into(), None, false);
         assert!(matches!(updates.try_recv().unwrap().message, ServerMsg::Tour { .. }));
         for _ in 0..3 {
             assert!(matches!(updates.try_recv().unwrap().message, ServerMsg::Guide { .. }));
         }
         // Both a clear and an ordinary tour use the same allowance; repeated refusals are told only once.
-        super::tour(&core, "Claude", 42, &mut pace, vec![]);
-        super::tour(&core, "Claude", 42, &mut pace, vec![super::Step { target: None, text: "Later".into() }]);
+        super::tour(&core, "Helper", 42, &mut pace, vec![]);
+        super::tour(&core, "Helper", 42, &mut pace, vec![super::Step { target: None, text: "Later".into() }]);
         let refused = updates.try_recv().unwrap();
-        assert_eq!(refused.to.as_deref(), Some("Claude"));
+        assert_eq!(refused.to.as_deref(), Some("Helper"));
         assert!(matches!(refused.message, ServerMsg::Notice { message } if message == "Not shown: 4 a second at most."));
         assert!(updates.try_recv().is_err());
 
         // A full budget of tours also prevents a guide message, and a different window has its own budget.
         let mut pace = Pace::default();
         for _ in 0..PER_SECOND {
-            super::tour(&core, "Claude", 43, &mut pace, vec![]);
+            super::tour(&core, "Helper", 43, &mut pace, vec![]);
             assert!(matches!(updates.try_recv().unwrap().message, ServerMsg::Tour { .. }));
         }
-        super::caption(&core, "Claude", 43, &mut pace, "Too soon".into());
+        super::caption(&core, "Helper", 43, &mut pace, "Too soon".into());
         assert!(matches!(updates.try_recv().unwrap().message, ServerMsg::Notice { .. }));
 
         let _ = std::fs::remove_file(&path);

@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import type { BrickProps } from "../contract";
-import { createExampleAdapter, exampleDefinition } from "../../msg1351/workflow-inspector/example";
-import { createInspector } from "../../msg1351/workflow-inspector/runtime";
-import { WorkflowInspector } from "../../msg1351/workflow-inspector/WorkflowInspector";
+import { createExampleAdapter, exampleDefinition } from "../../features/workflow-inspector/example";
+import { createInspector } from "../../features/workflow-inspector/runtime";
+import { WorkflowInspector } from "../../features/workflow-inspector/WorkflowInspector";
 import "./example.css";
 
 export default function WorkflowExample({ actions }: BrickProps) {

@@ -64,16 +64,16 @@ const exampleThought = (id: string, speaker: string, text: string, minute: numbe
 
 export const exampleSections: ReadingSection[] = [
   { id: "example-purpose", title: "Make room for a first visit", archived: false, children: [], passages: [
-    { thought: exampleThought("example-1", "Mira", "A neighbourhood library should feel like an invitation. Start with twenty households, a small shelf of useful things, and one Saturday together.", 0), notes: [
-      { id: "example-note", quote: "one Saturday together", thoughts: [exampleThought("example-question", "Jules", "Could we offer a quieter hour for people who prefer a smaller group?", 2)] },
+    { thought: exampleThought("example-1", "Organizer", "A neighbourhood library should feel like an invitation. Start with twenty households, a small shelf of useful things, and one Saturday together.", 0), notes: [
+      { id: "example-note", quote: "one Saturday together", thoughts: [exampleThought("example-question", "Volunteer", "Could we offer a quieter hour for people who prefer a smaller group?", 2)] },
     ] },
-    { thought: exampleThought("example-2", "Jules", "Keep the first visit simple: borrow one thing, meet a neighbour, and know when to come back. We can learn from what people actually use.", 4), notes: [] },
+    { thought: exampleThought("example-2", "Volunteer", "Keep the first visit simple: borrow one thing, meet a neighbour, and know when to come back. We can learn from what people actually use.", 4), notes: [] },
   ] },
   { id: "example-learn", title: "Learn before growing", archived: false, passages: [
-    { thought: exampleThought("example-3", "Mira", "After two weeks, ask which objects came back and which were borrowed again. Repeat borrowing could tell us more than the number of sign-ups.", 7), notes: [] },
+    { thought: exampleThought("example-3", "Organizer", "After two weeks, ask which objects came back and which were borrowed again. Repeat borrowing could tell us more than the number of sign-ups.", 7), notes: [] },
   ], children: [
     { id: "example-open", title: "An open question", archived: false, children: [], passages: [
-      { thought: exampleThought("example-4", "Jules", "We still need to decide who looks after repairs. Let’s ask the first group what they would feel comfortable taking on.", 9), notes: [] },
+      { thought: exampleThought("example-4", "Volunteer", "We still need to decide who looks after repairs. Let’s ask the first group what they would feel comfortable taking on.", 9), notes: [] },
     ] },
   ] },
 ];

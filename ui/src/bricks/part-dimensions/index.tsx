@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { LookPicker, type Look } from "./looks/LookPicker";
 import "./looks/looks.css";
 import type { BrickProps } from "../contract";
-import { PartDimensions } from "../../msg1351/part-dimensions";
+import { PartDimensions } from "../../features/part-dimensions";
 import type { CodePart } from "../../code-canvas/types";
 import { knownParts, thisDemo } from "./this-demo";
 import "./example.css";

@@ -84,7 +84,7 @@ for (const hosted of [false, true]) {
   try {
     // In a room, as a window that already joined.
     assert.ok(await until(`document.readyState === "complete"`, 10000));
-    await evaluate(`sessionStorage.setItem("e2a2o.joined", "Sam"); location.reload()`).catch(() => {});
+    await evaluate(`sessionStorage.setItem("e2a2o.joined", "Colleague"); location.reload()`).catch(() => {});
     await sleep(300);
     assert.ok(await until(`!!document.querySelector(".room-menu summary") && !!document.querySelector("#thread-T1 .move-button")`, 10000), `${header}: the map loads in a room, with points`);
 

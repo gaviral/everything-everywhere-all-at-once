@@ -33,10 +33,10 @@ try {
 const minute = 60_000;
 const said = (id, speaker, text, at, extra = {}) => ({ id, speaker, text, point: text, thread_id: "T1", placed: true, unclear: "", complete: true, at_ms: at, place_ms: 900, ...extra });
 {
-  const t = [said("a", "Sam", "Pasta night.", 10), said("b", "Sam", "Everyone brings a dessert.", 10), said("c", "Maya", "Yes please!", 20, { thread_id: "N1" }),
-    said("d", "Maya", "  ", 25), said("e", "Friend", "Split the desserts?", 30), said("f", "Sam", "Before", 5)];
+  const t = [said("a", "Colleague", "Pasta night.", 10), said("b", "Colleague", "Everyone brings a dessert.", 10), said("c", "Designer", "Yes please!", 20, { thread_id: "N1" }),
+    said("d", "Designer", "  ", 25), said("e", "Friend", "Split the desserts?", 30), said("f", "Colleague", "Before", 5)];
   const turns = T.turnsOf(t, [{ id: "T1" }, { id: "N1", anchor: { thought_id: "b", quote: "brings a dessert" } }]);
-  assert.deepEqual(turns.map((x) => [x.key, x.speaker, x.parts.length]), [["f", "Sam", 1], ["a", "Sam", 2], ["c", "Maya", 1], ["e", "Friend", 1]], "in the order said; a split turn is one; no empty turn");
+  assert.deepEqual(turns.map((x) => [x.key, x.speaker, x.parts.length]), [["f", "Colleague", 1], ["a", "Colleague", 2], ["c", "Designer", 1], ["e", "Friend", 1]], "in the order said; a split turn is one; no empty turn");
   assert.deepEqual(turns[2].note, { threadId: "N1", thoughtId: "b", quote: "brings a dessert" }, "a margin note is a turn of its own, with its words");
   assert.equal(Object.hasOwn(turns[2].note, "context"), false, "legacy target omits the absent optional field");
   const source = t.find((part) => part.id === "b");
@@ -54,21 +54,21 @@ const said = (id, speaker, text, at, extra = {}) => ({ id, speaker, text, point:
   assert.equal(T.newerMark(turns, "a", "e"), "e");
   assert.equal(T.newerMark(turns, "gone", "c"), "c", "a mark that left the map counts for nothing");
   assert.equal(T.newerMark(turns, null, undefined), null);
-  assert.deepEqual(T.unreadOf(turns, 1, "Sam", 0).map((x) => x.key), ["c", "e"], "unread: after the mark, not yours");
-  assert.deepEqual(T.unreadOf(turns, -1, "Maya", 8).map((x) => x.key), ["a", "e"], "from the call's start only");
+  assert.deepEqual(T.unreadOf(turns, 1, "Colleague", 0).map((x) => x.key), ["c", "e"], "unread: after the mark, not yours");
+  assert.deepEqual(T.unreadOf(turns, -1, "Designer", 8).map((x) => x.key), ["a", "e"], "from the call's start only");
   assert.ok(T.readFor(turns[0]) === T.DWELL_MS && T.readFor({ parts: [{ text: "word ".repeat(40) }] }) > 10_000, "read: at least the dwell, longer for more words");
-  assert.deepEqual([...T.readersAt(turns, [{ name: "Maya", ai: false, read: "b" }, { name: "Friend", ai: true, read: "e" }, { name: "Sam", ai: false, read: "a" }], "Sam")], [[1, ["Maya"]]], "where the others read, not you, not an AI");
+  assert.deepEqual([...T.readersAt(turns, [{ name: "Designer", ai: false, read: "b" }, { name: "Friend", ai: true, read: "e" }, { name: "Colleague", ai: false, read: "a" }], "Colleague")], [[1, ["Designer"]]], "where the others read, not you, not an AI");
   assert.equal(C.shownCode("k7m2x9qp"), "K7M2 X9QP");
   assert.equal(C.shownCode("k7q4m2"), "K7Q 4M2");
   assert.ok(!/AM|PM/.test(C.clock(Date.UTC(2026, 10, 2, 19, 37))), "a time without AM or PM");
   const call = { started_ms: 1, level: "speak", level_by: "", people: [
-    { name: "Sam", ai: false, joined_ms: 1, here: true, left_ms: null, mic: true, speaking: false, read: null },
+    { name: "Colleague", ai: false, joined_ms: 1, here: true, left_ms: null, mic: true, speaking: false, read: null },
     { name: "Friend", ai: true, joined_ms: 2, here: true, left_ms: null, mic: false, speaking: false, read: null },
-    { name: "Maya", ai: false, joined_ms: 3, here: true, left_ms: null, mic: false, speaking: true, read: null },
-    { name: "Lee", ai: false, joined_ms: 4, here: false, left_ms: Date.UTC(2026, 10, 2, 19, 52), mic: false, speaking: false, read: null }] };
-  assert.deepEqual(C.ordered(call, "Maya").map((p) => p.name), ["Maya", "Sam", "Lee", "Friend"], "you first, then people, then AI participants");
-  assert.equal(C.heardBy(call, "Sam"), "Maya and the AI helper hear you");
-  assert.equal(C.heardBy({ ...call, people: call.people.slice(0, 2) }, "Sam"), "the AI helper hears you");
+    { name: "Designer", ai: false, joined_ms: 3, here: true, left_ms: null, mic: false, speaking: true, read: null },
+    { name: "Reviewer", ai: false, joined_ms: 4, here: false, left_ms: Date.UTC(2026, 10, 2, 19, 52), mic: false, speaking: false, read: null }] };
+  assert.deepEqual(C.ordered(call, "Designer").map((p) => p.name), ["Designer", "Colleague", "Reviewer", "Friend"], "you first, then people, then AI participants");
+  assert.equal(C.heardBy(call, "Colleague"), "Designer and the AI helper hear you");
+  assert.equal(C.heardBy({ ...call, people: call.people.slice(0, 2) }, "Colleague"), "the AI helper hears you");
   assert.deepEqual(call.people.map((p) => C.stateWord(p)).slice(0, 3), ["mic on", "here", "speaking"]);
   assert.match(C.stateWord(call.people[3]), /^left \d/);
   assert.ok(C.inCall(call) && C.inCall({ ...call, people: call.people.slice(0, 2) }) && !C.inCall({ ...call, people: call.people.slice(0, 1) }), "two here make a call, an AI participant too");
@@ -84,27 +84,27 @@ if (why) {
 const shots = process.env.CALL_SHOTS || "";
 if (shots) mkdirSync(shots, { recursive: true });
 
-// Lena's farewell: six turns before the call, then the call's. Fictional people.
+// Guest's farewell: six turns before the call, then the call's. Fictional people.
 const now = Date.now();
 const start = now - 11 * minute;
 const thread = (id, title, parent = null) => ({ id, title, parent_id: parent, status: "open", last_point: "", touched_ms: now - 30 * minute, tags: [], picture: null, dropped_by: "" });
 const world = {
   recaps: [], suggestions: [], actions: [], merged: {}, proposals: [], apps: [], apps_seeded: true, notes: {}, positions: {},
-  threads: [thread("T1", "Lena’s farewell dinner"), thread("T2", "Gift for Lena"), thread("N1", "Everyone brings a dessert", "T1")],
+  threads: [thread("T1", "Guest’s farewell dinner"), thread("T2", "Gift for Guest"), thread("N1", "Everyone brings a dessert", "T1")],
   anchors: { N1: { thought_id: "c1", quote: "everyone brings a dessert" } },
-  ai: ["Friend"], active: "T1", active_by: { Sam: "T1", Maya: "T1", Lee: "T1" },
+  ai: ["Friend"], active: "T1", active_by: { Colleague: "T1", Designer: "T1", Reviewer: "T1" },
   thoughts: [
-    said("e1", "Sam", "Dinner before Lena leaves on the 14th.", start - 30 * minute),
-    said("e2", "Sam", "A photo book of the flat.", start - 28 * minute, { thread_id: "T2" }),
-    said("e3", "Maya", "Everyone signs one card.", start - 27 * minute, { thread_id: "T2" }),
-    said("e4", "Sam", "Somewhere quiet, so we can actually talk.", start - 25 * minute),
-    said("e5", "Maya", "Lena loves anything with pasta.", start - 24 * minute),
-    said("e6", "Sam", "Keep it small, ten people at most.", start - 22 * minute),
-    said("c1", "Sam", "Okay. Pasta night, and everyone brings a dessert.", start + 1 * minute, { point: "Pasta night: everyone brings a dessert." }),
+    said("e1", "Colleague", "Dinner before Guest leaves on the 14th.", start - 30 * minute),
+    said("e2", "Colleague", "A photo book of the flat.", start - 28 * minute, { thread_id: "T2" }),
+    said("e3", "Designer", "Everyone signs one card.", start - 27 * minute, { thread_id: "T2" }),
+    said("e4", "Colleague", "Somewhere quiet, so we can actually talk.", start - 25 * minute),
+    said("e5", "Designer", "Guest loves anything with pasta.", start - 24 * minute),
+    said("e6", "Colleague", "Keep it small, ten people at most.", start - 22 * minute),
+    said("c1", "Colleague", "Okay. Pasta night, and everyone brings a dessert.", start + 1 * minute, { point: "Pasta night: everyone brings a dessert." }),
     said("n1", "Friend", "Desserts could be split so nobody brings the same one.", start + 1.2 * minute, { thread_id: "N1" }),
-    said("c2", "Maya", "Dinner at our place, 7 pm. Decided.", start + 2 * minute, { point: "Dinner at our place, 7 pm.", decided: true }),
-    said("c3", "Maya", "Lena’s away that Saturday. She’s back Sunday around noon.", start + 3 * minute, { point: "Lena away Saturday, back Sunday noon." }),
-    said("n2", "Maya", "yes please!", start + 4 * minute, { thread_id: "N1" }),
+    said("c2", "Designer", "Dinner at our place, 7 pm. Decided.", start + 2 * minute, { point: "Dinner at our place, 7 pm.", decided: true }),
+    said("c3", "Designer", "Guest’s away that Saturday. She’s back Sunday around noon.", start + 3 * minute, { point: "Guest away Saturday, back Sunday noon." }),
+    said("n2", "Designer", "yes please!", start + 4 * minute, { thread_id: "N1" }),
   ],
 };
 const person = (name, extra = {}) => ({ name, ai: false, joined_ms: start, here: true, left_ms: null, mic: false, speaking: false, read: null, ...extra });
@@ -128,9 +128,9 @@ const marks = {};
 const core = await standInCore((query) => {
   const name = query.get("name") || "you";
   if (people.some((p) => p.name === name)) setPerson(name, { here: true, left_ms: null });
-  else people.push(person(name, { joined_ms: name === "Lee" ? Date.now() : start }));
-  // The Friend's bridge comes with Maya, as in the demo's call.
-  if (name === "Maya" && !people.some((p) => p.ai)) people.push(person("Friend", { ai: true }));
+  else people.push(person(name, { joined_ms: name === "Reviewer" ? Date.now() : start }));
+  // The Friend's bridge comes with Designer, as in the demo's call.
+  if (name === "Designer" && !people.some((p) => p.ai)) people.push(person("Friend", { ai: true }));
   // As the core: a call once two are here, told to the windows already in, and first in this one's catch-up.
   const on = here() >= 2;
   if (on) tell();
@@ -195,79 +195,79 @@ const shot = async (page, name) => {
 
 let failed = null;
 try {
-  step("Sam alone");
-  people.push(person("Sam", { here: false, mic: true }));
-  const sam = await windowOf("Sam", { width: 1440, height: 900 });
+  step("Colleague alone");
+  people.push(person("Colleague", { here: false, mic: true }));
+  const colleague = await windowOf("Colleague", { width: 1440, height: 900 });
   await sleep(500);
-  assert.equal(await sam.evaluate(`!!document.querySelector(".talk-rail, .talk-pill")`), false, "alone, no Talk");
+  assert.equal(await colleague.evaluate(`!!document.querySelector(".talk-rail, .talk-pill")`), false, "alone, no Talk");
 
-  step("Maya joins: the call starts");
-  const maya = await windowOf("Maya", { width: 1440, height: 900 });
-  for (const [page, who] of [[sam, "Sam"], [maya, "Maya"]]) {
+  step("Designer joins: the call starts");
+  const designer = await windowOf("Designer", { width: 1440, height: 900 });
+  for (const [page, who] of [[colleague, "Colleague"], [designer, "Designer"]]) {
     assert.ok(await page.until(`!!document.querySelector(".talk-rail .talk-people")`, 4000), `${who}'s Talk opens with two people here`);
   }
-  assert.match(await text(sam, ".talk-person"), /You.*mic on.*Maya.*here.*AI helper.*here/, "the people row: you first, the Friend last");
-  assert.match(await text(sam, ".talk-start"), /Call started .* · 6 earlier turns/, "earlier turns fold away");
-  assert.match(await text(sam, ".talk-code"), /Join code.*K7M2 X9QP/);
-  assert.equal(await sam.evaluate(`!!document.querySelector(".talk-leave")`), true, "Leave");
-  assert.match(await text(sam, ".talk-on"), /on “everyone brings a dessert”.*on “everyone brings a dessert”/, "the Friend's note and its reply, each on its words");
-  assert.match(await text(sam, ".talk-turn .talk-level"), /Comment/, "the AI helper's note names its level");
+  assert.match(await text(colleague, ".talk-person"), /You.*mic on.*Designer.*here.*AI helper.*here/, "the people row: you first, the Friend last");
+  assert.match(await text(colleague, ".talk-start"), /Call started .* · 6 earlier turns/, "earlier turns fold away");
+  assert.match(await text(colleague, ".talk-code"), /Join code.*K7M2 X9QP/);
+  assert.equal(await colleague.evaluate(`!!document.querySelector(".talk-leave")`), true, "Leave");
+  assert.match(await text(colleague, ".talk-on"), /on “everyone brings a dessert”.*on “everyone brings a dessert”/, "the Friend's note and its reply, each on its words");
+  assert.match(await text(colleague, ".talk-turn .talk-level"), /Comment/, "the AI helper's note names its level");
 
   step("Speaking now…");
-  setPerson("Maya", { speaking: true, mic: true });
+  setPerson("Designer", { speaking: true, mic: true });
   tell();
-  assert.ok(await sam.until(`[...document.querySelectorAll(".talk-live")].some((el) => el.textContent.includes("Maya") && el.textContent.includes("Speaking now…"))`, 3000), "Sam sees Maya has the floor");
-  assert.ok(await maya.until(`[...document.querySelectorAll(".talk-live")].some((el) => el.textContent.includes("You"))`, 3000), "Maya sees her own turn under way");
-  assert.match(await text(sam, ".talk-person"), /Maya\s*speaking/);
-  turn("c4", "Maya", "What if we do it at the park instead? The usual spot.");
-  setPerson("Maya", { speaking: false });
+  assert.ok(await colleague.until(`[...document.querySelectorAll(".talk-live")].some((el) => el.textContent.includes("Designer") && el.textContent.includes("Speaking now…"))`, 3000), "Colleague sees Designer has the floor");
+  assert.ok(await designer.until(`[...document.querySelectorAll(".talk-live")].some((el) => el.textContent.includes("You"))`, 3000), "Designer sees her own turn under way");
+  assert.match(await text(colleague, ".talk-person"), /Designer\s*speaking/);
+  turn("c4", "Designer", "What if we do it at the park instead? The usual spot.");
+  setPerson("Designer", { speaking: false });
   tell();
-  assert.ok(await sam.until(`!document.querySelector(".talk-live") && document.querySelector(".talk-turns").textContent.includes("The usual spot.")`, 3000), "her words come as Speaking now… goes");
+  assert.ok(await colleague.until(`!document.querySelector(".talk-live") && document.querySelector(".talk-turns").textContent.includes("The usual spot.")`, 3000), "her words come as Speaking now… goes");
 
   step("the read line moves");
-  // Sam has read what's there (each turn in view for its reading time), closes Talk (he looks away), and four turns come.
+  // Colleague has read what's there (each turn in view for its reading time), closes Talk (he looks away), and four turns come.
   const until = async (done, ms) => { for (let waited = 0; !done() && waited < ms; waited += 100) await sleep(100); return done(); };
-  assert.ok(await until(() => marks.Sam === "c4", 8000), `Sam's window reads the turns in view: its mark is ${marks.Sam}`);
-  await click(sam, ".talk-close");
-  assert.ok(await sam.until(`!document.querySelector(".talk-rail") && !!document.querySelector(".talk-pill")`, 2000), "Talk closes to its pill");
-  turn("c5", "Maya", "Park works if it doesn’t rain.");
-  turn("c6", "Maya", "Bring the big blanket?");
-  turn("c7", "Sam", "Park if it doesn’t rain; Saturday?");
-  turn("c8", "Maya", "Saturday it is.");
-  assert.ok(await sam.until(`document.querySelector(".talk-pill")?.textContent === "Talk · 3 new"`, 3000), `the pill counts what waits from the others: ${await text(sam, ".talk-pill")}`);
-  const waiting = await text(sam, ".talk-pill");
-  await click(sam, ".talk-pill");
-  assert.ok(await sam.until(`!!document.querySelector(".talk-read-line")`, 3000), "a read line where Sam left off");
-  const lineAfter = () => sam.evaluate(`document.querySelector(".talk-read-line")?.previousElementSibling?.dataset.turn ?? "gone"`);
+  assert.ok(await until(() => marks.Colleague === "c4", 8000), `Colleague's window reads the turns in view: its mark is ${marks.Colleague}`);
+  await click(colleague, ".talk-close");
+  assert.ok(await colleague.until(`!document.querySelector(".talk-rail") && !!document.querySelector(".talk-pill")`, 2000), "Talk closes to its pill");
+  turn("c5", "Designer", "Park works if it doesn’t rain.");
+  turn("c6", "Designer", "Bring the big blanket?");
+  turn("c7", "Colleague", "Park if it doesn’t rain; Saturday?");
+  turn("c8", "Designer", "Saturday it is.");
+  assert.ok(await colleague.until(`document.querySelector(".talk-pill")?.textContent === "Talk · 3 new"`, 3000), `the pill counts what waits from the others: ${await text(colleague, ".talk-pill")}`);
+  const waiting = await text(colleague, ".talk-pill");
+  await click(colleague, ".talk-pill");
+  assert.ok(await colleague.until(`!!document.querySelector(".talk-read-line")`, 3000), "a read line where Colleague left off");
+  const lineAfter = () => colleague.evaluate(`document.querySelector(".talk-read-line")?.previousElementSibling?.dataset.turn ?? "gone"`);
   const first = await lineAfter();
-  await shot(sam, "call-1440-read-line");
-  const moved = await sam.until(`(document.querySelector(".talk-read-line")?.previousElementSibling?.dataset.turn ?? "gone") !== ${JSON.stringify(first)}`, 9000);
+  await shot(colleague, "call-1440-read-line");
+  const moved = await colleague.until(`(document.querySelector(".talk-read-line")?.previousElementSibling?.dataset.turn ?? "gone") !== ${JSON.stringify(first)}`, 9000);
   assert.ok(moved, `the read line moves as the turns are read (it stayed after turn ${first})`);
-  await sam.evaluate(`document.querySelector(".talk-scroll").scrollTop = 1e6`);
-  assert.ok(await sam.until(`!document.querySelector(".talk-read-line")`, 8000), "once all is read, no line");
-  assert.equal(marks.Sam, "c8", "Sam's mark reaches the core as it moves");
-  assert.ok(await maya.until(`[...document.querySelectorAll(".talk-seen")].some((el) => el.title.includes("Sam read up to here"))`, 3000), "Maya sees how far Sam has read");
+  await colleague.evaluate(`document.querySelector(".talk-scroll").scrollTop = 1e6`);
+  assert.ok(await colleague.until(`!document.querySelector(".talk-read-line")`, 8000), "once all is read, no line");
+  assert.equal(marks.Colleague, "c8", "Colleague's mark reaches the core as it moves");
+  assert.ok(await designer.until(`[...document.querySelectorAll(".talk-seen")].some((el) => el.title.includes("Colleague read up to here"))`, 3000), "Designer sees how far Colleague has read");
 
   step("a late joiner on a phone");
-  const lee = await windowOf("Lee", { width: 390, height: 844 });
-  assert.ok(await lee.until(`/^Talk · \\d+ new/.test(document.querySelector(".talk-pill-phone")?.textContent ?? "")`, 4000), "on a phone, Talk waits on its pill with what's new");
+  const reviewer = await windowOf("Reviewer", { width: 390, height: 844 });
+  assert.ok(await reviewer.until(`/^Talk · \\d+ new/.test(document.querySelector(".talk-pill-phone")?.textContent ?? "")`, 4000), "on a phone, Talk waits on its pill with what's new");
   await sleep(400);
-  await shot(lee, "call-390-pill");
-  await click(lee, ".talk-pill-phone");
-  assert.ok(await lee.until(`!!document.querySelector(".talk-sheet .talk-people")`, 3000), "it opens as a sheet");
-  assert.match(await text(lee, ".talk-sheet .talk-code"), /Join code.*K7M2 X9QP/, "the join code on a phone");
-  assert.equal(await lee.evaluate(`!!document.querySelector(".talk-sheet .talk-leave")`), true, "Leave on a phone");
-  assert.ok(await lee.until(`/Joined .* · \\d+ turns before you.*Catch up/.test(document.querySelector(".talk-catch-up")?.textContent ?? "")`, 3000), "Catch up for what was said before Lee came");
-  await click(lee, ".talk-catch-up");
-  assert.ok(await lee.until(`(() => {
+  await shot(reviewer, "call-390-pill");
+  await click(reviewer, ".talk-pill-phone");
+  assert.ok(await reviewer.until(`!!document.querySelector(".talk-sheet .talk-people")`, 3000), "it opens as a sheet");
+  assert.match(await text(reviewer, ".talk-sheet .talk-code"), /Join code.*K7M2 X9QP/, "the join code on a phone");
+  assert.equal(await reviewer.evaluate(`!!document.querySelector(".talk-sheet .talk-leave")`), true, "Leave on a phone");
+  assert.ok(await reviewer.until(`/Joined .* · \\d+ turns before you.*Catch up/.test(document.querySelector(".talk-catch-up")?.textContent ?? "")`, 3000), "Catch up for what was said before Reviewer came");
+  await click(reviewer, ".talk-catch-up");
+  assert.ok(await reviewer.until(`(() => {
     const turn = [...document.querySelectorAll("[data-turn]")].find((el) => el.textContent.includes("Pasta night"));
     const box = document.querySelector(".talk-scroll").getBoundingClientRect(), r = turn?.getBoundingClientRect();
     return !!r && r.top >= box.top - 1 && r.top < box.bottom - 20;
-  })()`, 3000), "Catch up scrolls to the first turn Lee missed");
-  await shot(lee, "call-390");
+  })()`, 3000), "Catch up scrolls to the first turn Reviewer missed");
+  await shot(reviewer, "call-390");
 
   step("a reply on picked words reaches both windows");
-  await maya.evaluate(`(() => {
+  await designer.evaluate(`(() => {
     const part = [...document.querySelectorAll("[data-part]")].find((el) => el.textContent.includes("Saturday?"));
     const words = part.firstChild, at = words.textContent.indexOf("Saturday");
     const range = document.createRange(); range.setStart(words, at); range.setEnd(words, at + "Saturday".length);
@@ -275,51 +275,51 @@ try {
     part.closest(".talk-words").dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
   })()`);
   const replyStart = `[...document.querySelectorAll(".talk-reply-start")].find((b) => /Reply to “Saturday”/.test(b.textContent))`;
-  assert.ok(await maya.until(`!!${replyStart}`, 2000), "picked words offer a reply");
-  await maya.evaluate(`${replyStart}.click()`);
-  assert.ok(await maya.until(`document.activeElement?.id === "talk-reply-field"`, 2000), "the reply box takes the keys");
-  await maya.page("Input.insertText", { text: "Sunday works better for Lena" });
-  await maya.page("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, text: "\r" });
-  await maya.page("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+  assert.ok(await designer.until(`!!${replyStart}`, 2000), "picked words offer a reply");
+  await designer.evaluate(`${replyStart}.click()`);
+  assert.ok(await designer.until(`document.activeElement?.id === "talk-reply-field"`, 2000), "the reply box takes the keys");
+  await designer.page("Input.insertText", { text: "Sunday works better for Guest" });
+  await designer.page("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, text: "\r" });
+  await designer.page("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
   const note = core.heard.find((m) => m.type === "annotate");
-  assert.ok(note && note.thought_id === "c7" && note.quote === "Saturday" && note.text === "Sunday works better for Lena", `the note goes as a margin note on those words: ${JSON.stringify(note)}`);
-  for (const [page, who] of [[sam, "Sam"], [maya, "Maya"]]) {
-    assert.ok(await page.until(`[...document.querySelectorAll(".talk-turn")].some((el) => el.textContent.includes("on “Saturday”") && el.textContent.includes("Sunday works better for Lena"))`, 3000), `the note reaches ${who}'s window`);
+  assert.ok(note && note.thought_id === "c7" && note.quote === "Saturday" && note.text === "Sunday works better for Guest", `the note goes as a margin note on those words: ${JSON.stringify(note)}`);
+  for (const [page, who] of [[colleague, "Colleague"], [designer, "Designer"]]) {
+    assert.ok(await page.until(`[...document.querySelectorAll(".talk-turn")].some((el) => el.textContent.includes("on “Saturday”") && el.textContent.includes("Sunday works better for Guest"))`, 3000), `the note reaches ${who}'s window`);
   }
 
   step("the Friend's level");
-  await sam.evaluate(`[...document.querySelectorAll(".talk-level-step")].find((b) => b.textContent === "Ask").click()`);
+  await colleague.evaluate(`[...document.querySelectorAll(".talk-level-step")].find((b) => b.textContent === "Ask").click()`);
   assert.deepEqual(core.heard.filter((m) => m.type === "level").at(-1), { type: "level", level: "hand" });
-  assert.ok(await maya.until(`document.querySelector('.talk-level-step[aria-checked="true"]')?.textContent === "Ask" && document.querySelector(".talk-meter-says").textContent.includes("Set by Sam")`, 3000), "Maya's meter shows Sam's level");
-  await sam.evaluate(`[...document.querySelectorAll(".talk-level-step")].find((b) => b.textContent === "Speak").click()`);
+  assert.ok(await designer.until(`document.querySelector('.talk-level-step[aria-checked="true"]')?.textContent === "Ask" && document.querySelector(".talk-meter-says").textContent.includes("Set by Colleague")`, 3000), "Designer's meter shows Colleague's level");
+  await colleague.evaluate(`[...document.querySelectorAll(".talk-level-step")].find((b) => b.textContent === "Speak").click()`);
 
   step("the Friend's caption: Speaking now…, then its words as a turn");
-  const line = "Maybe ask Lena which day suits her?";
+  const line = "Maybe ask Guest which day suits her?";
   core.send({ type: "guide", kind: "caption", target: null, text: line, by: "Friend", at_ms: Date.now() });
-  assert.ok(await sam.until(`!!document.querySelector(".talk-live-ai")`, 3000), "the Friend's caption shows as Speaking now…");
-  assert.equal(await sam.evaluate(`document.querySelector(".talk-turns").textContent.includes(${JSON.stringify(line)})`), false, "its words aren't in Talk while the caption says them");
-  assert.ok(await sam.until(`!document.querySelector(".talk-live-ai") && document.querySelector(".talk-turns").textContent.includes(${JSON.stringify(line)})`, 15000), "once said, its words are a turn");
-  assert.match(await sam.evaluate(`[...document.querySelectorAll(".talk-turn")].find((el) => el.textContent.includes(${JSON.stringify(line)}))?.textContent ?? ""`), /Speak/, "naming its level");
+  assert.ok(await colleague.until(`!!document.querySelector(".talk-live-ai")`, 3000), "the Friend's caption shows as Speaking now…");
+  assert.equal(await colleague.evaluate(`document.querySelector(".talk-turns").textContent.includes(${JSON.stringify(line)})`), false, "its words aren't in Talk while the caption says them");
+  assert.ok(await colleague.until(`!document.querySelector(".talk-live-ai") && document.querySelector(".talk-turns").textContent.includes(${JSON.stringify(line)})`, 15000), "once said, its words are a turn");
+  assert.match(await colleague.evaluate(`[...document.querySelectorAll(".talk-turn")].find((el) => el.textContent.includes(${JSON.stringify(line)}))?.textContent ?? ""`), /Speak/, "naming its level");
 
   step("a turn's time shows it on the map");
-  await sam.evaluate(`[...document.querySelectorAll(".talk-turn")].find((el) => el.textContent.includes("Saturday it is."))?.querySelector("button.talk-time")?.click()`);
-  assert.ok(await sam.until(`document.body.textContent.includes("Here on the map")`, 3000), "an arrow at its point says where it is");
-  await sam.page("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
-  await sam.page("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+  await colleague.evaluate(`[...document.querySelectorAll(".talk-turn")].find((el) => el.textContent.includes("Saturday it is."))?.querySelector("button.talk-time")?.click()`);
+  assert.ok(await colleague.until(`document.body.textContent.includes("Here on the map")`, 3000), "an arrow at its point says where it is");
+  await colleague.page("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+  await colleague.page("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
 
   step("the 1440 shot: the Friend speaks, a turn waits below the read line");
   if (shots) {
-    turn("c9", "Maya", "I can bring the speaker for music.");
-    core.send({ type: "guide", kind: "caption", target: null, text: "Quick thing: Maya said Lena is away Saturday. Sunday works?", by: "Friend", at_ms: Date.now() });
-    await sam.until(`!!document.querySelector(".talk-live-ai")`, 2000);
+    turn("c9", "Designer", "I can bring the speaker for music.");
+    core.send({ type: "guide", kind: "caption", target: null, text: "Quick thing: Designer said Guest is away Saturday. Sunday works?", by: "Friend", at_ms: Date.now() });
+    await colleague.until(`!!document.querySelector(".talk-live-ai")`, 2000);
     await sleep(300);
-    await shot(sam, "call-1440");
+    await shot(colleague, "call-1440");
   }
 
-  step("Maya leaves");
-  await maya.close();
-  pages.splice(pages.indexOf(maya), 1);
-  assert.ok(await sam.until(`/Maya\s*left/.test(document.querySelector(".talk-people")?.textContent ?? "")`, 4000), `Sam sees Maya left: ${await text(sam, ".talk-person")} / ${JSON.stringify(people.map((p) => [p.name, p.here]))}`);
+  step("Designer leaves");
+  await designer.close();
+  pages.splice(pages.indexOf(designer), 1);
+  assert.ok(await colleague.until(`/Designer\s*left/.test(document.querySelector(".talk-people")?.textContent ?? "")`, 4000), `Colleague sees Designer left: ${await text(colleague, ".talk-person")} / ${JSON.stringify(people.map((p) => [p.name, p.here]))}`);
   console.log(`call-check: ok (the rules; two windows and a late one: the floor, the read line (${waiting}), catch up, a reply on both, the level, the Friend's caption kept${shots ? `; shots in ${shots}` : ""})`);
 } catch (error) {
   failed = error;

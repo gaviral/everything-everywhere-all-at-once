@@ -1,7 +1,7 @@
-{"at": 0.0, "speaker": "Ana", "text": "Okay, for the hackathon we need a demo script that shows the map building itself."}
-{"at": 4.0, "speaker": "Sam", "text": "What if we start with the placement? That's the most visual part."}
-{"at": 8.0, "speaker": "Ana", "text": "Yeah, and then a tangent. I'll talk about dinner plans and it branches off."}
-{"at": 12.0, "speaker": "Sam", "text": "Then I'll ask where was I and it jumps back. That's the hook."}
-{"at": 16.0, "speaker": "Ana", "text": "The refiner should kick in by then too. Titles cleaning up, action items appearing."}
-{"at": 20.0, "speaker": "Sam", "text": "And pictures. The memory palace pictures are what make judges stop scrolling."}
-{"at": 24.0, "text": "Where was I?", "speaker": "Sam"}
+{"at": 0.0, "speaker": "Speaker", "text": "Okay, for the hackathon we need a demo script that shows the map building itself."}
+{"at": 4.0, "speaker": "Colleague", "text": "What if we start with the placement? That's the most visual part."}
+{"at": 8.0, "speaker": "Speaker", "text": "Yeah, and then a tangent. I'll talk about dinner plans and it branches off."}
+{"at": 12.0, "speaker": "Colleague", "text": "Then I'll ask where was I and it jumps back. That's the hook."}
+{"at": 16.0, "speaker": "Speaker", "text": "The refiner should kick in by then too. Titles cleaning up, action items appearing."}
+{"at": 20.0, "speaker": "Colleague", "text": "And pictures. The memory palace pictures are what make judges stop scrolling."}
+{"at": 24.0, "text": "Where was I?", "speaker": "Colleague"}

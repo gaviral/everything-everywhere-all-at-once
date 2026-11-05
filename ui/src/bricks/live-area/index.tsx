@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { LiveArea } from "../../intake1411/live-area/LiveArea";
-import { SyntheticSource } from "../../intake1411/live-area/SyntheticSource";
-import type { ActivityEvent, BuildEvent, VersionEvent } from "../../intake1411/live-area/contracts";
+import { LiveArea } from "../../features/live-area/LiveArea";
+import { SyntheticSource } from "../../features/live-area/SyntheticSource";
+import type { ActivityEvent, BuildEvent, VersionEvent } from "../../features/live-area/contracts";
 const selected = { runId: "garden-run", branchId: "garden-layout", buildId: "garden-7" };
 function createFeed() {
   const activity = new SyntheticSource<ActivityEvent>(), build = new SyntheticSource<BuildEvent>(), version = new SyntheticSource<VersionEvent>();

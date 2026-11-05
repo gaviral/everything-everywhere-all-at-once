@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { DemoParts } from "../../intake1411/demo-parts/DemoParts";
-import { createSyntheticAdapter } from "../../intake1411/demo-parts/synthetic";
+import { DemoParts } from "../../features/demo-parts/DemoParts";
+import { createSyntheticAdapter } from "../../features/demo-parts/synthetic";
 import type { BrickProps } from "../contract";
 import "./example.css";
 

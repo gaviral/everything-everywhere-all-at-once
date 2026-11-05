@@ -55,23 +55,23 @@ try {
   assert.match(await painted(), /you@example\.com/);
   assert.match(await painted(), /\+1 \(555\) 010-0100/);
   assert.match(await painted(), /Message to Example recipient · dry run/);
-  assert.doesNotMatch(await painted(), /alex\.morgan@example\.com|7946|Unlisted Recipient/);
+  assert.doesNotMatch(await painted(), /visitor\.morgan@example\.com|7946|Unlisted Recipient/);
   assert.equal(await evaluate(`document.querySelector('#date').textContent`), 'Meeting: 2026-11-04 · 42 items');
-  assert.equal(await evaluate(`document.querySelector('#email').value`), 'alex.morgan@example.com');
-  assert.equal(await evaluate(`document.querySelector('#contact a').getAttribute('href')`), 'mailto:alex.morgan@example.com');
+  assert.equal(await evaluate(`document.querySelector('#email').value`), 'visitor.morgan@example.com');
+  assert.equal(await evaluate(`document.querySelector('#contact a').getAttribute('href')`), 'mailto:visitor.morgan@example.com');
   assert.equal(await evaluate(`document.querySelector('#contact a').title`), 'you@example.com');
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('#contact')).opacity`), '0');
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('#email')).webkitTextFillColor`), 'rgba(0, 0, 0, 0)');
   // Private names are configured without painting the entry, then replace whole words only.
   await evaluate(`document.querySelector('details').open=true;document.querySelector('#placeholder-mode-name').focus()`);
-  await page('Input.insertText', { text: 'Alex Morgan' });
+  await page('Input.insertText', { text: 'Example Person' });
   await evaluate(`document.querySelector('.placeholder-mode-add button').click()`);
   await until(`getComputedStyle(document.querySelector('#person')).opacity==='0'`);
   assert.match(await painted(), /Person 1/);
-  assert.doesNotMatch(await painted(), /Alex Morgan/);
+  assert.doesNotMatch(await painted(), /Example Person/);
   // A DOM selection is still original, and the real state reaches a synthetic send handler.
   await evaluate(`{const range=document.createRange();range.selectNodeContents(document.querySelector('#contact a'));const selection=getSelection();selection.removeAllRanges();selection.addRange(range);document.querySelector('#send').click()}`);
-  assert.deepEqual(await evaluate('window.fixture.sent[0]'), { to: 'Unlisted Recipient', email: 'alex.morgan@example.com', edited: 'alex.morgan@example.com', selected: 'alex.morgan@example.com' });
+  assert.deepEqual(await evaluate('window.fixture.sent[0]'), { to: 'Unlisted Recipient', email: 'visitor.morgan@example.com', edited: 'visitor.morgan@example.com', selected: 'visitor.morgan@example.com' });
   await evaluate(`document.querySelector('#email').focus();document.querySelector('#email').select()`);
   await page('Input.insertText', { text: 'new.person@example.com' });
   await until(`[...document.querySelectorAll('.placeholder-mode-field-cover')].some(e=>e.textContent==='you@example.com') && document.querySelector('#email').value==='new.person@example.com'`);
@@ -86,15 +86,15 @@ try {
   await writeFile(join(artifacts, 'phone.png'), Buffer.from((await page('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
   await evaluate(`document.querySelector('#toggle').click()`);
   await until(`!document.querySelector('.placeholder-mode') && !document.querySelector('.placeholder-mode-hidden-text') && !document.querySelector('.placeholder-mode-field-cover')`);
-  assert.equal(await evaluate(`document.querySelector('#contact a').title`), 'alex.morgan@example.com');
+  assert.equal(await evaluate(`document.querySelector('#contact a').title`), 'visitor.morgan@example.com');
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('#contact')).opacity`), '1');
   assert.equal(await evaluate(`document.querySelector('#email').value`), 'new.person@example.com');
   await evaluate(`document.querySelector('#toggle').click()`);
   await until(`document.querySelector('.placeholder-mode-hidden-text')`);
-  assert.equal(await evaluate(`document.querySelector('#person').textContent`), 'Alex Morgan');
+  assert.equal(await evaluate(`document.querySelector('#person').textContent`), 'Example Person');
   assert.equal(await evaluate(`document.querySelector('#person').classList.contains('placeholder-mode-hidden-text')`), false, 'names discarded on unmount');
   assert.deepEqual(await evaluate('window.fixture.errors'), []);
-  assert.deepEqual(await evaluate('window.fixture.source'), { name: 'Alex Morgan', email: 'alex.morgan@example.com', phone: '+44 20 7946 0958', recipient: 'Unlisted Recipient' });
+  assert.deepEqual(await evaluate('window.fixture.source'), { name: 'Example Person', email: 'visitor.morgan@example.com', phone: '+44 20 7946 0958', recipient: 'Unlisted Recipient' });
   console.log(`PASS placeholder-mode: focused types, example rendering, names, native edits, selection, original send payload, live replacement, off/on, desktop and phone. Screenshots: ${artifacts}`);
 } finally {
   if (browser.exitCode === null) { const exited = once(browser, 'exit'); browser.kill('SIGTERM'); await exited; }

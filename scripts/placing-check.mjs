@@ -11,7 +11,7 @@ const server = await uiServer();
 try {
   const core = await server.ssrLoadModule("/src/core.ts");
   const { pendingLabel, landingToFollow } = core;
-  const thought = (id, thread_id, at_ms, extra = {}) => ({ id, thread_id, at_ms, speaker: "Ana", text: id, point: id,
+  const thought = (id, thread_id, at_ms, extra = {}) => ({ id, thread_id, at_ms, speaker: "Speaker", text: id, point: id,
     placed: !!thread_id, complete: true, unclear: "", place_ms: 10, ...extra });
 
   // The pill: "Finding a thread" only while its own call runs.
@@ -31,40 +31,40 @@ try {
   // Past the hosted site's daily limit the key is held back, not missing: the pill says when it's placed.
   assert.equal(pendingLabel(said, idle, 1_000, true, false, true), "Saved · placed tomorrow");
 
-  // A failed; newer B landed on T2, so Ana is on T2. A lands on T1 at last and doesn't move her: not followed.
+  // A failed; newer B landed on T2, so Speaker is on T2. A lands on T1 at last and doesn't move her: not followed.
   const threads = ["T1", "T2", "T3"].map((id) => ({ id, title: id }));
-  const before = { threads, active: "T2", active_by: { Ana: "T2" },
+  const before = { threads, active: "T2", active_by: { Speaker: "T2" },
     thoughts: [thought("A", null, 1), thought("B", "T2", 2)] };
   const late = { ...before, thoughts: [thought("A", "T1", 1), thought("B", "T2", 2)] };
   const retried = new Set(["A"]);
-  let out = landingToFollow(late, [late.thoughts[0]], "Ana", false, retried, null);
+  let out = landingToFollow(late, [late.thoughts[0]], "Speaker", false, retried, null);
   assert.equal(out.landing, null, "a late landing isn't followed");
   assert.deepEqual(out.held, { thread: "T1", thought: "A", mine: true });
   // If the next message moves her to it after all (its move arrived separately), that's followed with the thought.
-  const movedThere = { ...late, active: "T1", active_by: { Ana: "T1" } };
-  assert.deepEqual(landingToFollow(movedThere, [], "Ana", true, retried, out.held).landing, out.held);
+  const movedThere = { ...late, active: "T1", active_by: { Speaker: "T1" } };
+  assert.deepEqual(landingToFollow(movedThere, [], "Speaker", true, retried, out.held).landing, out.held);
   // A move elsewhere doesn't pick it up.
-  assert.equal(landingToFollow({ ...late, active: "T3" }, [], "Ana", true, retried, out.held).landing, null);
+  assert.equal(landingToFollow({ ...late, active: "T3" }, [], "Speaker", true, retried, out.held).landing, null);
   // Never failed: followed as ever, also when his place stayed ("…, where was I?" in the same breath).
-  assert.deepEqual(landingToFollow(late, [late.thoughts[0]], "Ana", false, new Set(), null).landing, { thread: "T1", thought: "A", mine: true });
+  assert.deepEqual(landingToFollow(late, [late.thoughts[0]], "Speaker", false, new Set(), null).landing, { thread: "T1", thought: "A", mine: true });
   // Late, but on the thread she's on, or with her place moving in the same message: followed.
   const onIt = { ...late, active: "T1" };
-  assert.deepEqual(landingToFollow(onIt, [late.thoughts[0]], "Ana", false, retried, null).landing.thought, "A");
-  assert.deepEqual(landingToFollow(late, [late.thoughts[0]], "Ana", true, retried, null).landing.thought, "A");
+  assert.deepEqual(landingToFollow(onIt, [late.thoughts[0]], "Speaker", false, retried, null).landing.thought, "A");
+  assert.deepEqual(landingToFollow(late, [late.thoughts[0]], "Speaker", true, retried, null).landing.thought, "A");
   // Someone else's retry is theirs: their landing is followed as any other's (only your own moves your view).
-  const sams = { ...late, thoughts: [thought("A", "T1", 1, { speaker: "Sam" }), late.thoughts[1]] };
-  assert.equal(landingToFollow(sams, [sams.thoughts[0]], "Ana", false, retried, null).landing.mine, false);
+  const sams = { ...late, thoughts: [thought("A", "T1", 1, { speaker: "Colleague" }), late.thoughts[1]] };
+  assert.equal(landingToFollow(sams, [sams.thoughts[0]], "Speaker", false, retried, null).landing.mine, false);
   // A fresh landing of his in the same message is still followed, whichever came first in the list.
   const both = { ...late, active: "T3", thoughts: [...late.thoughts, thought("C", "T3", 3)] };
-  out = landingToFollow(both, [both.thoughts[0], both.thoughts[2]], "Ana", false, retried, null);
+  out = landingToFollow(both, [both.thoughts[0], both.thoughts[2]], "Speaker", false, retried, null);
   assert.equal(out.landing.thought, "C");
   // A late thought cut in two: its rest (same speaker, same time, right after it) lands just as late.
   const cut = { ...late, thoughts: [thought("A", "T1", 1), thought("A2", null, 1), thought("B", "T2", 2)] };
   const tries = new Set(["A"]);
-  landingToFollow(cut, [cut.thoughts[0]], "Ana", false, tries, null);
+  landingToFollow(cut, [cut.thoughts[0]], "Speaker", false, tries, null);
   assert.ok(tries.has("A2"));
   const restLanded = { ...cut, thoughts: [cut.thoughts[0], thought("A2", "T3", 1), cut.thoughts[2]] };
-  assert.equal(landingToFollow(restLanded, [restLanded.thoughts[1]], "Ana", false, tries, null).landing, null);
+  assert.equal(landingToFollow(restLanded, [restLanded.thoughts[1]], "Speaker", false, tries, null).landing, null);
 
   // A jump shows its own point (2026-11-01 bug hunt): find's answer in another thread lit up, then ~120 ms later the
   // follow its move set off highlighted the thread's newest point instead. Neither order may leave that follow.

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import PlaceholderMode, { styles } from "../index";
 
-const example = Object.freeze({ name: "Alex Morgan", email: "alex.morgan@example.com", phone: "+44 20 7946 0958", recipient: "Unlisted Recipient" });
+const example = Object.freeze({ name: "Example Person", email: "visitor.morgan@example.com", phone: "+44 20 7946 0958", recipient: "Unlisted Recipient" });
 declare global { interface Window { fixture: { source: typeof example; sent: unknown[]; errors: string[] } } }
 window.fixture = { source: example, sent: [], errors: [] };
 window.addEventListener("error", event => window.fixture.errors.push(event.message));

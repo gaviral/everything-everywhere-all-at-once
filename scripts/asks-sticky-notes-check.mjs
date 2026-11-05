@@ -11,8 +11,8 @@ if (ready()) { console.log(`SKIP sticky-notes mounted checks: ${ready()}`); proc
 const shots = mkdtempSync(join(tmpdir(), "sticky-notes-shots-"));
 const at = Date.UTC(2026, 0, 2);
 const topic = { id: "topic-a", title: "Synthetic garden", parent_id: null, status: "open", last_point: "", touched_ms: at, tags: [], picture: null, dropped_by: "" };
-const thought = id => ({ id, speaker: "Sam", text: "  Keep the blue pots.\nSame words.  ", point: "A summarized point", thread_id: topic.id, placed: true, complete: true, unclear: "", at_ms: at + (id === "source-b" ? 1000 : 0), place_ms: 0 });
-let world = { threads: [topic], thoughts: [thought("source-a"), thought("source-b")], active: topic.id, active_by: { Sam: topic.id, Lee: topic.id },
+const thought = id => ({ id, speaker: "Colleague", text: "  Keep the blue pots.\nColleaguee words.  ", point: "A summarized point", thread_id: topic.id, placed: true, complete: true, unclear: "", at_ms: at + (id === "source-b" ? 1000 : 0), place_ms: 0 });
+let world = { threads: [topic], thoughts: [thought("source-a"), thought("source-b")], active: topic.id, active_by: { Colleague: topic.id, Reviewer: topic.id },
   ai: [], anchors: {}, notes: {}, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: true, recaps: [], proposals: [] };
 let identity = "synthetic-map-a";
 const core = await standInCore(() => [{ type: "map_identity", id: identity }, { type: "snapshot", world }], { door: { room: true, member: true } });
@@ -62,7 +62,7 @@ try {
     await page.page("Page.enable");
     await page.page("Page.addScriptToEvaluateOnNewDocument", { source: `
       localStorage.setItem('e2a2o.toured','1');
-      if(!sessionStorage.getItem('e2a2o.joined')) sessionStorage.setItem('e2a2o.joined','Sam');
+      if(!sessionStorage.getItem('e2a2o.joined')) sessionStorage.setItem('e2a2o.joined','Colleague');
       window.errors=[]; addEventListener('error',e=>{if(!e.message.startsWith('ResizeObserver')) errors.push(e.message)});
       addEventListener('unhandledrejection',e=>errors.push(String(e.reason)));
       // Count the form's unique capture handler; the baseline app has its own keyboard listeners.
@@ -128,11 +128,11 @@ try {
   await openNotes(desktop);
   assert.deepEqual(await desktop.evaluate(`[...document.querySelectorAll('[data-sticky-id]')].map(e=>e.dataset.stickyId)`), ["source-b", "source-a"]);
   assert.equal(await desktop.evaluate(`document.querySelector('.sticky-notes-draft').value`), "Unsent synthetic draft", "same identity reload recovery");
-  const saved = await desktop.evaluate(`sessionStorage.getItem(${JSON.stringify(layoutKey(identity, "Sam"))})`);
+  const saved = await desktop.evaluate(`sessionStorage.getItem(${JSON.stringify(layoutKey(identity, "Colleague"))})`);
   await toggle(desktop);
   assert.ok(await desktop.until(`!document.querySelector('[data-brick="sticky-notes"]')`));
   assert.equal(await desktop.evaluate("stickyListeners.size"), baselineListeners, "off cleans form listeners");
-  assert.equal(await desktop.evaluate(`sessionStorage.getItem(${JSON.stringify(layoutKey(identity, "Sam"))})`), saved, "off retains layout/draft");
+  assert.equal(await desktop.evaluate(`sessionStorage.getItem(${JSON.stringify(layoutKey(identity, "Colleague"))})`), saved, "off retains layout/draft");
   core.send({ type: "notice", message: "Synthetic late result" });
   assert.equal(await desktop.evaluate(`!!document.querySelector('.sticky-notes-form')`), false, "late traffic cannot open an off brick");
   const messageTypes = [...new Set(core.heard.slice(sent).map(message => message.type))];
@@ -147,7 +147,7 @@ try {
   assert.equal(await desktop.evaluate(`document.querySelector('.sticky-notes-draft').value`), "Unsent synthetic draft");
 
   // A different same-origin tab can change the cache; only this connection's handshake scopes notes.
-  await desktop.evaluate(`localStorage.setItem('e2a2o.last-map.Sam', 'unrelated-tab-map')`);
+  await desktop.evaluate(`localStorage.setItem('e2a2o.last-map.Colleague', 'unrelated-tab-map')`);
   core.send({ type: "snapshot", world });
   assert.ok(await desktop.until(`document.querySelectorAll('.sticky-notes-note').length === 2`), "another tab's cached map cannot switch this layout");
   assert.equal(await desktop.evaluate(`document.querySelector('.sticky-notes-draft').value`), "Unsent synthetic draft");
@@ -159,7 +159,7 @@ try {
   assert.equal(await desktop.evaluate(`document.querySelectorAll('[data-sticky-id]').length`), 0, "another map with identical source IDs is isolated");
   assert.equal(await desktop.evaluate(`document.querySelector('.sticky-notes-draft').value`), "");
   identity = "synthetic-map-a";
-  await desktop.evaluate(`sessionStorage.setItem('e2a2o.joined','Lee')`);
+  await desktop.evaluate(`sessionStorage.setItem('e2a2o.joined','Reviewer')`);
   await desktop.page("Page.reload");
   assert.ok(await desktop.until(`!!document.querySelector('.sticky-notes-trigger')`, 10000));
   await openNotes(desktop);

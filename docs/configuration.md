@@ -49,12 +49,12 @@ MODEL_API_KEY=
 # --json and --prompt-file are appended; brief text is only written to the prompt file.
 # HELPERS_CMD=muse exec
 # For an offline runner check: HELPERS_CMD=muse exec --provider echo
-# Optional, Full only: who "ask Mia to …" may message, as name=handle (a phone number or Apple ID email), comma-separated.
-# MESSAGES_TO=Mia=+15551234567, Sam=sam@example.com
+# Optional, Full only: who "ask Recipient to …" may message, as name=handle (a phone number or Apple ID email), comma-separated.
+# MESSAGES_TO=Recipient=+15551234567, Colleague=colleague@example.com
 # Optional, Full only: really send through Messages when the 5-second countdown ends. Off, every message is a dry run.
 # MESSAGES_SEND=on
 # Optional, Full only: email allow-list, name=address. Addresses stay in the core. Features > Email can turn it off.
-# EMAIL_TO=Mia=mia@example.com, Sam=sam@example.com
+# EMAIL_TO=Recipient=recipient@example.com, Colleague=colleague@example.com
 # Optional, Full only: send via this laptop's Mail.app after the countdown. Off is a dry run; hosted stays talk.
 # EMAIL_SEND=on
 # Optional, Full only: the GitHub card ("show me the open pull requests") reads gh on this laptop, never writes.

@@ -69,7 +69,7 @@ try {
   assert.match(app, /searchFields\(thread, thoughts, ideas, actions\)/, "App.tsx indexes a card's ideas and reminders through searchFields");
   for (const [file, queries] of [
     ["student-week", { landlord: "Rent is due", zoom: "Group project meeting", "gift card": "Mom's birthday", "rent landlord": "Rent is due" }],
-    ["founder-day", { debrief: "Hiring: senior engineer", "checkout errors": "Bug investigation steps", "revenue retention": "Pitch deck updates", "dr chen": "Mom's appointment" }],
+    ["founder-day", { debrief: "Hiring: senior engineer", "checkout errors": "Bug investigation steps", "revenue retention": "Pitch deck updates", "dr example": "Mom's appointment" }],
   ]) {
     const threads = new Map(), thoughts = [], ideas = [], actions = [];
     for (const line of readFileSync(new URL(`../samples/${file}.jsonl`, import.meta.url), "utf8").split("\n").filter(Boolean)) {

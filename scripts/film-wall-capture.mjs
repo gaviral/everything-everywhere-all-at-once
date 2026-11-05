@@ -117,7 +117,7 @@ function activity(id) {
 }
 async function captureSavedQuestions(capture, fill) {
       for(const [question,answer] of [
-        ['Who welcomes volunteers?','Mira welcomes volunteers at the front desk.'],
+        ['Who welcomes volunteers?','Organizer welcomes volunteers at the front desk.'],
         ['Which tools go on the first table?','Put screwdrivers and pliers on the first table.'],
         ['When does the repair night open?','The hall opens at six on Saturday.'],
         ['How will we sort incoming repairs?','Use separate trays for fabric, bikes, and small appliances.']]){

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { BrickProps } from "../contract";
-import { SketchExchange, type HostAdapter, type Envelope, type Session } from "../../msg1351/sketch-exchange";
+import { SketchExchange, type HostAdapter, type Envelope, type Session } from "../../features/sketch-exchange";
 import "./example.css";
 
 /** Two local sessions share only this mounted example; no network or device access. */

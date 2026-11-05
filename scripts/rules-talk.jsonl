@@ -9,7 +9,7 @@
 {"at": 48.0, "text": "Hmm, okay.", "expect": "filler"}
 {"at": 52.0, "text": "Next one.", "expect": "next"}
 {"at": 56.0, "text": "Go back.", "expect": "back"}
-{"at": 60.0, "text": "Did I tell Jordan that the venue changed?", "expect": "thought"}
+{"at": 60.0, "text": "Did I tell Coordinator that the venue changed?", "expect": "thought"}
 {"at": 66.0, "text": "Wait, what was I saying?", "expect": "back"}
 {"at": 72.0, "text": "The caterer needs the final headcount by Friday, where was I?", "expect": "thought+back"}
 {"at": 79.0, "text": "Yeah.", "expect": "filler"}

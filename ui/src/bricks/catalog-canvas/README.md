@@ -20,5 +20,3 @@ The parts have one job each:
 Focused check: `node ui/src/bricks/catalog-canvas/checks/check.mjs`.
 
 The final run passed scoped TypeScript, a production build, all 120 registered feature mappings, TV fit, phone word bounds, empty-map content, panel/view/built-in trials, keep/restore, scroll/focus restoration, voice deduplication and zero microphone requests. Screenshots and build output remain ignored in `.check-artifacts/`.
-
-The host currently excludes the existing `speech-review` manifest: its description has 91 characters, beyond the 90-character limit. That unrelated feature was left untouched. No `preflight.sh` exists in this checkout; the hub owns landing and its preflight. No push was performed.

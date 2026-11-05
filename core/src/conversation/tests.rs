@@ -133,14 +133,14 @@ fn speech_bound_preserves_numbers_and_abbreviations() {
     for text in [
         "Use 127.0.0.1 for loopback.",
         "Try 3.14 as the value. Then use v2.1. Stop there.",
-        "Ask Dr. Patel in the U.S. office. Try e.g. a short call. Then wait.",
-        "Ask Prof. Lee and J. Smith about the Ph.D. course. Then wait.",
+        "Ask Dr. Example in the U.S. office. Try e.g. a short call. Then wait.",
+        "Ask Prof. Reviewer and R. Example about the Ph.D. course. Then wait.",
         "Use example.com for the link. It costs $2.50. Keep it simple.",
         "Say “ready.” Then ask “why?” Finally, wait!",
     ] {
         assert_eq!(bounded(text), text, "{text}");
     }
-    let three = "Ask Dr. Patel at 127.0.0.1. Try e.g. version 2.1. Then wait.";
+    let three = "Ask Dr. Example at 127.0.0.1. Try e.g. version 2.1. Then wait.";
     assert_eq!(bounded(&format!("{three} An extra sentence.")), three);
     assert_eq!(bounded("One?! Two... Three! Four."), "One?! Two... Three!");
     assert_eq!(
@@ -151,7 +151,7 @@ fn speech_bound_preserves_numbers_and_abbreviations() {
 
 #[tokio::test]
 async fn fake_meta_reply_speaks_three_intact_sentences() {
-    let expected = "Ask Dr. Patel at 127.0.0.1. Try e.g. version 2.1. Then wait.";
+    let expected = "Ask Dr. Example at 127.0.0.1. Try e.g. version 2.1. Then wait.";
     let f = Fixture::new(200, &format!("{expected} A fourth sentence."), 1, true).await;
     let _here = enable(&f.core, "you", 1);
     let mut updates = f.core.updates.subscribe();

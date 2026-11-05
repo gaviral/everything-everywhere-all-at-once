@@ -79,11 +79,11 @@ try {
       writeFileSync(join(shots, `guide-held-${scene}-${width}-${scheme}.png`), Buffer.from(data, "base64"));
     };
     // Use the shell's existing public seam, with no new production test globals.
-    await evaluate(`window.e2a2oHold({ id: "other", by: "Alex", main: "A separate question?", rest: "From another feature.",
+    await evaluate(`window.e2a2oHold({ id: "other", by: "Visitor", main: "A separate question?", rest: "From another feature.",
       answer: () => { document.body.dataset.otherAnswer = String(+(document.body.dataset.otherAnswer || 0) + 1); },
       later: () => { document.body.dataset.otherLater = "yes"; } })`);
     guide("First detail. **Which day?**");
-    guide("Second question?", "Sam");
+    guide("Second question?", "Colleague");
     await check(phone ? 'document.querySelector(".shell-held-chip .shell-count")?.textContent === "3"'
       : 'document.querySelector(".guide-held-text")?.textContent.includes("Which day?")', "FIFO first");
     if (phone) await click(".shell-held-chip");
@@ -129,7 +129,7 @@ try {
     assert.equal((await ids())[0], ordered[2], "waiting second item precedes Later");
     await click(`[data-held-id="${firstId}"] .guide-held-acts button:last-child`);
     await check(`!document.querySelector('[data-held-id="${firstId}"]')`, "Drop it removes held item");
-    guide("", "Sam");
+    guide("", "Colleague");
     await check('document.querySelectorAll("[data-held-id]").length === 1 && !!document.querySelector("[data-held-id=other]")', "sender withdrawal preserves unrelated entry");
     await click(".shell-held-acts button:first-child");
     await check('!document.querySelector("[data-slot=held]")', "empty region cleaned up");
@@ -209,7 +209,7 @@ try {
 
     // Ordinary shell cards keep the same chip behavior and native action callbacks.
     for (const action of ["answer", "later"]) {
-      await evaluate(`window.e2a2oHold({ id: "ordinary", by: "Alex", main: "An ordinary keyboard question?",
+      await evaluate(`window.e2a2oHold({ id: "ordinary", by: "Visitor", main: "An ordinary keyboard question?",
         answer: () => { document.body.dataset.ordinaryAnswer = String(+(document.body.dataset.ordinaryAnswer || 0) + 1); },
         later: () => { document.body.dataset.ordinaryLater = String(+(document.body.dataset.ordinaryLater || 0) + 1); } })`);
       await check(phone ? '!!document.querySelector(".shell-held-chip")' : '!!document.querySelector("[data-held-id=ordinary]")', `ordinary ${action} held`);
@@ -285,7 +285,7 @@ try {
       import { holdQuestion, useHeld } from "/src/shell/held.ts";
       const socket = new WebSocket("ws://127.0.0.1:${core.port}/ws");
       socket.onmessage = event => receiveGuide(JSON.parse(event.data));
-      holdQuestion({ id: "other", by: "Alex", main: "Unrelated" });
+      holdQuestion({ id: "other", by: "Visitor", main: "Unrelated" });
       function Fixture() {
         const [mounted, mount] = useState(true), [ai, setAi] = useState(["Friend"]), [tick, setTick] = useState(0);
         const held = useHeld();
@@ -320,7 +320,7 @@ try {
   await browser.evaluate('document.querySelector("#identities").click()');
   assert.ok(await browser.until('JSON.parse(document.querySelector("#store").textContent).some(q => q.id.startsWith("guide:") && q.ai === false)'));
   // A shell entry added later stays at the front through an unrelated render: no store resync loop.
-  await browser.evaluate('window.e2a2oHold({ id: "later-other", by: "Alex", main: "Another" }); document.querySelector("#rerender").click()');
+  await browser.evaluate('window.e2a2oHold({ id: "later-other", by: "Visitor", main: "Another" }); document.querySelector("#rerender").click()');
   await sleep(100);
   assert.equal(await browser.evaluate('JSON.parse(document.querySelector("#store").textContent)[0].id'), "later-other");
   await browser.evaluate('document.querySelector("#unmount").click()');

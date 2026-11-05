@@ -22,8 +22,8 @@ if (shots) mkdirSync(shots, { recursive: true });
 const sample = {
   updated: "2026-11-03T14:40:00Z",
   rows: [
-    { label: "Claude weekly", used_pct: 67 },
-    { label: "ChatGPT", left: "25 messages left" },
+    { label: "Weekly plan", used_pct: 67 },
+    { label: "Chat plan", left: "25 messages left" },
     { label: "Meta API", spent_usd: 12.3, cap_usd: 100 },
     { label: "Muse", left: "10 credits left" },
   ],
@@ -117,7 +117,7 @@ try {
     } else {
       assert.ok(await browser.until('document.querySelectorAll(".usage-row").length === 5'), "four file allowances and the core's own row");
       const rows = await browser.evaluate('[...document.querySelectorAll(".usage-row")].map(row => ({ label: row.querySelector(".usage-label").textContent, left: row.querySelector(".usage-left").textContent, at: row.querySelector("time")?.dateTime }))');
-      assert.deepEqual(rows.map((row) => row.label), ["Claude weekly", "ChatGPT", "Meta API", "Muse", "Meta API · core (1h)"]);
+      assert.deepEqual(rows.map((row) => row.label), ["Weekly plan", "Chat plan", "Meta API", "Muse", "Meta API · core (1h)"]);
       assert.deepEqual(rows.map((row) => row.left), ["33% left", "25 messages left", "$87.70 left", "10 credits left", "400 of 400 calls left · 0 used"]);
       assert.ok(rows.slice(0, 4).every((row) => row.at === new Date(sample.updated).toISOString()), "file rows use the file's as-of time");
       assert.ok(Math.abs(Date.now() - Date.parse(rows[4].at)) < 60_000, "the core row has its own current as-of time");

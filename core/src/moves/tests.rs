@@ -556,9 +556,9 @@ async fn delete_that_with_nothing_just_before_deletes_your_latest_with_undo() {
 #[tokio::test]
 async fn undo_brings_a_point_back_to_its_thread_even_after_someone_else_emptied_it() {
     let f = Fixture::new(slipped());
-    // You delete one of Garden's two points; Ben then deletes the other, and Garden leaves the map.
+    // You delete one of Garden's two points; Participant then deletes the other, and Garden leaves the map.
     let yours = f.watch(|core| click_delete(core, "you", "a"));
-    let bens = f.watch(|core| click_delete(core, "ben", "w"));
+    let bens = f.watch(|core| click_delete(core, "participant", "w"));
     assert!(bens.contains(&"removed T1".to_string()), "{bens:?}");
     // Your Undo: Garden comes back with your point, not a point on no card.
     let undone = f.watch(|core| catalog::undo_click(core, "you", undoable(&yours)));

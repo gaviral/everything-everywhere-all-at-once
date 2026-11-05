@@ -23,7 +23,7 @@ const threads = [thread(1, "Mom's birthday"), thread(2, "Stats midterm")];
 const world = {
   threads, active: "T1", active_by: { you: "T1" }, suggestions: [], actions: [], merged: {}, apps: [], apps_seeded: true, recaps: [], notes: {}, proposals: [], ai: [],
   thoughts: [thought("a1", "Mom's birthday is Saturday", "T1", 1), thought("a2", "She keeps talking about the pottery class on Main Street", "T1", 2),
-    thought("a3", "If it's under eighty dollars, I'm booking it tonight", "T1", 3), thought("b1", "My stats midterm is Thursday", "T2", 4), thought("b2", "I'll study with Priya on Wednesday", "T2", 5)],
+    thought("a3", "If it's under eighty dollars, I'm booking it tonight", "T1", 3), thought("b1", "My stats midterm is Thursday", "T2", 4), thought("b2", "I'll study with Partner on Wednesday", "T2", 5)],
 };
 /** A job message as the core sends it: flat, with who and when. */
 const job = (id, status, extra = {}) => ({ type: "job", id, title: `Task ${id}`, status, demo: false, by: "Helper", at_ms: Date.now(), ...extra });
@@ -281,7 +281,7 @@ try {
       await settle();
       const pill = await evaluate(rect(".talk-pill")), badge = await evaluate(rect(".work-spine-badge")), label = await evaluate(rect(".work-spine-demo"));
       assert.ok(badge.top >= pill.bottom && label.top >= pill.bottom, `the lane's words start below the Talk pill: ${JSON.stringify({ pill, badge, label })}`);
-      call(person("you", false), person("Maya", false));
+      call(person("you", false), person("Designer", false));
       await check('!!document.querySelector(".talk-rail") && !document.querySelector(".work-spine-lane") && !!document.querySelector(".work-spine-card")', "two people: Talk's rail holds the page's right, so the Work spine is the card");
       assert.equal(await evaluate('document.documentElement.style.getPropertyValue("--room-right")'), "", `${where}: and the page's room is given back`);
       call(person("you", false));
