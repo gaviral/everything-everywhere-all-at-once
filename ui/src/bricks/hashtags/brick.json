@@ -1,0 +1,8 @@
+{
+  "id": "hashtags",
+  "name": "Hashtags",
+  "does": "Gather thoughts across topics with #tags, typed or spoken as “hashtag rollback”.",
+  "kind": "view",
+  "defaultOn": false,
+  "demoSafe": true
+}
