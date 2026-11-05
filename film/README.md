@@ -87,6 +87,37 @@ the zoom. `node film/wall-check.mjs` checks the reveal, backward seeking,
 looping media, black ending and exact exported frame count. This is an offline
 film tool; it adds no app runtime dependency.
 
+### Detailed square field
+
+`FILM_WALL_STATES=1` enables Paper capture and records actual input, selection,
+and result states. `FILM_SELECT_STATES=1` visits the feature's selectors;
+`FILM_DEEP_STATES=1` also visits connected topics and part dimensions, pins
+source thoughts, and saves fictional repair-night questions on the scratch map.
+Read-only fields and microphone controls are excluded. Use a fresh scratch
+core and external output folder for these captures.
+
+`film/square-crops.py` finds high-detail square regions, follows changed regions
+in subsequent states, and rejects sparse or visually repeated crops. It needs
+Pillow and NumPy, only as offline tooling. `film/wall-2-media.py MEDIA_ROOT`
+combines these state folders with real clip excerpts, writes the crop/rejection
+audit, enforces at least 200 unique tiles and at most one-third dark tiles, and
+creates `wall-2-shots.json`. It never pads the count with repeated frames.
+
+The `wall` shot's `layout: "field"` fills a 16×9 base grid with square tiles.
+Some cells contain four smaller squares, so a field of hundreds fits exactly,
+without partial rows. Related activity states remain together. Its opening
+retains the original finished Repair Night frame, then crops naturally into
+the first square during a single smooth pull-back. The field holds for one
+second and lifts to white, retaining “Recorded demonstrations”. All movement
+and video seeking are evaluated at frame time. A fixed-resolution software
+canvas with fixed bilinear sampling keeps image resampling independent of earlier camera frames.
+Stills are decoded and frozen at native resolution before zooming; field frames
+export directly from that canvas. Checks compare decoded pixels, including a
+second fresh renderer, rather than PNG compression bytes.
+`wall-field-check.mjs` checks
+complete square coverage and writes eight actual review frames; review those
+at film size before accepting a take.
+
 ## Incremental cut
 
 `cut.mjs` is the working-film entrypoint. By default its shots, `cuts/`, and

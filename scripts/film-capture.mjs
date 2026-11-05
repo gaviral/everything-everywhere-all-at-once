@@ -1,4 +1,6 @@
-// Real-app film capture. No model fixtures, microphone, saved credentials or generated results.
+// Real-app film capture. No model fixtures, physical microphone, saved credentials or generated results.
+// FILM_SPOKEN=1 captures spoken and spoken-build using only Chrome's file-backed fake audio device.
+// FILM_VOICE_DIR selects the supplied WAV folder; defaults to ../voice/user beside FILM_OUT.
 // FILM_OUT=/path/to/clips node scripts/film-capture.mjs captures all ten clips.
 // Without FILM_URL, builds and starts a fresh scratch core on 4466; Keychain supplies its key in memory.
 // Set FILM_KEYCHAIN_SERVICE and FILM_KEYCHAIN_ACCOUNT to the private Muse Keychain entry.
@@ -9,7 +11,7 @@ import assert from 'node:assert/strict';
 import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { mkdirSync, mkdtempSync, writeFileSync, copyFileSync, existsSync, readFileSync, realpathSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync, copyFileSync, existsSync, readFileSync, realpathSync, appendFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -18,6 +20,8 @@ const url = new URL(process.env.FILM_URL || 'http://127.0.0.1:4466');
 assert(['localhost', '127.0.0.1'].includes(url.hostname), 'Use an isolated local core');
 assert(!['4360', '4399'].includes(url.port), 'Reserved port');
 const output = resolve(process.env.FILM_OUT || 'film-clips');
+const spokenMode = process.env.FILM_SPOKEN === '1';
+assert(!spokenMode || !process.env.FILM_PROFILE, 'Spoken mode requires a new isolated Chrome profile');
 const profile = process.env.FILM_PROFILE || mkdtempSync(join(tmpdir(), 'film-chrome-'));
 const take = join(output, 'takes', new Date().toISOString().replaceAll(':', '-'));
 mkdirSync(take, { recursive: true });
@@ -63,10 +67,14 @@ async function stopProcess(child) {
   await new Promise(done => child.once('exit', done));
 }
 let chrome;
+let fakeAudioFile, voiceCapture, voiceEvents = [], websocketClockOffsetMs;
 const launchChrome = () => spawn(process.env.FILM_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', [
   '--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run',
   '--no-default-browser-check', '--use-mock-keychain', '--password-store=basic',
-  '--disable-background-networking', '--disable-sync', '--window-size=1920,1080', 'about:blank',
+  '--disable-background-networking', '--disable-sync', '--window-size=1920,1080',
+  // macOS denies the file-backed audio utility access to this scratch WAV inside its sandbox.
+  // This exception applies only to the newly-created, local-only, fake-device capture profile.
+  ...(spokenMode ? ['--no-sandbox', '--enable-automation', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--disable-audio-track-processing', `--use-file-for-fake-audio-capture=${fakeAudioFile}%noloop`] : []), 'about:blank',
 ], { stdio: ['ignore', 'ignore', 'pipe'] });
 let socket, current, pointer = { x: 1420, y: 900 };
 const pending = new Map(), listeners = new Map();
@@ -76,7 +84,9 @@ const activeClarify = new Set();
 const note = (event, detail = {}) => current?.events.push({ ms: Date.now() - current.start, event, ...detail });
 
 async function connect() {
+  assert(!spokenMode || (fakeAudioFile && existsSync(fakeAudioFile)), 'A prepared fake audio file is required before Chrome starts');
   chrome = launchChrome();
+  if (spokenMode) chrome.stderr.on('data', data => appendFileSync(join(take,'chrome.stderr.log'),data));
   const address = await new Promise((resolveAddress, reject) => {
     let buffer = '';
     const timeout = setTimeout(() => reject(Error('Chrome startup timed out')), 15000);
@@ -99,7 +109,12 @@ async function connect() {
   const { targetId } = await send('Target.createTarget', { url: 'about:blank' });
   ({ sessionId: session } = await send('Target.attachToTarget', { targetId, flatten: true }));
   await cdp('Page.enable'); await cdp('Runtime.enable'); await cdp('Network.enable');
-  await cdp('Browser.setPermission', { permission: { name: 'microphone' }, setting: 'denied', origin: url.origin });
+  if (spokenMode) {
+    const { arguments: args } = await send('Browser.getBrowserCommandLine');
+    assert(args.includes('--use-fake-device-for-media-stream') && args.includes('--use-fake-ui-for-media-stream') && args.includes(`--use-file-for-fake-audio-capture=${fakeAudioFile}%noloop`), 'Fake-only capture flags were not applied');
+    await cdp('Page.addScriptToEvaluateOnNewDocument', { source: `window.__filmMedia=[];const get=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);navigator.mediaDevices.getUserMedia=async(...args)=>{const stream=await get(...args);window.__filmMedia.push({at:Date.now(),tracks:stream.getAudioTracks().map(t=>({label:t.label,settings:t.getSettings()}))});const c=new AudioContext(),source=c.createMediaStreamSource(stream),analyser=c.createAnalyser(),silent=c.createGain();silent.gain.value=0;source.connect(analyser);analyser.connect(silent);silent.connect(c.destination);window.__filmInputPeak=0;const data=new Float32Array(analyser.fftSize),timer=setInterval(()=>{analyser.getFloatTimeDomainData(data);for(const sample of data)window.__filmInputPeak=Math.max(window.__filmInputPeak,Math.abs(sample));},10);setTimeout(()=>{clearInterval(timer);c.close();},15000);return stream;};` });
+  }
+  await cdp('Browser.setPermission', { permission: { name: 'microphone' }, setting: spokenMode ? 'granted' : 'denied', origin: url.origin });
   await cdp('Emulation.setDeviceMetricsOverride', { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false });
   listeners.set('Page.screencastFrame', [frame => {
     void cdp('Page.screencastFrameAck', { sessionId: frame.sessionId });
@@ -127,6 +142,7 @@ async function connect() {
     const path = new URL(response.url).pathname;
     if (/^\/(clarify|draw|crew|flow)/.test(path)) note('response', { path, status: response.status, wait_ms: requests.has(requestId) ? Date.now() - requests.get(requestId) : null });
   }]);
+  if (spokenMode) observeVoice();
   await navigate(flags);
 }
 function send(method, params = {}, sessionId) {
@@ -152,7 +168,7 @@ async function navigate(query) {
   await until('window.e2a2oFilm && document.querySelector("[data-guide=composer] textarea")');
   await evaluate(`window.e2a2oFilm.caption('Fictional example'); Object.assign(document.querySelector('.film-caption').style,{fontSize:'18px',top:'auto',bottom:'20px',left:'50%',padding:'8px 16px'})`);
   assert(await evaluate('document.documentElement.classList.contains("quiet-screen")'), 'Quiet screen must be on');
-  assert(await evaluate('navigator.permissions.query({name:"microphone"}).then(p=>p.state)') === 'denied', 'Microphone must remain denied');
+  assert(await evaluate('navigator.permissions.query({name:"microphone"}).then(p=>p.state)') === (spokenMode ? 'granted' : 'denied'), 'Unexpected capture permission');
 }
 async function move(x, y, duration = 550, down = false) {
   const from = { ...pointer }, steps = Math.max(8, Math.ceil(duration / 20));
@@ -204,7 +220,7 @@ async function words(text) {
   await evaluate('window.e2a2oFilm.words("")');
   note('spoken-input', { text, microphone: false });
 }
-async function box(left, top, width, height, name) {
+async function box(left, top, width, height, name, typedName = false) {
   const r = await evaluate('(()=>{const r=document.querySelector(".draw-page").getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height}})()');
   const p = (x, y) => ({ x: r.x + x * r.w, y: r.y + y * r.h });
   const start = p(left, top); await move(start.x, start.y);
@@ -213,7 +229,8 @@ async function box(left, top, width, height, name) {
     const end = p(x, y); await move(end.x, end.y, 500 + Math.random() * 180, true);
   }
   await cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', ...pointer, button: 'left', buttons: 0, clickCount: 1 });
-  await words(`This is ${name}`);
+  if (typedName) await type(name, '.draw-tools input', true);
+  else await words(`This is ${name}`);
 }
 async function screenshot(path) {
   const { data } = await cdp('Page.captureScreenshot', { format: 'png' });
@@ -251,6 +268,24 @@ async function checkCrewCounts() {
   contentCheck('all merged parts are kept with the right count', counts.total === counts.merged && kept?.count === counts.total && counts.catalog === keptPartIds.size,
     { ...counts, keptThisRun: kept?.count, expectedCatalog: keptPartIds.size });
 }
+async function checkBoardFacts() {
+  const text = await evaluate('document.querySelector(".crew-board").innerText');
+  const unsupportedDays = text.match(/\b(Monday|Tuesday|Wednesday|Thursday|Friday|Sunday)\b/gi) || [];
+  contentCheck('Crew keeps the supplied Saturday instead of inventing a day', unsupportedDays.length === 0, { unsupportedDays, boardText: text });
+}
+async function prepareSelectedClip(name) {
+  if (name === 'ask' && !await evaluate('document.querySelectorAll("[data-thought]").length')) {
+    await type(story);
+    await until('document.querySelectorAll("[data-thought]").length > 0');
+  }
+  if (name === 'crew' && !await evaluate('JSON.parse(localStorage.getItem("e2a2o-draw-strokes") || "[]").length')) {
+    if (!await evaluate('!!document.querySelector(".draw-page")')) await click('.draw-open');
+    await box(.14, .26, .24, .18, 'volunteer shifts');
+    await box(.57, .26, .24, .18, 'what to bring');
+    await box(.35, .66, .24, .18, 'flyer words');
+    await until('document.querySelectorAll(".draw-part").length >= 3', 120000);
+  }
+}
 async function verifyClip(record) {
   const { stdout } = await runFile('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height,r_frame_rate,avg_frame_rate', '-show_entries', 'format=duration', '-of', 'json', join(record.folder, `${record.name}.mp4`)]);
   const probe = JSON.parse(stdout), stream = probe.streams[0], seconds = Number(probe.format.duration);
@@ -269,6 +304,221 @@ function saveVerification(verified) {
   const previous = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : [];
   writeFileSync(path, JSON.stringify([...previous.filter(row => row.clip !== verified.clip), verified], null, 2) + '\n');
 }
+function observeVoice() {
+  const sockets = new Set();
+  listeners.set('Network.webSocketCreated', [event => { if (new URL(event.url).pathname === '/ws') sockets.add(event.requestId); }]);
+  listeners.set('Network.webSocketWillSendHandshakeRequest', [event => {
+    if (sockets.has(event.requestId)) websocketClockOffsetMs = (event.wallTime - event.timestamp) * 1000;
+  }]);
+  listeners.set('Network.webSocketFrameSent', [event => {
+    if (!voiceCapture || !sockets.has(event.requestId)) return;
+    if (event.response.opcode === 2) {
+      const bytes = Buffer.from(event.response.payloadData, 'base64');
+      const count = bytes.length / 2;
+      appendFileSync(voiceCapture.pcm, bytes);
+      voiceCapture.frames.push({ sample_start: voiceCapture.samples, sample_count: count,
+        epoch_ms: websocketClockOffsetMs === undefined ? Date.now() : event.timestamp * 1000 + websocketClockOffsetMs });
+      voiceCapture.samples += count;
+      for(let i=0;i+1<bytes.length;i+=2)voiceCapture.peak=Math.max(voiceCapture.peak,Math.abs(bytes.readInt16LE(i)));
+    } else {
+      try { const value = JSON.parse(event.response.payloadData); if (value.type === 'listen') note('app-listen-control', { on: value.on }); } catch { /* unrelated frame */ }
+    }
+  }]);
+  listeners.set('Network.webSocketFrameReceived', [event => {
+    if (!sockets.has(event.requestId) || event.response.opcode !== 1) return;
+    let value; try { value = JSON.parse(event.response.payloadData); } catch { return; }
+    if (!['partial', 'change', 'status', 'error', 'notice', 'capture_saved'].includes(value.type)) return;
+    if (value.type === 'change' && !['thought_added', 'thought_placed'].includes(value.change?.type)) return;
+    const row = { epoch_ms: Date.now(), value };
+    voiceEvents.push(row);
+    if (voiceCapture) voiceCapture.events.push(row);
+    if (value.type === 'partial') note('real-asr-partial', { text: value.text });
+  }]);
+}
+function wavData(path) {
+  const bytes = readFileSync(path);
+  assert(bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WAVE');
+  for (let at = 12; at + 8 <= bytes.length;) {
+    const size = bytes.readUInt32LE(at + 4);
+    if (bytes.toString('ascii', at, at + 4) === 'data') return bytes.subarray(at + 8, at + 8 + size);
+    at += 8 + size + (size % 2);
+  }
+  throw Error('WAV data is missing');
+}
+function writePcmWav(path, data, rate = 48000) {
+  const header = Buffer.alloc(44);
+  header.write('RIFF'); header.writeUInt32LE(36 + data.length, 4); header.write('WAVEfmt ', 8);
+  header.writeUInt32LE(16, 16); header.writeUInt16LE(1, 20); header.writeUInt16LE(1, 22);
+  header.writeUInt32LE(rate, 24); header.writeUInt32LE(rate * 2, 28); header.writeUInt16LE(2, 32); header.writeUInt16LE(16, 34);
+  header.write('data', 36); header.writeUInt32LE(data.length, 40);
+  writeFileSync(path, Buffer.concat([header, data]));
+}
+async function prepareVoiceFiles() {
+  const directory = resolve(process.env.FILM_VOICE_DIR || join(dirname(output), 'voice/user'));
+  const files = {};
+  for (const name of ['thought', 'answer', 'build']) {
+    const original = join(directory, `${name}.wav`), normalized = join(take, `${name}-48k.wav`), reference = join(take, `${name}-24k.pcm`);
+    assert(existsSync(original), `Missing supplied voice file: ${name}.wav`);
+    await runFile('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-i', original, '-ar', '48000', '-ac', '1', '-c:a', 'pcm_s16le', '-y', normalized]);
+    await runFile('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-i', original, '-ar', '24000', '-ac', '1', '-f', 's16le', '-y', reference]);
+    files[name] = { original, normalized, reference, data: wavData(normalized) };
+  }
+  const silence = seconds => Buffer.alloc(Math.round(seconds * 48000) * 2);
+  const conversation = join(take, 'conversation-fake-device.wav'), build = join(take, 'build-fake-device.wav');
+  writePcmWav(conversation, Buffer.concat([silence(3), files.thought.data, silence(20), files.answer.data, silence(15)]));
+  writePcmWav(build, Buffer.concat([silence(3), files.build.data, silence(18)]));
+  return { files, conversation, build };
+}
+async function startFileVoice() {
+  assert(spokenMode && fakeAudioFile && !process.env.FILM_PROFILE, 'File voice is confined to a fresh fake-device profile');
+  const devices = await evaluate('navigator.mediaDevices.enumerateDevices().then(ds=>ds.filter(d=>d.kind==="audioinput").map(d=>({label:d.label,id:d.deviceId})))');
+  assert(devices.length && devices.every(device => /fake/i.test(device.label)), 'Refusing capture: a non-fake audio input is present');
+  voiceEvents = [];
+  voiceCapture = { pcm: join(current.folder, 'sent-audio-24k.pcm'), samples: 0, peak:0, frames: [], events: [], devices, physical_microphone: false };
+  writeFileSync(voiceCapture.pcm, Buffer.alloc(0));
+  current.virtual_microphone = true;
+  note('fake-device-verified', { devices });
+  await click('.mic[data-guide="mic"]');
+  await until('document.querySelector(".mic.on")', 15000);
+  const media = await evaluate('window.__filmMedia');
+  assert(media.length && media.every(call => call.tracks.every(track => /fake/i.test(track.label))), 'The app did not open the expected fake track');
+  voiceCapture.media = media;
+  note('file-capture-started', { file: basename(fakeAudioFile), media });
+}
+async function stopFileVoice() {
+  if (await evaluate('!!document.querySelector(".mic.on")')) {
+    await cdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'd', code: 'KeyD', modifiers: 4 });
+    await cdp('Input.dispatchKeyEvent', { type: 'keyUp', key: 'd', code: 'KeyD', modifiers: 4 });
+    await until('!document.querySelector(".mic.on")', 10000);
+  }
+  if (voiceCapture) { voiceCapture.input_peak=await evaluate('window.__filmInputPeak || 0');current.voice = voiceCapture; }
+  voiceCapture = undefined;
+}
+const heardThoughts = () => voiceEvents.filter(event => event.value.type === 'change' && event.value.change.type === 'thought_added').map(event => event.value.change.thought);
+async function waitVoice(predicate, what, timeout = 60000) {
+  const end = Date.now() + timeout;
+  while (Date.now() < end) {
+    if (predicate()) return;
+    const failure = voiceEvents.find(event => event.value.type === 'error');
+    if (failure) throw Error(`Real voice path failed during ${what}: ${failure.value.message}`);
+    await delay(150);
+  }
+  throw Error(`Real voice path timed out during ${what}; heard: ${heardThoughts().map(t=>t.text).join(' | ')}`);
+}
+function locateAudio(referenceBytes, capturedBytes) {
+  const ref = new Int16Array(referenceBytes.buffer, referenceBytes.byteOffset, referenceBytes.length / 2);
+  const pcm = new Int16Array(capturedBytes.buffer, capturedBytes.byteOffset, capturedBytes.length / 2);
+  const envelope = samples => {
+    const out = [];
+    for (let at = 0; at + 240 <= samples.length; at += 240) { let sum = 0; for (let j = 0; j < 240; j++) sum += samples[at + j] ** 2; out.push(Math.sqrt(sum / 240)); }
+    return out;
+  };
+  const r = envelope(ref), p = envelope(pcm);
+  let best = -Infinity, offset = -1;
+  for (let at = 0; at + r.length <= p.length; at++) {
+    let cross = 0, a = 0, b = 0;
+    for (let j = 0; j < r.length; j++) { cross += r[j] * p[at + j]; a += r[j] ** 2; b += p[at + j] ** 2; }
+    const score = cross / (Math.sqrt(a * b) || 1);
+    if (score > best) { best = score; offset = at * 240; }
+  }
+  assert(best > .7 && offset >= 0, `Supplied WAV not identifiable in the app's sent PCM (correlation ${best.toFixed(3)})`);
+  const length = Math.min(12000, ref.length);
+  let segment = 0, energy = -1;
+  for (let at=0;at+length<=ref.length;at+=240) {
+    let sum=0;for(let j=0;j<length;j+=2)sum+=ref[at+j]**2;
+    if(sum>energy){energy=sum;segment=at;}
+  }
+  let refined=offset, waveform=-1;
+  for(let shift=Math.max(0,offset-240);shift<=offset+240&&shift+segment+length<pcm.length;shift++) {
+    let cross=0,a=0,b=0;
+    for(let j=0;j<length;j+=2){const x=ref[segment+j],y=pcm[shift+segment+j];cross+=x*y;a+=x*x;b+=y*y;}
+    const score=cross/(Math.sqrt(a*b)||1);if(score>waveform){waveform=score;refined=shift;}
+  }
+  return { sample_offset: waveform>.25?refined:offset, correlation: best, waveform_correlation:waveform, resolution_ms: waveform>.25?1000/24000:10 };
+}
+async function finishVoiceAudio(record, names, assets) {
+  assert(record.voice?.frames.length, 'No audio PCM traversed the app WebSocket');
+  const starts = record.voice.frames.map(frame => frame.epoch_ms - (frame.sample_start + frame.sample_count) / 24).sort((a,b)=>a-b);
+  const origin = starts[Math.floor(starts.length / 2)] - record.start;
+  const jitter = starts.map(start=>Math.abs(start-record.start-origin)).sort((a,b)=>a-b);
+  const pcm = readFileSync(record.voice.pcm);
+  record.audio = names.map(name => {
+    const match = locateAudio(readFileSync(assets.files[name].reference), pcm);
+    return { clip: record.name, wav: assets.files[name].original, offset_ms: origin + match.sample_offset / 24,
+      duration_ms: assets.files[name].data.length / 96, ...match, method: 'correlated real outgoing PCM against supplied WAV; median WebSocket frame clock' };
+  });
+  record.audio_clock = { origin_ms: origin, median_frame_jitter_ms:jitter[Math.floor(jitter.length/2)], sample_rate:24000 };
+  const silent = join(record.folder, 'silent.mp4'); copyFileSync(join(record.folder, `${record.name}.mp4`), silent);
+  const args = ['-hide_banner', '-loglevel', 'error', '-i', silent];
+  for (const audio of record.audio) args.push('-i', audio.wav);
+  const filters = record.audio.map((audio,i)=>`[${i+1}:a]aresample=48000,adelay=${Math.max(0,Math.round(audio.offset_ms*48))}S:all=1[a${i}]`);
+  filters.push(record.audio.map((_,i)=>`[a${i}]`).join('')+`amix=inputs=${record.audio.length}:normalize=0,apad[out]`);
+  const muxed = join(record.folder, 'with-source-audio.mp4');
+  args.push('-filter_complex', filters.join(';'), '-map','0:v','-map','[out]','-c:v','copy','-c:a','aac','-ar','48000','-ac','1','-t',String(record.seconds),'-y',muxed);
+  await runFile('ffmpeg', args);
+  copyFileSync(muxed, join(record.folder, `${record.name}.mp4`)); copyFileSync(muxed, join(output, `${record.name}.mp4`));
+  writeFileSync(join(record.folder, 'timing.json'), JSON.stringify(record,null,2));
+  writeFileSync(join(output, `${record.name}.json`), JSON.stringify(record,null,2));
+}
+async function closeBrowser() {
+  socket?.close(); await stopProcess(chrome); chrome?.stderr.destroy(); chrome?.unref();
+  socket = undefined; chrome = undefined; pending.clear(); listeners.clear(); voiceEvents = []; websocketClockOffsetMs = undefined;
+}
+async function spokenClips() {
+  const assets = await prepareVoiceFiles();
+  fakeAudioFile = assets.conversation; await connect();
+  await capture('spoken', async () => {
+    try {
+      await startFileVoice();
+      await waitVoice(()=>voiceEvents.some(e=>e.value.type==='partial' && e.value.text), 'live words');
+      await waitVoice(()=>heardThoughts().length >= 1, 'first spoken thought');
+      note('first-transcribed-thought', { text: heardThoughts()[0].text });
+      contentCheck('words arrive live from Voice Transcribe', voiceEvents.filter(e=>e.value.type==='partial' && e.value.text).length > 1, { partials: voiceEvents.filter(e=>e.value.type==='partial' && e.value.text).map(e=>e.value.text) });
+      await until('document.querySelector(".clarify-note")', 35000);
+      const question = await evaluate('document.querySelector(".clarify-note").innerText');
+      note('real-question-in-place', { question });
+      contentCheck('Who is Mira appears in place', question.includes('Who is Mira?'), { question });
+      await waitVoice(()=>heardThoughts().length >= 2, 'spoken answer');
+      note('transcribed-answer', { text: heardThoughts()[1].text });
+      await waitVoice(()=>voiceEvents.filter(e=>e.value.type==='change' && e.value.change.type==='thought_placed').length >= 2, 'answer placement');
+      const normal = text => text.toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+      contentCheck('spoken words match supplied thought and answer', normal(heardThoughts()[0].text) === normal(story) && normal(heardThoughts()[1].text) === normal('Mira runs the volunteers'), heardThoughts().map(t=>t.text));
+      await delay(2000);
+    } finally { await stopFileVoice(); }
+  }, 'person speaking through Chrome file capture, real Muse Voice Transcribe live words, Spark placement and question');
+  try { await finishVoiceAudio(rows.get('spoken'), ['thought','answer'], assets); } catch(error) { rows.get('spoken').audio_error=error.message; console.log(`spoken audio: ${error.message}`); }
+  await closeBrowser(); fakeAudioFile = assets.build; await connect();
+  await click('.draw-open');
+  await box(.14,.26,.24,.18,'volunteer shifts',true);
+  await box(.57,.26,.24,.18,'what to bring',true);
+  await box(.35,.66,.24,.18,'flyer words',true);
+  await until('document.querySelectorAll(".draw-part").length >= 3',120000);
+  await click('.draw-tools button:last-child');
+  await capture('spoken-build', async () => {
+    try {
+      await startFileVoice();
+      await click('.draw-open');
+      await waitVoice(()=>heardThoughts().length >= 1, 'spoken build command');
+      note('transcribed-build', { text: heardThoughts()[0].text });
+      await until('document.querySelector(".crew-count")',60000);
+      await until('document.querySelector(".crew-foot")?.textContent.includes("real commits")',180000);
+      const transcript = heardThoughts()[0].text;
+      contentCheck('spoken build WAV is transcribed verbatim', transcript.toLowerCase().replace(/[^a-z0-9]+/g,' ').trim() === 'build all that', transcript);
+      contentCheck('real spoken command starts Crew', await evaluate('!!document.querySelector(".crew-foot") && document.querySelectorAll(".crew-merged").length > 0'), { transcript, footer: await evaluate('document.querySelector(".crew-foot").textContent') });
+      await delay(2000);
+    } finally { await stopFileVoice(); }
+  }, 'real sketch, supplied build voice through the app capture control and Muse Voice Transcribe, live Crew build');
+  try { await finishVoiceAudio(rows.get('spoken-build'), ['build'], assets); } catch(error) { rows.get('spoken-build').audio_error=error.message; console.log(`spoken-build audio: ${error.message}`); }
+  const record = rows.get('spoken');
+  record.audio_manifest = [...(record.audio||[]),...(rows.get('spoken-build').audio||[])];
+  for (const item of rows.values()) {
+    writeFileSync(join(output,`${item.name}.json`),JSON.stringify(item,null,2));
+    writeFileSync(join(item.folder,'timing.json'),JSON.stringify(item,null,2));
+    const verified = await verifyClip(item);
+    saveVerification({ ...verified, virtual_microphone: true, audio: item.audio || [], audio_error: item.audio_error || null });
+  }
+  writeReadme();
+}
 async function encode(record) {
   assert(record.frames.length > 1, 'No screencast frames');
   const list = [];
@@ -285,7 +535,7 @@ async function encode(record) {
   list.push(`file '${frames.at(-1).file}'`);
   writeFileSync(join(record.folder, 'frames.ffconcat'), list.join('\n'));
   await new Promise((resolveRun, reject) => {
-    const child = spawn(process.env.FFMPEG || 'ffmpeg', ['-hide_banner', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', join(record.folder, 'frames.ffconcat'), '-vf', 'fps=30,scale=1920:1080', '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-an', '-y', join(record.folder, `${record.name}.mp4`)], { stdio: ['ignore', 'ignore', 'pipe'] });
+    const child = spawn(process.env.FFMPEG || 'ffmpeg', ['-hide_banner', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', join(record.folder, 'frames.ffconcat'), '-vf', 'fps=30,scale=1920:1080', '-r','30','-fps_mode','cfr','-enc_time_base','1:30','-video_track_timescale','30000','-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-an', '-y', join(record.folder, `${record.name}.mp4`)], { stdio: ['ignore', 'ignore', 'pipe'] });
     let errors = ''; child.stderr.on('data', data => { errors += data; });
     child.once('error', reject); child.once('exit', code => code === 0 ? resolveRun() : reject(Error(errors || `ffmpeg ${code}`)));
   });
@@ -301,6 +551,8 @@ async function capture(name, action, real) {
   await cdp('Page.stopScreencast');
   const record = current; current = null;
   record.duration_ms = Date.now() - record.start;
+  // Keep capture clocks even when encoding or verification fails afterwards.
+  writeFileSync(join(folder, 'timing.json'), JSON.stringify(record, null, 2));
   await encode(record);
   const verified = await verifyClip(record);
   writeFileSync(join(folder, 'timing.json'), JSON.stringify(record, null, 2));
@@ -406,6 +658,7 @@ async function repair() {
   current.observed = observed;
   current.limitations = ['genuine repair/merge responses held 3.5s each for reading'];
   await checkCrewCounts();
+  await checkBoardFacts();
   note('merged-visible', { part: faultPart });
   await delay(3500);
 }
@@ -455,6 +708,7 @@ async function board() {
   current.observed = { checked: await evaluate(`document.querySelectorAll(${JSON.stringify(`${bring} .kit-list button[aria-pressed="true"]`)}).length`), counts, answers };
   assert(current.observed.checked === 2 && counts + answers > 0, 'Board did not visibly change');
   current.real = `finished live Repair Night board: two Bring List ticks, ${counts} counter changes and ${answers} editable answers`;
+  await checkBoardFacts();
   await delay(2500);
 }
 async function prepareBoard() {
@@ -537,6 +791,7 @@ const clips = {
     note('all-parts-on-main');
     contentCheck('Build all that alone hands the sketch to Crew', !await evaluate('!!document.querySelector(".draw-page")'), { command: 'Build all that' });
     await checkCrewCounts();
+    await checkBoardFacts();
   }, 'real sketch handoff, Spark parts, checked Git branches and promotion to main'],
   'crew-more': [async () => {
     await navigate(flags);
@@ -549,6 +804,7 @@ const clips = {
     assert(await evaluate('document.querySelectorAll(".crew-off").length') === 0, 'Crew turned a part off');
     note('reused-and-main');
     await checkCrewCounts();
+    await checkBoardFacts();
   }, 'second live Spark run with persistent part reuse and a larger Git tree'],
   parts: [async () => {
     await navigate(`${flags}&parts`);
@@ -590,17 +846,23 @@ if (process.env.FILM_REENCODE === '1') {
   }
 } else try {
   await startScratchCore();
-  await connect();
-  console.log(`Capture profile ready; takes: ${take}`);
-  for (const name of (process.env.FILM_CLIPS || Object.keys(clips).join(',')).split(',')) {
-    assert(clips[name], `Unknown clip ${name}`);
-    if (name === 'repair') await prepareRepair();
-    if (name === 'board') await prepareBoard();
-    await capture(name, ...clips[name]);
+  if (spokenMode) {
+    console.log(`File-voice capture ready; takes: ${take}`);
+    await spokenClips();
+  } else {
+    await connect();
+    console.log(`Capture profile ready; takes: ${take}`);
+    for (const name of (process.env.FILM_CLIPS || Object.keys(clips).join(',')).split(',')) {
+      assert(clips[name], `Unknown clip ${name}`);
+      await prepareSelectedClip(name);
+      if (name === 'repair') await prepareRepair();
+      if (name === 'board') await prepareBoard();
+      await capture(name, ...clips[name]);
+    }
   }
-  if (scratchData && latestCrewRun && !process.env.FILM_CLIPS) await captureGitGraph();
+  if (!spokenMode && scratchData && latestCrewRun && !process.env.FILM_CLIPS) await captureGitGraph();
   writeRunSummary();
-  if ([...rows.values()].some(record => record.error || record.checks?.some(check => !check.passed))) process.exitCode = 1;
+  if ([...rows.values()].some(record => record.error || record.audio_error || record.checks?.some(check => !check.passed))) process.exitCode = 1;
 } finally {
   socket?.close();
   await stopProcess(chrome);

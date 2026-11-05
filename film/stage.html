@@ -7,6 +7,7 @@
 #stage{position:absolute;width:1920px;height:1080px;transform-origin:0 0;overflow:hidden;color:white}#scene{position:absolute;inset:0;perspective:2400px}#camera{position:absolute;inset:0;transform-style:preserve-3d}
 .type{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:152px;font-weight:650;letter-spacing:-.065em;line-height:1.05;text-align:center;padding:100px}
 .plane{position:absolute;left:50%;top:50%;border-radius:18px;overflow:hidden;background:#fff;box-shadow:0 65px 130px -25px #001c6680,0 20px 50px #001b5550;border:1.5px solid #ffffff9c}.plane video,.plane img{display:block;width:100%;height:auto}
+.wall-field-tile{position:absolute;overflow:visible}.wall-field-tile:not(:first-child){overflow:hidden}.wall-field-tile img,.wall-field-tile video{display:block;width:100%;height:100%;object-fit:cover}
 .wall-tile{position:absolute;width:1920px;height:1920px;overflow:hidden;background:#0d1014;outline:1px solid #48515c}.wall-tile img,.wall-tile video{display:block;width:100%;height:100%;object-fit:contain}
 #heading{position:absolute;left:70px;top:45px;font-size:44px;font-weight:600;letter-spacing:-.035em}
 .signature{position:absolute;inset:0}.signature-icon{position:absolute;left:50%;top:44%;width:220px;height:220px;filter:drop-shadow(0 12px 18px #00143b25)}.signature-svg,.signature-photo{position:absolute;inset:0;width:100%;height:100%}.signature-photo{border-radius:48px}.signature-glint{position:absolute;left:64%;top:41%;width:16px;height:16px;border-radius:50%;background:white;filter:blur(2px);opacity:0}.signature-name{position:absolute;top:44%;font-size:164px;font-weight:700;line-height:1;letter-spacing:-.065em;white-space:nowrap;transform-origin:left center}.signature-tagline{position:absolute;top:calc(44% + 170px);width:100%;font-size:50px;font-weight:500;letter-spacing:-.035em;text-align:center}.signature-credits,.signature-disclosure{position:absolute;width:100%;text-align:center;font-size:22px;letter-spacing:0;line-height:1.2}.signature-credits{bottom:87px}.signature-disclosure{bottom:43px}
@@ -14,12 +15,12 @@
 </style>
 <main id="stage" aria-label="Film frame"><div id="scene"><div id="camera"></div></div><div id="heading"></div></main>
 <script type="module">
-import {createWall,drawWall} from './wall.mjs';
+import {createWall,drawWall,paintWall} from './wall.mjs';
 import {createBrand,drawBrand} from './brand.mjs';
 import {createLaptop,drawLaptop} from './laptop.mjs';
 import {wordMotion} from './motion.mjs';
 const stage=document.querySelector('#stage'),camera=document.querySelector('#camera'),heading=document.querySelector('#heading');
-let active=null,videos=[],wallTiles=[],planes=[],brand=null,laptop=null;
+let active=null,videos=[],wallTiles=[],planes=[],brand=null,laptop=null,raster=null;
 const lerp=(a,b,t)=>a+(b-a)*t,ease=t=>t*t*(3-2*t),array=v=>Array.isArray(v)?v:[v];
 const background=v=>v==='meta'?'radial-gradient(ellipse at 45% 30%,#2683ff,#0866ff 55%,#034ac2)':v==='muse'?'linear-gradient(125deg,#0866ff,#7659ed 60%,#ec91c5)':v;
 const bounded=(promise,label)=>Promise.race([promise,new Promise((_,reject)=>setTimeout(()=>reject(Error(label)),15000))]);
@@ -45,14 +46,15 @@ async function createPlane(spec,count,i){
 }
 function baseColour(shot){if(shot.kind==='laptop')return '#f2f4f5';if(shot.kind==='brand'||shot.kind==='end')return shot.phase==='opening'?'#000':'#fff';if(shot.kind==='feature'||shot.kind==='card'||shot.kind==='list')return shot.colour??'#0866ff';if(shot.kind==='wall')return '#000';return '#000';}
 async function mount(shot){
- videos.forEach(({video})=>{video.pause();video.removeAttribute('src');video.load();});videos=[];wallTiles=[];planes=[];brand=null;laptop=null;camera.replaceChildren();
+ videos.forEach(({video})=>{video.pause();video.removeAttribute('src');video.load();});videos=[];wallTiles=[];planes=[];brand=null;laptop=null;raster=null;camera.replaceChildren();
  camera.style.opacity='1';camera.style.transformOrigin='50% 50%';stage.style.background=background(shot.background??baseColour(shot));
  stage.style.color=(shot.kind==='brand'||shot.kind==='end')&&shot.phase!=='opening'?'#08090c':'#fff';heading.textContent=shot.heading??'';
  if(['title','pulse','feature','card','list'].includes(shot.kind))textPlate('');
  if(shot.kind==='brand'||shot.kind==='end')brand=createBrand(shot,camera);
  const clips=shot.kind==='plane'?[shot]:shot.kind==='planes'?shot.clips:[];for(let i=0;i<clips.length;i++)await createPlane(clips[i],clips.length,i);
  if(shot.kind==='laptop')laptop=await createLaptop(shot,camera,videos,bounded);
- if(shot.kind==='wall')wallTiles=await createWall(shot,camera,videos,bounded);active=shot.index;
+ if(shot.kind==='wall')wallTiles=await createWall(shot,camera,videos,bounded);
+ if(shot.layout==='field'){stage.style.background='#fff';raster=wallTiles.surface.canvas;}active=shot.index;
 }
 async function seek(video,target){
  if(target>=video.duration)throw Error(`Clip too short: needs ${target.toFixed(3)}s, has ${video.duration.toFixed(3)}s`);
@@ -75,8 +77,16 @@ window.filmFrame=async(shot,local,scale=1)=>{
  const tilts=planes.map(p=>posePlane(p,local)),wall=shot.kind==='wall'?drawWall(shot,local,camera,wallTiles):null;
  const brandState=brand?drawBrand(brand,shot,local):null,laptopState=laptop?drawLaptop(laptop,shot,local):null;
  await Promise.all(videos.map(({video,spec})=>seek(video,(spec.start??0)+(spec.loop?local%(spec.loopSeconds??video.duration-(spec.start??0)):Math.min(local*(spec.rate??1),spec.playSeconds??local*(spec.rate??1))))));
- await document.fonts.ready;await Promise.all([...camera.querySelectorAll('img')].map(img=>img.decode()));await new Promise(yes=>requestAnimationFrame(()=>requestAnimationFrame(yes)));
+ if(shot.kind==='wall')paintWall(shot,local,wallTiles);
+ await document.fonts.ready;await Promise.all([...camera.querySelectorAll('img')].map(img=>img.decode()));if(shot.layout!=='field')await new Promise(yes=>requestAnimationFrame(()=>requestAnimationFrame(yes)));
  return {kind:shot.kind,text:camera.textContent,times:videos.map(({video})=>video.currentTime),tilts,wall,word,brand:brandState,laptop:laptopState};
 };
+  window.filmRaster = (scale = 1) => {
+    if(!raster)return null;
+    if(scale===1)return raster.toDataURL('image/png');
+    const output=document.createElement('canvas');output.width=Math.round(1920*scale);output.height=Math.round(1080*scale);
+    output.getContext('2d',{willReadFrequently:true}).drawImage(raster,0,0,output.width,output.height);
+    return output.toDataURL('image/png');
+  };
 </script>
 </html>
