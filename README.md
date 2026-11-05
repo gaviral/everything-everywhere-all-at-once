@@ -12,7 +12,7 @@ AI is racing ahead of the person directing it. Here, you keep up with your agent
 
 ![Crew's board: seven parts merged through real Git branches](docs/looks/crew-look.png)
 
-<!-- Film link goes here. -->
+**[Watch the film](https://youtu.be/W0lRNIkrBxE)**
 
 ## What sets it apart
 
