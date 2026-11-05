@@ -114,7 +114,13 @@ const open = async ({ width = 1440, height = 900, extra = "" } = {}) => {
   await browser.page("Page.navigate", { url });
   assert.ok(await until(`!!document.querySelector('.spine-ready, .shell-welcome')`), "real UI ready");
 };
-const catalog = async () => { await ev(`document.querySelector('[data-guide="catalog"]').focus(); document.querySelector('[data-guide="catalog"]').click()`); assert.ok(await until(`!!document.querySelector('[data-row="warm-pictures"]')`)); };
+const catalog = async () => {
+  if (!await ev(`document.querySelector('[data-guide="catalog"]').getAttribute('aria-pressed') === 'true'`)) {
+    const r = await ev(`document.querySelector('[data-guide="catalog"]').getBoundingClientRect().toJSON()`);
+    for (const type of ['mousePressed','mouseReleased']) await browser.page('Input.dispatchMouseEvent', {type,x:r.x+r.width/2,y:r.y+r.height/2,button:'left',clickCount:1});
+  }
+  assert.ok(await until(`document.querySelector('[data-row="warm-pictures"]')?.checkVisibility()`), 'Features opens with the warm-picture control visible');
+};
 const toggle = async (id = "warm-pictures") => {
   await ev(`document.querySelector('[data-row="${id}"] [role="switch"]').focus()`);
   await key(" ");

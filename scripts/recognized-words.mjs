@@ -18,13 +18,29 @@ const draftDisclosure = words => `(() => {
   return summary.contains(document.elementFromPoint(x,y)) ? {x,y} : null;
 })()`;
 
+const returnToWords = words => `(() => {
+  const stored = [...document.querySelectorAll('.map-capture-live p,.map-capture-words,.voice-draft p')].some(e => e.textContent.includes(${JSON.stringify(words)}));
+  const button = document.querySelector('.capture-return button');
+  if (!stored || !button?.checkVisibility()) return null;
+  const r = button.getBoundingClientRect(), x = r.x + r.width / 2, y = r.y + r.height / 2;
+  return button.contains(document.elementFromPoint(x,y)) ? {x,y} : null;
+})()`;
+
+const press = async (browser, point) => {
+  for (const type of ["mousePressed", "mouseReleased"]) await browser.page("Input.dispatchMouseEvent", { type, ...point, button: "left", clickCount: 1 });
+};
+
 export async function expectRecognizedWords(browser, words, message = "recognized words remain visible") {
-  const visible = recognizedWordsVisible(words), disclosure = draftDisclosure(words);
-  assert.ok(await browser.until(`(${visible}) || !!(${disclosure})`, 10000), message);
+  const visible = recognizedWordsVisible(words), disclosure = draftDisclosure(words), route = returnToWords(words);
+  assert.ok(await browser.until(`(${visible}) || !!(${disclosure}) || !!(${route})`, 10000), message);
   if (!await browser.evaluate(visible)) {
+    const point = await browser.evaluate(route);
+    if (point) await press(browser, point);
+  }
+  if (!await browser.evaluate(visible)) {
+    assert.ok(await browser.until(`(${visible}) || !!(${disclosure})`, 10000), message);
     const point = await browser.evaluate(disclosure);
-    assert.ok(point, "retained words have a reachable disclosure");
-    for (const type of ["mousePressed", "mouseReleased"]) await browser.page("Input.dispatchMouseEvent", { type, ...point, button: "left", clickCount: 1 });
+    if (point) await press(browser, point);
   }
   assert.ok(await browser.until(visible, 10000), message);
 }
