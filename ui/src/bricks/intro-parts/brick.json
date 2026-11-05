@@ -1,7 +1,7 @@
 {
   "id": "intro-parts",
   "name": "Opening moment",
-  "does": "The full name folds into E2A2O once per session. Any key or tap skips it.",
+  "does": "The full name folds into the app icon once per session. Any key or tap skips it.",
   "kind": "panel",
   "defaultOn": false,
   "demoSafe": true

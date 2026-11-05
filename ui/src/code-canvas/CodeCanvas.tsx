@@ -1,3 +1,4 @@
+import { AppMark } from "../AppMark";
 import { useEffect, useState } from 'react';
 import { BranchBoard } from './BranchBoard';
 import { Composition } from './Composition';
@@ -12,7 +13,7 @@ export default function CodeCanvas() {
   const { data, status, stale, moments, refresh } = useSnapshot();
   useEffect(() => { document.title = 'Agent work · E2A2O'; }, []);
   // names-ok: Git branch/branches means local Git refs, not conversational Tangents.
-  return <main className={`code-canvas ${tv ? 'cc-tv' : ''}`}><header className="cc-header"><div><p className="cc-eyebrow">E2A2O / AGENT WORK</p><h1>Keep up with what’s happening.</h1><p>Who’s working. What’s done. What needs you.</p></div><div className="cc-header-actions"><button aria-pressed={tv} onClick={toggleTv}>TV size</button><a className="cc-back" href="/">Back to map ↗</a></div></header>
+  return <main className={`code-canvas ${tv ? 'cc-tv' : ''}`}><header className="cc-header"><div><p className="cc-eyebrow"><AppMark size="2em" dark /> / AGENT WORK</p><h1>Keep up with what’s happening.</h1><p>Who’s working. What’s done. What needs you.</p></div><div className="cc-header-actions"><button aria-pressed={tv} onClick={toggleTv}>TV size</button><a className="cc-back" href="/">Back to map ↗</a></div></header>
     <div className={`cc-live ${stale ? 'cc-stale' : ''}`} role="status"><span>{stale && data ? 'Showing last read · ' : ''}{status}</span><span>{data ? `${data.files} files · ${data.functions.length} functions · ${data.branches.length} branches` : 'Optional local view · no model needed'}</span><button onClick={refresh}>Read again</button></div>
     {data?.warnings.map(w => <p className="cc-warning" key={w}>{w}</p>)}
     <WorkStatus work={data?.agents?.work_status} stale={stale || !data?.agents?.available} />

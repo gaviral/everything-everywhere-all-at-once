@@ -10,10 +10,13 @@
     <!-- Installable to the Dock and a phone's home screen. With credentials, so a sign-in in front of the core
          (the hosted link) lets the manifest through instead of redirecting it. -->
     <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials" />
-    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" media="(prefers-color-scheme: light)" />
+    <link rel="icon" href="/icons/icon-dark.svg" type="image/svg+xml" media="(prefers-color-scheme: dark)" />
+    <link rel="mask-icon" href="/icons/icon-monochrome.svg" color="#087eea" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" sizes="180x180" />
     <meta name="apple-mobile-web-app-title" content="E2A2O" />
     <title>E2A2O — Think out loud</title>
+    <script type="module" src="/src/appearance.ts"></script>
   </head>
   <body>
     <div id="root"></div>
