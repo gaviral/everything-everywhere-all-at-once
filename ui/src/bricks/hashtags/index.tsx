@@ -22,7 +22,7 @@ function HashtagCollection({ map, actions, thoughts, example, scope }: BrickProp
   return <section className="hashtags" aria-label="Hashtags" data-guide="hashtags"
     onKeyDown={event => { if (event.key === "Escape" && selected) { event.stopPropagation(); backToTags(); } }}>
     <div className="hashtags-intro">
-      <div><p className="hashtags-eyebrow">Threads of thought</p><h1 className="hashtags-title">One tag. Many connections.</h1></div>
+      <div><p className="hashtags-eyebrow">Connected thoughts</p><h1 className="hashtags-title">One tag. Many connections.</h1></div>
       <button className="hashtags-back" onClick={() => actions.closeView()}>← Back to map</button>
     </div>
     <p className="hashtags-help">Type <strong>#rollback</strong> or say <strong>“hashtag rollback”</strong> in a thought. Find it here, across every topic.</p>
@@ -30,7 +30,7 @@ function HashtagCollection({ map, actions, thoughts, example, scope }: BrickProp
       <span>No tagged thoughts yet. These sample sentences have illustrative tags added. Your first tagged thought replaces this preview.</span></aside>}
     <div ref={strip}><TagStrip groups={groups} total={thoughts.length} selected={selected} select={select} /></div>
     <div className="hashtags-heading">
-      <div><h2 className="hashtags-result-title">{selected ? `#${selected}` : "A thread across topics"}</h2>
+      <div><h2 className="hashtags-result-title">{selected ? `#${selected}` : "Connections across topics"}</h2>
         <p className="hashtags-count" role="status">{shown.length} {example ? "example " : ""}{shown.length === 1 ? "thought" : "thoughts"} · {topicCount} {topicCount === 1 ? "topic" : "topics"}</p></div>
       {selected && <button className="hashtags-back" onClick={backToTags}>← All tags</button>}
     </div>

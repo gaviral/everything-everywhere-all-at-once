@@ -35,7 +35,7 @@ const html = `<!doctype html><html><head><meta name="viewport" content="width=de
 body{margin:0;background:var(--bg);font-family:Arial,sans-serif}button{font-family:inherit}
 </style></head><body><div id="root"></div><script type="module" src="/check.js"></script></body></html>`;
 const server = createServer((request, response) => {
-  const name = new URL(request.url, "http://check").pathname;
+  const name = new URL(request.url, "http://hashtags.test").pathname;
   if (name === "/") response.writeHead(200, { "content-type": "text/html" }).end(html);
   else if (name === "/check.js" || name === "/check.css") response.writeHead(200, {
     "content-type": name.endsWith(".js") ? "text/javascript" : "text/css",
@@ -50,7 +50,7 @@ try {
   assert.ok(await until("!!window.hashtagsCheck && !!document.querySelector('.hashtags-thought')"), "Example content opens immediately");
   assert.match(await evaluate("document.body.innerText"), /Example · developer debugging sample/);
   assert.equal(await evaluate("document.querySelectorAll('.hashtags-source-link').length"), 0, "Examples never masquerade as real source links");
-  assert.deepEqual(await evaluate(`window.hashtagsCheck.tagsIn("#Rollback #rollback, hashtag REVIEW; #café #東京 #release-2 #under_score user#no a@b.com https://site/#fragment")`),
+  assert.deepEqual(await evaluate(`window.hashtagsCheck.tagsIn("#Rollback #rollback, hashtag REVIEW; #café #東京 #release-2 #under_score user#no reader@example.com https://example.test/#fragment")`),
     ["rollback", "review", "café", "東京", "release-2", "under_score"]);
   assert.deepEqual(await evaluate(`window.hashtagsCheck.tagsIn("no tags or hashtags here")`), []);
 
